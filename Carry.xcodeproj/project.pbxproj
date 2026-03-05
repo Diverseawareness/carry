@@ -3,172 +3,223 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 60;
+	objectVersion = 56;
 	objects = {
 
 /* Begin PBXBuildFile section */
-		3A1B2C3D4E5F6A7B8C9D0E1F /* CarryApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A1B2C3D4E5F6A7B8C9D0E1E; };
-		3A1B2C3D4E5F6A7B8C9D0E2F /* Player.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A1B2C3D4E5F6A7B8C9D0E2E; };
-		3A1B2C3D4E5F6A7B8C9D0E3F /* Hole.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A1B2C3D4E5F6A7B8C9D0E3E; };
-		3A1B2C3D4E5F6A7B8C9D0E4F /* SkinResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A1B2C3D4E5F6A7B8C9D0E4E; };
-		3A1B2C3D4E5F6A7B8C9D0E5F /* ScoreLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A1B2C3D4E5F6A7B8C9D0E5E; };
-		3A1B2C3D4E5F6A7B8C9D0E6F /* RoundViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A1B2C3D4E5F6A7B8C9D0E6E; };
-		3A1B2C3D4E5F6A7B8C9D0E7F /* ScorecardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A1B2C3D4E5F6A7B8C9D0E7E; };
-		3A1B2C3D4E5F6A7B8C9D0E8F /* HeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A1B2C3D4E5F6A7B8C9D0E8E; };
-		3A1B2C3D4E5F6A7B8C9D0E9F /* HoleHeaderRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A1B2C3D4E5F6A7B8C9D0E9E; };
-		3A1B2C3D4E5F6A7B8C9D0EAF /* PlayerRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A1B2C3D4E5F6A7B8C9D0EAE; };
-		3A1B2C3D4E5F6A7B8C9D0EBF /* SkinsRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A1B2C3D4E5F6A7B8C9D0EBE; };
-		3A1B2C3D4E5F6A7B8C9D0ECF /* ScoreInputView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A1B2C3D4E5F6A7B8C9D0ECE; };
-		3A1B2C3D4E5F6A7B8C9D0EDF /* BottomBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A1B2C3D4E5F6A7B8C9D0EDE; };
-		3A1B2C3D4E5F6A7B8C9D0EFF /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3A1B2C3D4E5F6A7B8C9D0EFE; };
-		3A1B2C3D4E5F6A7B8C9D0F1F /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3A1B2C3D4E5F6A7B8C9D0F1E; };
+		A10001 /* CarryApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10001 /* CarryApp.swift */; };
+		A10002 /* Player.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10002 /* Player.swift */; };
+		A10003 /* Hole.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10003 /* Hole.swift */; };
+		A10004 /* SkinResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10004 /* SkinResult.swift */; };
+		A10005 /* ScoreLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10005 /* ScoreLabel.swift */; };
+		A10006 /* RoundConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10006 /* RoundConfig.swift */; };
+		A10007 /* RoundViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10007 /* RoundViewModel.swift */; };
+		A10008 /* ScorecardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10008 /* ScorecardView.swift */; };
+		A10009 /* HeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10009 /* HeaderView.swift */; };
+		A10010 /* CashGamesBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10010 /* CashGamesBar.swift */; };
+		A10011 /* HoleHeaderRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10011 /* HoleHeaderRow.swift */; };
+		A10012 /* PlayerRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10012 /* PlayerRow.swift */; };
+		A10013 /* SkinsRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10013 /* SkinsRow.swift */; };
+		A10014 /* ScoreInputView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10014 /* ScoreInputView.swift */; };
+		A10015 /* BottomBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10015 /* BottomBar.swift */; };
+		A10016 /* PlayerAvatar.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10016 /* PlayerAvatar.swift */; };
+		A10017 /* SplashShape.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10017 /* SplashShape.swift */; };
+		A10018 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B10018 /* Assets.xcassets */; };
+		A10019 /* Config.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10021 /* Config.swift */; };
+		A10020 /* SupabaseModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10022 /* SupabaseModels.swift */; };
+		A10021 /* SupabaseManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10023 /* SupabaseManager.swift */; };
+		A10022 /* AuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10024 /* AuthService.swift */; };
+		A10023 /* RoundService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10025 /* RoundService.swift */; };
+		A10024 /* AuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10026 /* AuthView.swift */; };
+		A10025 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = P10002 /* Supabase */; };
+		A10026 /* TeeBox.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10028 /* TeeBox.swift */; };
+		A10027 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10029 /* OnboardingView.swift */; };
+		A10028 /* GroupManagerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10030 /* GroupManagerView.swift */; };
+		A10031 /* RoundCoordinatorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10031 /* RoundCoordinatorView.swift */; };
+		A10032 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10032 /* HomeView.swift */; };
+		A10033 /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10033 /* MainTabView.swift */; };
+		A10034 /* GroupsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10034 /* GroupsListView.swift */; };
+		A10035 /* ProfileSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10035 /* ProfileSheetView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		3A1B2C3D4E5F6A7B8C9D0E1E /* CarryApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarryApp.swift; sourceTree = "<group>"; };
-		3A1B2C3D4E5F6A7B8C9D0E2E /* Player.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Player.swift; sourceTree = "<group>"; };
-		3A1B2C3D4E5F6A7B8C9D0E3E /* Hole.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Hole.swift; sourceTree = "<group>"; };
-		3A1B2C3D4E5F6A7B8C9D0E4E /* SkinResult.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkinResult.swift; sourceTree = "<group>"; };
-		3A1B2C3D4E5F6A7B8C9D0E5E /* ScoreLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoreLabel.swift; sourceTree = "<group>"; };
-		3A1B2C3D4E5F6A7B8C9D0E6E /* RoundViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoundViewModel.swift; sourceTree = "<group>"; };
-		3A1B2C3D4E5F6A7B8C9D0E7E /* ScorecardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScorecardView.swift; sourceTree = "<group>"; };
-		3A1B2C3D4E5F6A7B8C9D0E8E /* HeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeaderView.swift; sourceTree = "<group>"; };
-		3A1B2C3D4E5F6A7B8C9D0E9E /* HoleHeaderRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HoleHeaderRow.swift; sourceTree = "<group>"; };
-		3A1B2C3D4E5F6A7B8C9D0EAE /* PlayerRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerRow.swift; sourceTree = "<group>"; };
-		3A1B2C3D4E5F6A7B8C9D0EBE /* SkinsRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkinsRow.swift; sourceTree = "<group>"; };
-		3A1B2C3D4E5F6A7B8C9D0ECE /* ScoreInputView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoreInputView.swift; sourceTree = "<group>"; };
-		3A1B2C3D4E5F6A7B8C9D0EDE /* BottomBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomBar.swift; sourceTree = "<group>"; };
-		3A1B2C3D4E5F6A7B8C9D0EFE /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		3A1B2C3D4E5F6A7B8C9D0F1E /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
-		3A1B2C3D4E5F6A7B8C9D0F2E /* Carry.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Carry.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		3A1B2C3D4E5F6A7B8C9D0F3E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		B10001 /* CarryApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarryApp.swift; sourceTree = "<group>"; };
+		B10002 /* Player.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Player.swift; sourceTree = "<group>"; };
+		B10003 /* Hole.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Hole.swift; sourceTree = "<group>"; };
+		B10004 /* SkinResult.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkinResult.swift; sourceTree = "<group>"; };
+		B10005 /* ScoreLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoreLabel.swift; sourceTree = "<group>"; };
+		B10006 /* RoundConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoundConfig.swift; sourceTree = "<group>"; };
+		B10007 /* RoundViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoundViewModel.swift; sourceTree = "<group>"; };
+		B10008 /* ScorecardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScorecardView.swift; sourceTree = "<group>"; };
+		B10009 /* HeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeaderView.swift; sourceTree = "<group>"; };
+		B10010 /* CashGamesBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CashGamesBar.swift; sourceTree = "<group>"; };
+		B10011 /* HoleHeaderRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HoleHeaderRow.swift; sourceTree = "<group>"; };
+		B10012 /* PlayerRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerRow.swift; sourceTree = "<group>"; };
+		B10013 /* SkinsRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkinsRow.swift; sourceTree = "<group>"; };
+		B10014 /* ScoreInputView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoreInputView.swift; sourceTree = "<group>"; };
+		B10015 /* BottomBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomBar.swift; sourceTree = "<group>"; };
+		B10016 /* PlayerAvatar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerAvatar.swift; sourceTree = "<group>"; };
+		B10017 /* SplashShape.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplashShape.swift; sourceTree = "<group>"; };
+		B10018 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		B10019 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		B10020 /* Carry.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Carry.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B10021 /* Config.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Config.swift; sourceTree = "<group>"; };
+		B10022 /* SupabaseModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseModels.swift; sourceTree = "<group>"; };
+		B10023 /* SupabaseManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseManager.swift; sourceTree = "<group>"; };
+		B10024 /* AuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthService.swift; sourceTree = "<group>"; };
+		B10025 /* RoundService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoundService.swift; sourceTree = "<group>"; };
+		B10026 /* AuthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthView.swift; sourceTree = "<group>"; };
+		B10027 /* Carry.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Carry.entitlements; sourceTree = "<group>"; };
+		B10028 /* TeeBox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeeBox.swift; sourceTree = "<group>"; };
+		B10029 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		B10030 /* GroupManagerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupManagerView.swift; sourceTree = "<group>"; };
+		B10031 /* RoundCoordinatorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoundCoordinatorView.swift; sourceTree = "<group>"; };
+		B10032 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
+		B10033 /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
+		B10034 /* GroupsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupsListView.swift; sourceTree = "<group>"; };
+		B10035 /* ProfileSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileSheetView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFrameworksBuildPhase section */
+		D10004 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10025 /* Supabase in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
 /* Begin PBXGroup section */
-		3A1B2C3D4E5F6A7B8C9D0F4E = {
+		C10001 = {
 			isa = PBXGroup;
 			children = (
-				3A1B2C3D4E5F6A7B8C9D0F5E,
-				3A1B2C3D4E5F6A7B8C9D0F6E,
+				C10002 /* Carry */,
+				C10003 /* Products */,
 			);
 			sourceTree = "<group>";
 		};
-		3A1B2C3D4E5F6A7B8C9D0F5E = {
+		C10002 /* Carry */ = {
 			isa = PBXGroup;
 			children = (
-				3A1B2C3D4E5F6A7B8C9D0E1E,
-				3A1B2C3D4E5F6A7B8C9D0F7E,
-				3A1B2C3D4E5F6A7B8C9D0F8E,
-				3A1B2C3D4E5F6A7B8C9D0F9E,
-				3A1B2C3D4E5F6A7B8C9D0FAE,
-				3A1B2C3D4E5F6A7B8C9D0EFE,
-				3A1B2C3D4E5F6A7B8C9D0FBE,
-				3A1B2C3D4E5F6A7B8C9D0F3E,
+				B10001 /* CarryApp.swift */,
+				B10021 /* Config.swift */,
+				B10027 /* Carry.entitlements */,
+				C10004 /* Models */,
+				C10005 /* ViewModels */,
+				C10006 /* Views */,
+				C10007 /* Services */,
+				B10018 /* Assets.xcassets */,
+				B10019 /* Info.plist */,
 			);
 			path = Carry;
 			sourceTree = "<group>";
 		};
-		3A1B2C3D4E5F6A7B8C9D0F6E = {
+		C10003 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				3A1B2C3D4E5F6A7B8C9D0F2E,
+				B10020 /* Carry.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
 		};
-		3A1B2C3D4E5F6A7B8C9D0F7E = {
+		C10004 /* Models */ = {
 			isa = PBXGroup;
 			children = (
-				3A1B2C3D4E5F6A7B8C9D0E2E,
-				3A1B2C3D4E5F6A7B8C9D0E3E,
-				3A1B2C3D4E5F6A7B8C9D0E4E,
-				3A1B2C3D4E5F6A7B8C9D0E5E,
+				B10002 /* Player.swift */,
+				B10003 /* Hole.swift */,
+				B10004 /* SkinResult.swift */,
+				B10005 /* ScoreLabel.swift */,
+				B10006 /* RoundConfig.swift */,
+				B10022 /* SupabaseModels.swift */,
+				B10028 /* TeeBox.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
 		};
-		3A1B2C3D4E5F6A7B8C9D0F8E = {
+		C10005 /* ViewModels */ = {
 			isa = PBXGroup;
 			children = (
-				3A1B2C3D4E5F6A7B8C9D0E6E,
+				B10007 /* RoundViewModel.swift */,
 			);
 			path = ViewModels;
 			sourceTree = "<group>";
 		};
-		3A1B2C3D4E5F6A7B8C9D0F9E = {
+		C10006 /* Views */ = {
 			isa = PBXGroup;
 			children = (
-				3A1B2C3D4E5F6A7B8C9D0E7E,
-				3A1B2C3D4E5F6A7B8C9D0E8E,
-				3A1B2C3D4E5F6A7B8C9D0E9E,
-				3A1B2C3D4E5F6A7B8C9D0EAE,
-				3A1B2C3D4E5F6A7B8C9D0EBE,
-				3A1B2C3D4E5F6A7B8C9D0ECE,
-				3A1B2C3D4E5F6A7B8C9D0EDE,
+				B10008 /* ScorecardView.swift */,
+				B10009 /* HeaderView.swift */,
+				B10010 /* CashGamesBar.swift */,
+				B10011 /* HoleHeaderRow.swift */,
+				B10012 /* PlayerRow.swift */,
+				B10013 /* SkinsRow.swift */,
+				B10014 /* ScoreInputView.swift */,
+				B10015 /* BottomBar.swift */,
+				B10016 /* PlayerAvatar.swift */,
+				B10017 /* SplashShape.swift */,
+				B10026 /* AuthView.swift */,
+				B10029 /* OnboardingView.swift */,
+				B10030 /* GroupManagerView.swift */,
+				B10031 /* RoundCoordinatorView.swift */,
+				B10032 /* HomeView.swift */,
+				B10033 /* MainTabView.swift */,
+				B10034 /* GroupsListView.swift */,
+				B10035 /* ProfileSheetView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
 		};
-		3A1B2C3D4E5F6A7B8C9D0FAE = {
+		C10007 /* Services */ = {
 			isa = PBXGroup;
 			children = (
-				3A1B2C3D4E5F6A7B8C9D0EFE,
-				3A1B2C3D4E5F6A7B8C9D0FCE,
+				B10023 /* SupabaseManager.swift */,
+				B10024 /* AuthService.swift */,
+				B10025 /* RoundService.swift */,
 			);
-			path = "Preview Content";
-			sourceTree = "<group>";
-		};
-		3A1B2C3D4E5F6A7B8C9D0FBE = {
-			isa = PBXGroup;
-			children = (
-			);
-			path = "Preview Content";
-			sourceTree = "<group>";
-		};
-		3A1B2C3D4E5F6A7B8C9D0FCE = {
-			isa = PBXGroup;
-			children = (
-				3A1B2C3D4E5F6A7B8C9D0F1E,
-			);
-			path = "Preview Assets.xcassets";
+			path = Services;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		3A1B2C3D4E5F6A7B8C9D0FDD /* Carry */ = {
+		D10001 /* Carry */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 3A1B2C3D4E5F6A7B8C9D0FED;
+			buildConfigurationList = E10001 /* Build configuration list for PBXNativeTarget "Carry" */;
 			buildPhases = (
-				3A1B2C3D4E5F6A7B8C9D0FFD,
-				3A1B2C3D4E5F6A7B8C9D100D,
+				D10002 /* Sources */,
+				D10004 /* Frameworks */,
+				D10003 /* Resources */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 			);
 			name = Carry;
+			packageProductDependencies = (
+				P10002 /* Supabase */,
+			);
 			productName = Carry;
-			productReference = 3A1B2C3D4E5F6A7B8C9D0F2E;
+			productReference = B10020 /* Carry.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
-		3A1B2C3D4E5F6A7B8C9D0F4E /* Project object */ = {
+		F10001 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 1500;
 				LastUpgradeCheck = 1500;
 				TargetAttributes = {
-					3A1B2C3D4E5F6A7B8C9D0FDD = {
+					D10001 = {
 						CreatedOnToolsVersion = 15.0;
-						DevelopmentTeam = "";
 					};
 				};
 			};
-			buildConfigurationList = 3A1B2C3D4E5F6A7B8C9D101D;
+			buildConfigurationList = E10002 /* Build configuration list for PBXProject "Carry" */;
 			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -176,64 +227,85 @@
 				en,
 				Base,
 			);
-			mainGroup = 3A1B2C3D4E5F6A7B8C9D0F4E;
-			productRefGroup = 3A1B2C3D4E5F6A7B8C9D0F6E;
+			mainGroup = C10001;
+			packageReferences = (
+				P10001 /* XCRemoteSwiftPackageReference "supabase-swift" */,
+			);
+			productRefGroup = C10003 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				3A1B2C3D4E5F6A7B8C9D0FDD,
+				D10001 /* Carry */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		3A1B2C3D4E5F6A7B8C9D100D /* Resources */ = {
+		D10003 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				3A1B2C3D4E5F6A7B8C9D0EFF,
-				3A1B2C3D4E5F6A7B8C9D0F1F,
+				A10018 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		3A1B2C3D4E5F6A7B8C9D0FFD /* Sources */ = {
+		D10002 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				3A1B2C3D4E5F6A7B8C9D0E1F,
-				3A1B2C3D4E5F6A7B8C9D0E2F,
-				3A1B2C3D4E5F6A7B8C9D0E3F,
-				3A1B2C3D4E5F6A7B8C9D0E4F,
-				3A1B2C3D4E5F6A7B8C9D0E5F,
-				3A1B2C3D4E5F6A7B8C9D0E6F,
-				3A1B2C3D4E5F6A7B8C9D0E7F,
-				3A1B2C3D4E5F6A7B8C9D0E8F,
-				3A1B2C3D4E5F6A7B8C9D0E9F,
-				3A1B2C3D4E5F6A7B8C9D0EAF,
-				3A1B2C3D4E5F6A7B8C9D0EBF,
-				3A1B2C3D4E5F6A7B8C9D0ECF,
-				3A1B2C3D4E5F6A7B8C9D0EDF,
+				A10001 /* CarryApp.swift in Sources */,
+				A10019 /* Config.swift in Sources */,
+				A10002 /* Player.swift in Sources */,
+				A10003 /* Hole.swift in Sources */,
+				A10004 /* SkinResult.swift in Sources */,
+				A10005 /* ScoreLabel.swift in Sources */,
+				A10006 /* RoundConfig.swift in Sources */,
+				A10020 /* SupabaseModels.swift in Sources */,
+				A10007 /* RoundViewModel.swift in Sources */,
+				A10021 /* SupabaseManager.swift in Sources */,
+				A10022 /* AuthService.swift in Sources */,
+				A10023 /* RoundService.swift in Sources */,
+				A10008 /* ScorecardView.swift in Sources */,
+				A10009 /* HeaderView.swift in Sources */,
+				A10010 /* CashGamesBar.swift in Sources */,
+				A10011 /* HoleHeaderRow.swift in Sources */,
+				A10012 /* PlayerRow.swift in Sources */,
+				A10013 /* SkinsRow.swift in Sources */,
+				A10014 /* ScoreInputView.swift in Sources */,
+				A10015 /* BottomBar.swift in Sources */,
+				A10016 /* PlayerAvatar.swift in Sources */,
+				A10017 /* SplashShape.swift in Sources */,
+				A10024 /* AuthView.swift in Sources */,
+				A10026 /* TeeBox.swift in Sources */,
+				A10027 /* OnboardingView.swift in Sources */,
+				A10028 /* GroupManagerView.swift in Sources */,
+				A10031 /* RoundCoordinatorView.swift in Sources */,
+				A10032 /* HomeView.swift in Sources */,
+				A10033 /* MainTabView.swift in Sources */,
+				A10034 /* GroupsListView.swift in Sources */,
+				A10035 /* ProfileSheetView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
-		3A1B2C3D4E5F6A7B8C9D0FED /* Debug */ = {
+		G10001 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_ENTITLEMENTS = Carry/Carry.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 4HC6HD76J4;
 				INFOPLIST_FILE = Carry/Info.plist;
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -245,23 +317,24 @@
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = iphoneos;
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.9;
-				TARGETED_DEVICE_FAMILY = 1;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
 		};
-		3A1B2C3D4E5F6A7B8C9D102D /* Release */ = {
+		G10002 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_ENTITLEMENTS = Carry/Carry.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 4HC6HD76J4;
 				INFOPLIST_FILE = Carry/Info.plist;
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -273,13 +346,13 @@
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = iphoneos;
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.9;
-				TARGETED_DEVICE_FAMILY = 1;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
 				VALIDATE_PRODUCT = YES;
 			};
 			name = Release;
 		};
-		3A1B2C3D4E5F6A7B8C9D103D /* Debug */ = {
+		G10003 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -309,7 +382,6 @@
 				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
 				CLANG_WARN_STRICT_PROTOTYPES = YES;
 				CLANG_WARN_SUSPICIOUS_MOVE = YES;
-				CLANG_WARN_SUSPICIOUS_MOVES = YES;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
@@ -327,9 +399,6 @@
 				);
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
 				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
-				GCC_WARN_ABOUT_UNINITIALIZED_VARIABLES = YES;
-				GCC_WARN_SHADOW = YES;
-				GCC_WARN_SIGN_COMPARE = YES;
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
@@ -337,12 +406,12 @@
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) DEBUG";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
 			name = Debug;
 		};
-		3A1B2C3D4E5F6A7B8C9D104D /* Release */ = {
+		G10004 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -372,22 +441,17 @@
 				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
 				CLANG_WARN_STRICT_PROTOTYPES = YES;
 				CLANG_WARN_SUSPICIOUS_MOVE = YES;
-				CLANG_WARN_SUSPICIOUS_MOVES = YES;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
-				COPY_PHASE_STRIP = YES;
+				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_DIALECT = gnu17;
 				GCC_NO_COMMON_BLOCKS = YES;
-				GCC_OPTIMIZATION_LEVEL = s;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
 				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
-				GCC_WARN_ABOUT_UNINITIALIZED_VARIABLES = YES;
-				GCC_WARN_SHADOW = YES;
-				GCC_WARN_SIGN_COMPARE = YES;
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
@@ -395,33 +459,50 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
-				SWIFT_OPTIMIZATION_LEVEL = "-O";
 			};
 			name = Release;
 		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		3A1B2C3D4E5F6A7B8C9D0FED /* Build configuration list for PBXNativeTarget "Carry" */ = {
+		E10001 /* Build configuration list for PBXNativeTarget "Carry" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				3A1B2C3D4E5F6A7B8C9D0FED,
-				3A1B2C3D4E5F6A7B8C9D102D,
+				G10001 /* Debug */,
+				G10002 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Debug;
+			defaultConfigurationName = Release;
 		};
-		3A1B2C3D4E5F6A7B8C9D101D /* Build configuration list for PBXProject "Carry" */ = {
+		E10002 /* Build configuration list for PBXProject "Carry" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				3A1B2C3D4E5F6A7B8C9D103D,
-				3A1B2C3D4E5F6A7B8C9D104D,
+				G10003 /* Debug */,
+				G10004 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Debug;
+			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		P10001 /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/supabase/supabase-swift.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		P10002 /* Supabase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = P10001 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Supabase;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
-	rootObject = 3A1B2C3D4E5F6A7B8C9D0F4E /* Project object */;
+	rootObject = F10001 /* Project object */;
 }

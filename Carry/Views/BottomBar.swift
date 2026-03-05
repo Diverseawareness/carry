@@ -1,28 +1,41 @@
 import SwiftUI
 
 struct BottomBar: View {
-    let hole: Hole
+    let activeHole: Int?
+    let holes: [Hole]
     let onTap: () -> Void
 
+    private var activeHoleData: Hole? {
+        guard let num = activeHole else { return nil }
+        return holes.first(where: { $0.num == num })
+    }
+
     var body: some View {
-        Button(action: onTap) {
-            Text("Hole \(hole.num) · Par \(hole.par)")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundColor(Color(hex: "1A1A1A"))
+        if let hole = activeHoleData {
+            Button(action: onTap) {
+                HStack(spacing: 6) {
+                    Text("Hole \(hole.num)")
+                        .font(.system(size: 15, weight: .semibold))
+                    Text("·")
+                        .foregroundColor(Color(hex: "#CCCCCC"))
+                    Text("Par \(hole.par)")
+                        .font(.system(size: 15, weight: .regular))
+                        .foregroundColor(Color(hex: "#888888"))
+                }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
+                .padding(.vertical, 14)
                 .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color(hex: "FAFAFA"))
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(Color(hex: "#FAFAFA"))
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color(hex: "EBEBEB"), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 14)
+                        .strokeBorder(Color(hex: "#EEEEEE"), lineWidth: 1)
                 )
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 8)
         }
-        .buttonStyle(.plain)
-        .padding(.horizontal, 16)
-        .padding(.bottom, 8)
-        .frame(height: 56)
     }
 }
