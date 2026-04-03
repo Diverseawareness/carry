@@ -1,29 +1,128 @@
 import SwiftUI
 
 struct RoundCoordinatorView: View {
+    @EnvironmentObject var authService: AuthService
+
     let initialMembers: [Player]
     let currentUserId: Int
+    let creatorId: Int
+    var groupId: UUID? = nil  // Supabase group ID for linking rounds
     var onExit: (() -> Void)?
+    var onLeaveGroup: (() -> Void)?
+    var onDeleteGroup: (() -> Void)?
+    var onCreateGroup: (() -> Void)?
+    var startInActiveMode: Bool
+    var skipCourseSelection: Bool
+    var preselectedCourse: SelectedCourse?
+    var onCourseSelected: ((SelectedCourse) -> Void)?
+    var onTeeTimeChanged: ((Date?) -> Void)?
+    var onRecurrenceChanged: ((GameRecurrence?) -> Void)?
+    var initialTeeTime: Date?
+    var initialTeeTimes: [Date?]? = nil
+    var initialRecurrence: GameRecurrence? = nil
+    var initialBuyIn: Double
+    var initialRoundConfig: RoundConfig?
+    var initialDemoMode: RoundViewModel.DemoMode
+    var roundHistory: [HomeRound]
+    var isViewer: Bool = false
+    var scheduledLabel: String? = nil
+    var isQuickGame: Bool = false
+    var showInviteCrewOnAppear: Bool = false
+    var onGroupRefreshed: ((SavedGroup) -> Void)?
 
     enum Phase: Equatable {
+        case courseSelection
         case setup
         case starting
         case active
     }
 
-    init(initialMembers: [Player] = Player.allPlayers, groupName: String = "Friday Meetings", currentUserId: Int = 1, onExit: (() -> Void)? = nil) {
+    init(
+        initialMembers: [Player] = Player.allPlayers,
+        groupName: String = "The Friday Skins",
+        currentUserId: Int = 1,
+        creatorId: Int = 1,
+        groupId: UUID? = nil,
+        startInActiveMode: Bool = false,
+        preselectedCourse: SelectedCourse? = nil,
+        skipCourseSelection: Bool = false,
+        onCourseSelected: ((SelectedCourse) -> Void)? = nil,
+        onTeeTimeChanged: ((Date?) -> Void)? = nil,
+        onRecurrenceChanged: ((GameRecurrence?) -> Void)? = nil,
+        initialTeeTime: Date? = nil,
+        initialTeeTimes: [Date?]? = nil,
+        initialRecurrence: GameRecurrence? = nil,
+        initialBuyIn: Double = 0,
+        initialRoundConfig: RoundConfig? = nil,
+        initialDemoMode: RoundViewModel.DemoMode = .none,
+        roundHistory: [HomeRound] = [],
+        onExit: (() -> Void)? = nil,
+        onLeaveGroup: (() -> Void)? = nil,
+        onDeleteGroup: (() -> Void)? = nil,
+        isViewer: Bool = false,
+        scheduledLabel: String? = nil,
+        isQuickGame: Bool = false,
+        showInviteCrewOnAppear: Bool = false,
+        onGroupRefreshed: ((SavedGroup) -> Void)? = nil,
+        onCreateGroup: (() -> Void)? = nil
+    ) {
         self.initialMembers = initialMembers
         self._groupName = State(initialValue: groupName)
         self.currentUserId = currentUserId
+        self.creatorId = creatorId
+        self.groupId = groupId
+        self.startInActiveMode = startInActiveMode
+        self.preselectedCourse = preselectedCourse
+        self.skipCourseSelection = skipCourseSelection
+        self.onCourseSelected = onCourseSelected
+        self.onTeeTimeChanged = onTeeTimeChanged
+        self.onRecurrenceChanged = onRecurrenceChanged
+        self.initialTeeTime = initialTeeTime
+        self.initialTeeTimes = initialTeeTimes
+        self.initialRecurrence = initialRecurrence
+        self.initialBuyIn = initialBuyIn
+        self.initialRoundConfig = initialRoundConfig
+        self.initialDemoMode = initialDemoMode
+        self.roundHistory = roundHistory
         self.onExit = onExit
+        self.onLeaveGroup = onLeaveGroup
+        self.onDeleteGroup = onDeleteGroup
+        self.isViewer = isViewer
+        self.scheduledLabel = scheduledLabel
+        self.isQuickGame = isQuickGame
+        self.showInviteCrewOnAppear = showInviteCrewOnAppear
+        self.onGroupRefreshed = onGroupRefreshed
+        self.onCreateGroup = onCreateGroup
+        // Determine starting phase and initial course
+        self._selectedCourse = State(initialValue: preselectedCourse)
+        if initialRoundConfig != nil {
+            // Active round exists — start directly in scorecard with pre-built config
+            self._phase = State(initialValue: .active)
+            self._hasStartedRound = State(initialValue: true)
+            self._roundConfig = State(initialValue: initialRoundConfig)
+        } else if startInActiveMode {
+            self._phase = State(initialValue: .active)
+            self._hasStartedRound = State(initialValue: true)
+        } else if skipCourseSelection {
+            self._phase = State(initialValue: .setup)
+        } else {
+            self._phase = State(initialValue: .courseSelection)
+        }
     }
 
-    @State private var phase: Phase = .setup
+    @State private var phase: Phase
     @State private var roundConfig: RoundConfig?
+    @State private var roundCreationTask: Task<Void, Never>?
     @State private var groups: [[Player]] = []
     @State private var startingSides: [String] = []
-    @State private var groupName: String = "Friday Meetings"
+    @State private var groupName: String = "The Friday Skins"
     @State private var showSplashLeaderboard = false
+
+    // Course selection state
+    @State private var selectedCourse: SelectedCourse?
+
+    // Track whether a round has been started (to distinguish setup vs returning from scorecard)
+    @State private var hasStartedRound = false
 
     // Splash animation states
     @State private var showFlag = false
@@ -34,33 +133,105 @@ struct RoundCoordinatorView: View {
 
     var body: some View {
         ZStack {
+            if initialMembers.isEmpty {
+                // Safety: don't render if no members (prevents index-out-of-range in GroupManagerView)
+                Color.clear
+            } else {
             switch phase {
+            case .courseSelection:
+                CourseSelectionView(onBack: onExit) { course in
+                    self.selectedCourse = course
+                    self.onCourseSelected?(course)
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        phase = .setup
+                    }
+                }
+                .transition(.opacity)
+
             case .setup:
-                GroupManagerView(allMembers: initialMembers, onBack: onExit) { config in
-                    self.roundConfig = config
+                GroupManagerView(allMembers: initialMembers, selectedCourse: selectedCourse, onCourseChanged: { course in
+                    self.selectedCourse = course
+                    self.onCourseSelected?(course)
+                }, onTeeTimeChanged: onTeeTimeChanged, onRecurrenceChanged: onRecurrenceChanged, initialTeeTime: initialTeeTime, initialTeeTimes: initialTeeTimes, initialBuyIn: initialBuyIn, initialRecurrence: initialRecurrence, groupName: groupName, currentUserId: currentUserId, creatorId: creatorId, isLiveRound: hasStartedRound, roundHistory: roundHistory, onLeaveGroup: onLeaveGroup, onDeleteGroup: onDeleteGroup, scheduledLabel: scheduledLabel, onBack: {
+                    if hasStartedRound {
+                        // Return to scorecard without rebuilding config
+                        withAnimation(.spring(response: 0.45, dampingFraction: 0.9)) {
+                            phase = .active
+                        }
+                    } else if skipCourseSelection {
+                        // Came from Skin Games tab — just exit
+                        onExit?()
+                    } else {
+                        // Go back to course selection
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            phase = .courseSelection
+                        }
+                    }
+                }, supabaseGroupId: groupId, isQuickGame: isQuickGame, showInviteCrewOnAppear: showInviteCrewOnAppear, onGroupRefreshed: onGroupRefreshed) { config in
+                    var mutableConfig = config
+                    mutableConfig.supabaseGroupId = self.groupId
                     self.groups = config.groups.map { gc in
-                        gc.playerIDs.compactMap { pid in Player.allPlayers.first(where: { $0.id == pid }) }
+                        gc.playerIDs.compactMap { pid in config.players.first(where: { $0.id == pid }) }
                     }
                     self.startingSides = config.groups.map(\.startingSide)
-                    withAnimation(.easeInOut(duration: 0.4)) {
-                        phase = .starting
-                    }
-                    // Stagger the splash animations
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                        withAnimation(.spring(response: 0.6, dampingFraction: 0.7)) { showFlag = true }
-                    }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                        withAnimation(.easeOut(duration: 0.4)) { showTitle = true }
-                    }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-                        withAnimation(.easeOut(duration: 0.4)) { showDetails = true }
-                    }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-                        withAnimation(.easeOut(duration: 0.4)) { showStats = true }
-                    }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                        withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
-                            pulseFlag = true
+
+                    if hasStartedRound {
+                        // Returning from settings during live round — preserve supabaseRoundId.
+                        // If roundConfig is nil (round creation still in flight), don't overwrite —
+                        // let createSupabaseRound set it with the round ID when it completes.
+                        if self.roundConfig != nil {
+                            mutableConfig.supabaseRoundId = self.roundConfig?.supabaseRoundId
+                            self.roundConfig = mutableConfig
+                        }
+                        withAnimation(.spring(response: 0.45, dampingFraction: 0.9)) {
+                            phase = .active
+                        }
+                    } else {
+                        hasStartedRound = true
+
+                        // Create round in Supabase during splash — ONLY if creator starting a new round.
+                        // Non-creator "Join Round" already has supabaseRoundId; if their fetch failed,
+                        // they should NOT create a duplicate round.
+                        let isCreator = currentUserId == creatorId
+                        #if DEBUG
+                        print("[RoundCoordinator] currentUserId=\(currentUserId) creatorId=\(creatorId) isCreator=\(isCreator) hasRoundId=\(mutableConfig.supabaseRoundId != nil)")
+                        #endif
+                        if mutableConfig.supabaseRoundId == nil,
+                           isCreator,
+                           authService.isAuthenticated,
+                           let userId = authService.currentUser?.id {
+                            roundCreationTask = Task {
+                                await self.createSupabaseRound(config: mutableConfig, userId: userId)
+                            }
+                        } else {
+                            // Non-creator, already has roundId, or unauthenticated — set config as-is
+                            self.roundConfig = mutableConfig
+                        }
+
+                        NotificationService.shared.notifyGameStarted(
+                            groupName: mutableConfig.groupName,
+                            courseName: mutableConfig.course
+                        )
+                        withAnimation(.easeInOut(duration: 0.4)) {
+                            phase = .starting
+                        }
+                        // Stagger the splash animations
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                            withAnimation(.spring(response: 0.6, dampingFraction: 0.7)) { showFlag = true }
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                            withAnimation(.easeOut(duration: 0.4)) { showTitle = true }
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                            withAnimation(.easeOut(duration: 0.4)) { showDetails = true }
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                            withAnimation(.easeOut(duration: 0.4)) { showStats = true }
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                            withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
+                                pulseFlag = true
+                            }
                         }
                     }
                 }
@@ -71,28 +242,155 @@ struct RoundCoordinatorView: View {
                     .transition(.opacity)
 
             case .active:
-                ScorecardView(config: roundConfig ?? .default, onBack: {
-                    let config = roundConfig ?? .default
-                    switch config.role(for: currentUserId) {
-                    case .creator:
-                        // Creator goes back to Group Manager
-                        showFlag = false
-                        showTitle = false
-                        showDetails = false
-                        showStats = false
-                        pulseFlag = false
-                        withAnimation(.easeInOut(duration: 0.3)) {
-                            phase = .setup
-                        }
-                    case .participant:
-                        // Participant exits round to Home
-                        onExit?()
+                if let activeConfig = roundConfig {
+                ScorecardView(config: activeConfig, onBack: {
+                    // Only mark as completed if the round is actually done (all groups finished)
+                    // Mid-round exits keep the round as "active" so the active card stays
+                    onExit?()
+                }, onEditPlayers: {
+                    // Go back to setup phase to edit players
+                    showFlag = false
+                    showTitle = false
+                    showDetails = false
+                    showStats = false
+                    pulseFlag = false
+                    withAnimation(.spring(response: 0.45, dampingFraction: 0.9)) {
+                        phase = .setup
                     }
-                }, currentUserId: currentUserId)
-                .transition(.move(edge: .trailing).combined(with: .opacity))
+                }, onCourseChanged: { course in
+                    selectedCourse = course
+                    onCourseSelected?(course)
+                }, onCreateGroup: {
+                    // Creator wants to convert Quick Game to a group — exit to trigger conversion flow
+                    onCreateGroup?()
+                }, onDeclineGroup: {
+                    // Creator declined — just exit
+                }, isQuickGame: isQuickGame, currentUserId: currentUserId, demoMode: initialDemoMode, isViewer: isViewer)
+                .transition(.move(edge: .bottom))
+                } else {
+                    // Round still being created — show spinner until roundConfig is ready
+                    VStack(spacing: 16) {
+                        ProgressView()
+                        Text("Setting up round...")
+                            .font(.carry.bodySM)
+                            .foregroundColor(Color.textSecondary)
+                    }
+                    .onAppear {
+                        // Safety timeout: if round creation hangs, cancel and start offline
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
+                            guard roundConfig == nil else { return }
+                            roundCreationTask?.cancel()
+                            roundCreationTask = nil
+                            ToastManager.shared.error("Couldn't connect — starting offline")
+                            withAnimation { phase = .setup }
+                        }
+                    }
+                }
             }
+            } // end if initialMembers.isEmpty else
         }
         .animation(.easeInOut(duration: 0.4), value: phase)
+    }
+
+    // MARK: - Supabase Round Creation
+
+    private func createSupabaseRound(config: RoundConfig, userId: UUID) async {
+        let roundService = RoundService()
+
+        // 1. Create or find the course in Supabase
+        let courseId: UUID
+        do {
+            let course = try await roundService.createCourse(
+                name: config.course,
+                clubName: nil,
+                holes: config.holes ?? config.teeBox?.holes ?? Hole.allHoles,
+                userId: userId
+            )
+            courseId = course.id
+        } catch {
+            guard !Task.isCancelled else { return }
+            #if DEBUG
+            print("[RoundCoordinator] Failed to create course: \(error)")
+            #endif
+            await MainActor.run {
+                self.roundConfig = config
+                ToastManager.shared.error("Failed to set up course")
+            }
+            return
+        }
+
+        // 2. Save tee box if selected
+        var teeBoxId: UUID? = nil
+        if let teeBox = config.teeBox {
+            do {
+                let teeBoxDTO = try await roundService.createTeeBox(courseId: courseId, teeBox: teeBox)
+                teeBoxId = teeBoxDTO.id
+            } catch {
+                #if DEBUG
+                print("[RoundCoordinator] Failed to save tee box: \(error)")
+                #endif
+                // Non-fatal — continue without tee box
+            }
+        }
+
+        // 3. Map players to Supabase UUIDs with group numbers
+        var playerTuples: [(userId: UUID, group: Int)] = []
+        for gc in config.groups {
+            for playerId in gc.playerIDs {
+                guard let player = config.players.first(where: { $0.id == playerId }),
+                      let profileId = player.profileId else { continue }
+                playerTuples.append((userId: profileId, group: gc.id))
+            }
+        }
+
+        guard !playerTuples.isEmpty else {
+            #if DEBUG
+            print("[RoundCoordinator] No players with Supabase profiles — skipping round creation")
+            #endif
+            await MainActor.run { self.roundConfig = config }
+            return
+        }
+
+        guard !Task.isCancelled else { return }
+
+        // 4. Create the round
+        do {
+            let roundDTO = try await roundService.createRound(
+                courseId: courseId,
+                createdBy: userId,
+                teeBoxId: teeBoxId,
+                buyIn: config.buyIn,
+                net: config.skinRules.net,
+                carries: config.skinRules.carries,
+                outright: config.skinRules.outright,
+                handicapPercentage: config.skinRules.handicapPercentage,
+                groupId: config.supabaseGroupId,
+                scorerId: config.scorerProfileId ?? userId,
+                scoringMode: config.scoringMode.rawValue,
+                players: playerTuples
+            )
+            guard !Task.isCancelled else { return }
+
+            // Set roundConfig WITH the round ID so ScorecardView gets it at init
+            var configWithRoundId = config
+            configWithRoundId.supabaseRoundId = roundDTO.id
+            await MainActor.run {
+                self.roundConfig = configWithRoundId
+            }
+            #if DEBUG
+            print("[RoundCoordinator] Round created in Supabase: \(roundDTO.id)")
+            #endif
+            Analytics.roundStarted(groupName: config.groupName, playerCount: config.players.count, buyIn: config.buyIn, courseName: config.course)
+        } catch {
+            guard !Task.isCancelled else { return }
+            #if DEBUG
+            print("[RoundCoordinator] Failed to create round: \(error)")
+            #endif
+            await MainActor.run {
+                self.roundConfig = config
+                ToastManager.shared.error("Failed to create round")
+            }
+        }
     }
 
     // MARK: - All Players
@@ -108,32 +406,29 @@ struct RoundCoordinatorView: View {
         let groupCount = groups.count
 
         return ZStack {
-            // Background gradient
-            LinearGradient(
-                colors: [Color(hex: "#1A1A1A"), Color(hex: "#2D2D2D")],
-                startPoint: .top,
-                endPoint: .bottom
-            )
+            // Background
+            Color.white
             .ignoresSafeArea()
 
             VStack(spacing: 0) {
+                // Centered content — flag, title, pills
                 Spacer()
 
-                // Flag icon with pulse
+                // Flag icon with pulse — matches Skins Game Complete gold style
                 ZStack {
-                    // Glow ring
+                    // Pulsing outer glow
                     Circle()
-                        .fill(Color(hex: "#C4A450").opacity(0.08))
+                        .fill(Color.gold.opacity(pulseFlag ? 0.15 : 0.0))
                         .frame(width: 120, height: 120)
-                        .scaleEffect(pulseFlag ? 1.15 : 1.0)
+                        .scaleEffect(pulseFlag ? 1.3 : 0.8)
 
                     Circle()
-                        .fill(Color(hex: "#C4A450").opacity(0.15))
-                        .frame(width: 88, height: 88)
+                        .fill(Color.gold.opacity(0.12))
+                        .frame(width: 80, height: 80)
 
                     Image(systemName: "flag.fill")
                         .font(.system(size: 36))
-                        .foregroundColor(Color(hex: "#C4A450"))
+                        .foregroundColor(Color.gold)
                 }
                 .scaleEffect(showFlag ? 1.0 : 0.3)
                 .opacity(showFlag ? 1 : 0)
@@ -142,8 +437,8 @@ struct RoundCoordinatorView: View {
 
                 // "Round Started"
                 Text("Round Started")
-                    .font(.system(size: 32, weight: .bold))
-                    .foregroundColor(.white)
+                    .font(.carry.displaySM)
+                    .foregroundColor(Color.textPrimary)
                     .opacity(showTitle ? 1 : 0)
                     .offset(y: showTitle ? 0 : 12)
 
@@ -151,120 +446,108 @@ struct RoundCoordinatorView: View {
 
                 // Player + group count
                 Text("\(totalPlayers) players \u{00B7} \(groupCount) group\(groupCount == 1 ? "" : "s")")
-                    .font(.system(size: 16))
-                    .foregroundColor(Color.white.opacity(0.5))
+                    .font(.carry.bodyLG)
+                    .foregroundColor(Color.textPrimary.opacity(0.5))
                     .opacity(showDetails ? 1 : 0)
                     .offset(y: showDetails ? 0 : 8)
 
-                Spacer().frame(height: 48)
+                Spacer().frame(height: 24)
 
-                // Stats cards
-                VStack(spacing: 12) {
-                    statCard(
-                        icon: "dollarsign.circle.fill",
-                        title: "$\(roundConfig?.buyIn ?? 50) Buy-in",
-                        subtitle: "Net Skins \u{00B7} \(roundConfig?.skinRules.carries == true ? "Carries" : "No Carries")"
-                    )
+                // Player pills (max 14 visible, "+X players" overflow)
+                let maxVisible = 14
+                let visiblePlayers = Array(allPlayers.prefix(maxVisible))
+                let overflow = allPlayers.count - maxVisible
 
-                    statCard(
-                        icon: "person.3.fill",
-                        title: "\(groupCount) Group\(groupCount == 1 ? "" : "s") Ready",
-                        subtitle: "All players notified"
-                    )
-
-                    // Leaderboard card — tappable
-                    Button {
-                        showSplashLeaderboard = true
-                    } label: {
-                        HStack(spacing: 14) {
-                            Image(systemName: "chart.bar.fill")
-                                .font(.system(size: 20))
-                                .foregroundColor(Color(hex: "#C4A450"))
-                                .frame(width: 36)
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Leaderboard")
-                                    .font(.system(size: 15, weight: .semibold))
-                                    .foregroundColor(.white)
-                                Text("All-time standings")
-                                    .font(.system(size: 12))
-                                    .foregroundColor(Color.white.opacity(0.4))
-                            }
-
+                let columns = [
+                    GridItem(.adaptive(minimum: 150), spacing: 10)
+                ]
+                LazyVGrid(columns: columns, spacing: 10) {
+                    ForEach(visiblePlayers) { player in
+                        HStack(spacing: 8) {
+                            PlayerAvatar(player: player, size: 32)
+                            Text(player.shortName)
+                                .font(.carry.body)
+                                .foregroundColor(Color.textPrimary)
+                                .lineLimit(1)
                             Spacer()
-
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundColor(Color.white.opacity(0.2))
+                            Text("$0")
+                                .font(.carry.bodySemibold)
+                                .monospacedDigit()
+                                .foregroundColor(Color.textSecondary)
                         }
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 14)
+                        .padding(.leading, 6)
+                        .padding(.trailing, 14)
+                        .padding(.vertical, 6)
                         .background(
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(Color.white.opacity(0.06))
+                            Capsule()
+                                .fill(Color.bgSecondary)
                         )
                         .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+                            Capsule()
+                                .strokeBorder(Color(hexString: "#E8E8E8"), lineWidth: 1)
                         )
                     }
-                    .buttonStyle(.plain)
                 }
-                .padding(.horizontal, 40)
+                .padding(.horizontal, 24)
                 .opacity(showStats ? 1 : 0)
                 .offset(y: showStats ? 0 : 16)
 
+                if overflow > 0 {
+                    Text("+\(overflow) players")
+                        .font(.carry.bodySemibold)
+                        .foregroundColor(Color.textSecondary)
+                        .padding(.top, 8)
+                        .opacity(showStats ? 1 : 0)
+                }
+
                 Spacer()
 
-                // "Go to Scorecard" button
-                Button {
-                    withAnimation(.easeInOut(duration: 0.4)) {
-                        phase = .active
-                    }
-                } label: {
-                    HStack(spacing: 8) {
+                // "Go to Scorecard" button — pinned at bottom
+                VStack(spacing: 0) {
+                    Button {
+                        withAnimation(.spring(response: 0.45, dampingFraction: 0.9)) {
+                            phase = .active
+                        }
+                    } label: {
                         Text("Go to Scorecard")
-                            .font(.system(size: 17, weight: .semibold))
-                        Image(systemName: "arrow.right")
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.carry.headline)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 52)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(Color.textPrimary)
+                            )
                     }
-                    .foregroundColor(Color(hex: "#1A1A1A"))
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 52)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(Color(hex: "#C4A450"))
-                    )
+
+                    // Back to groups
+                    Button {
+                        showFlag = false
+                        showTitle = false
+                        showDetails = false
+                        showStats = false
+                        pulseFlag = false
+                        withAnimation(.spring(response: 0.45, dampingFraction: 0.9)) {
+                            phase = .setup
+                        }
+                    } label: {
+                        Text("Back to Groups")
+                            .font(.carry.bodySM)
+                            .foregroundColor(Color.textPrimary.opacity(0.4))
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 52)
+                    }
                 }
                 .padding(.horizontal, 40)
+                .padding(.bottom, 18)
                 .opacity(showStats ? 1 : 0)
-
-                Spacer().frame(height: 16)
-
-                // Back to groups link
-                Button {
-                    showFlag = false
-                    showTitle = false
-                    showDetails = false
-                    showStats = false
-                    pulseFlag = false
-                    withAnimation(.easeInOut(duration: 0.3)) {
-                        phase = .setup
-                    }
-                } label: {
-                    Text("Back to Groups")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(Color.white.opacity(0.4))
-                }
-                .opacity(showStats ? 1 : 0)
-
-                Spacer().frame(height: 40)
             }
         }
         .sheet(isPresented: $showSplashLeaderboard) {
             splashLeaderboardSheet
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
+                .presentationBackground(.white)
         }
     }
 
@@ -276,68 +559,67 @@ struct RoundCoordinatorView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Leaderboard")
-                        .font(.system(size: 20, weight: .bold))
-                        .foregroundColor(Color(hex: "#1A1A1A"))
+                        .font(Font.system(size: 24, weight: .bold))
+                        .foregroundColor(Color.textPrimary)
                     Text(groupName)
-                        .font(.system(size: 13))
-                        .foregroundColor(Color(hex: "#999999"))
+                        .font(Font.system(size: 16, weight: .medium))
+                        .foregroundColor(Color.textSecondary)
                 }
                 Spacer()
                 Image(systemName: "chart.bar.fill")
-                    .font(.system(size: 18))
-                    .foregroundColor(Color(hex: "#C4A450"))
+                    .font(Font.system(size: 22, weight: .medium))
+                    .foregroundColor(Color.goldMuted)
             }
             .padding(.horizontal, 24)
-            .padding(.top, 28)
-            .padding(.bottom, 20)
+            .padding(.top, 34)
+            .padding(.bottom, 24)
 
             // Season label
             HStack {
                 Text("ALL TIME")
-                    .font(.system(size: 11, weight: .semibold))
-                    .tracking(1.5)
-                    .foregroundColor(Color(hex: "#BBBBBB"))
+                    .font(.carry.micro)
+                    .tracking(CarryTracking.wider)
+                    .foregroundColor(Color.borderSoft)
                 Spacer()
             }
             .padding(.horizontal, 24)
-            .padding(.bottom, 12)
+            .padding(.bottom, 14)
 
             // Column headers
             HStack(spacing: 0) {
-                Text("")
-                    .frame(width: 28)
                 Text("Player")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(Color(hex: "#999999"))
+                    .font(Font.system(size: 13, weight: .semibold))
+                    .foregroundColor(Color.textSecondary)
                 Spacer()
                 Text("Skins")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(Color(hex: "#999999"))
-                    .frame(width: 50, alignment: .center)
+                    .font(Font.system(size: 13, weight: .semibold))
+                    .foregroundColor(Color.textSecondary)
+                    .frame(width: 60, alignment: .center)
                 Text("Net")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(Color(hex: "#999999"))
-                    .frame(width: 60, alignment: .trailing)
+                    .font(Font.system(size: 13, weight: .semibold))
+                    .foregroundColor(Color.textSecondary)
+                    .frame(width: 72, alignment: .trailing)
             }
             .padding(.horizontal, 24)
-            .padding(.bottom, 8)
+            .padding(.bottom, 10)
 
             Rectangle()
-                .fill(Color(hex: "#F0F0F0"))
+                .fill(Color.bgPrimary)
                 .frame(height: 1)
                 .padding(.horizontal, 24)
 
             // Player rows
             ScrollView {
                 VStack(spacing: 0) {
-                    ForEach(Array(allPlayers.enumerated()), id: \.element.id) { rank, player in
-                        leaderboardRow(rank: rank + 1, player: player)
+                    ForEach(Array(allPlayers.enumerated()), id: \.element.id) { idx, player in
+                        leaderboardRow(player: player)
 
-                        if rank < allPlayers.count - 1 {
+                        if idx < allPlayers.count - 1 {
                             Rectangle()
-                                .fill(Color(hex: "#F5F5F5"))
+                                .fill(Color.borderFaint)
                                 .frame(height: 1)
-                                .padding(.leading, 68)
+                                .frame(height: 1)
+                                .padding(.leading, 82)
                                 .padding(.trailing, 24)
                         }
                     }
@@ -346,58 +628,48 @@ struct RoundCoordinatorView: View {
 
             Spacer()
 
-            // Empty state
-            VStack(spacing: 8) {
-                Text("No rounds played yet")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(Color(hex: "#999999"))
-                Text("Stats will appear here after your first round.")
-                    .font(.system(size: 12))
-                    .foregroundColor(Color(hex: "#CCCCCC"))
+            // Empty state (only when no players)
+            if allPlayers.isEmpty {
+                VStack(spacing: 8) {
+                    Text("No rounds played yet")
+                        .font(Font.system(size: 17, weight: .medium))
+                        .foregroundColor(Color.textSecondary)
+                    Text("Stats will appear here after your first round.")
+                        .font(Font.system(size: 14, weight: .medium))
+                        .foregroundColor(Color.borderMedium)
+                }
+                .padding(.bottom, 32)
             }
-            .padding(.bottom, 32)
         }
     }
 
     // MARK: - Leaderboard Row
 
-    private func leaderboardRow(rank: Int, player: Player) -> some View {
-        HStack(spacing: 10) {
-            Text("\(rank)")
-                .font(.system(size: 13, weight: rank <= 3 ? .bold : .regular))
-                .foregroundColor(rank <= 3 ? Color(hex: "#C4A450") : Color(hex: "#BBBBBB"))
-                .frame(width: 22, alignment: .center)
-
-            ZStack {
-                Circle()
-                    .fill(Color(hex: player.color).opacity(0.09))
-                Circle()
-                    .strokeBorder(Color(hex: player.color).opacity(0.25), lineWidth: 1.5)
-                Text(player.avatar)
-                    .font(.system(size: 14))
-            }
-            .frame(width: 32, height: 32)
+    private func leaderboardRow(player: Player) -> some View {
+        HStack(spacing: 12) {
+            PlayerAvatar(player: player, size: 38)
 
             VStack(alignment: .leading, spacing: 1) {
-                Text(player.name)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(Color(hex: "#1A1A1A"))
-                Text("HCP \(String(format: "%.1f", player.handicap))")
-                    .font(.system(size: 10))
-                    .foregroundColor(Color(hex: "#CCCCCC"))
+                Text(player.shortName)
+                    .font(Font.system(size: 17, weight: .semibold))
+                    .foregroundColor(Color.textPrimary)
+                    .lineLimit(1)
+                Text(formatHandicap(player.handicap))
+                    .font(Font.system(size: 12, weight: .semibold))
+                    .foregroundColor(Color.borderMedium)
             }
 
             Spacer()
 
             Text("0")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundColor(Color(hex: "#BBBBBB"))
-                .frame(width: 50, alignment: .center)
+                .font(Font.system(size: 17, weight: .medium))
+                .foregroundColor(Color.borderSoft)
+                .frame(width: 60, alignment: .center)
 
             Text("$0")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundColor(Color(hex: "#BBBBBB"))
-                .frame(width: 60, alignment: .trailing)
+                .font(Font.system(size: 17, weight: .medium))
+                .foregroundColor(Color.borderSoft)
+                .frame(width: 72, alignment: .trailing)
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 10)
@@ -409,16 +681,16 @@ struct RoundCoordinatorView: View {
         HStack(spacing: 14) {
             Image(systemName: icon)
                 .font(.system(size: 20))
-                .foregroundColor(Color(hex: "#C4A450"))
+                .foregroundColor(Color.textPrimary)
                 .frame(width: 36)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(.white)
+                    .font(.carry.bodySemibold)
+                    .foregroundColor(Color.textPrimary)
                 Text(subtitle)
-                    .font(.system(size: 12))
-                    .foregroundColor(Color.white.opacity(0.4))
+                    .font(.carry.caption)
+                    .foregroundColor(Color.textPrimary.opacity(0.4))
             }
 
             Spacer()
@@ -427,11 +699,11 @@ struct RoundCoordinatorView: View {
         .padding(.vertical, 14)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(Color.white.opacity(0.06))
+                .fill(Color.bgSecondary)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+                .strokeBorder(Color.bgLight, lineWidth: 1)
         )
     }
 }

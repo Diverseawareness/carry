@@ -26,14 +26,46 @@
 		<false/>
 	</dict>
 	<key>UILaunchScreen</key>
-	<dict/>
+	<dict>
+		<key>UIColorName</key>
+		<string>LaunchScreenBackground</string>
+		<key>UIImageName</key>
+		<string>carry-glyph</string>
+	</dict>
 	<key>UIRequiredDeviceCapabilities</key>
 	<array>
 		<string>arm64</string>
 	</array>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Carry uses your photo library to set your profile picture.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Carry uses your camera to take a profile photo.</string>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+	<key>UIRequiresFullScreen</key>
+	<true/>
+	<key>UIAppFonts</key>
+	<array>
+		<string>ANDONESI.ttf</string>
+	</array>
+	<key>GolfCourseAPIKey</key>
+	<string>$(GOLF_COURSE_API_KEY)</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>NSUserNotificationsUsageDescription</key>
+	<string>Carry sends tee time reminders and alerts when your skins game goes live.</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.diverseawareness.carry</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>carry</string>
+			</array>
+		</dict>
 	</array>
 </dict>
 </plist>

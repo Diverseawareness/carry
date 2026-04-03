@@ -1,203 +1,467 @@
 import SwiftUI
+import PhotosUI
+import StoreKit
 
 struct ProfileView: View {
     @EnvironmentObject var authService: AuthService
+    @EnvironmentObject var storeService: StoreService
+    @Binding var skinGameGroups: [SavedGroup]
     @State private var showSignOutConfirm = false
     @State private var showHandicapPicker = false
     @State private var showEditProfile = false
     @State private var showGhinEdit = false
     @State private var showNotifications = false
+    @State private var showClubEdit = false
+    @State private var showPaywall = false
+    @State private var showPhotoPicker = false
+    @State private var showPhotoOptions = false
+    @State private var showCamera = false
+    @State private var photoItem: PhotosPickerItem? = nil
+    @State private var profileImage: UIImage? = nil
     @State private var pickerWhole: Int = 0
     @State private var pickerDecimal: Int = 0
+    @State private var profileError: String?
+    @State private var showProfileError = false
+    @State private var imageToCrop: UIImage? = nil
+    @State private var showShareSheet = false
+    @State private var showDeleteConfirm = false
 
-    private var displayName: String { authService.currentUser?.displayName ?? "Player" }
-    private var avatar: String { authService.currentUser?.avatar ?? "🏌️" }
-    private var color: String { authService.currentUser?.color ?? "#D4A017" }
+    private var fullName: String {
+        let first = authService.currentUser?.firstName ?? ""
+        let last = authService.currentUser?.lastName ?? ""
+        let combined = [first, last].filter { !$0.isEmpty }.joined(separator: " ")
+        return combined.isEmpty ? (authService.currentUser?.displayName ?? "Player") : combined
+    }
+    private var initials: String { authService.currentUser?.initials ?? "P" }
     private var handicap: Double { authService.currentUser?.handicap ?? 0 }
     private var ghinNumber: String? { authService.currentUser?.ghinNumber }
 
+    private var homeClub: String? { authService.currentUser?.homeClub }
+    private var avatarUrl: String? { authService.currentUser?.avatarUrl }
+    private var hasPhoto: Bool { profileImage != nil || avatarUrl != nil }
+    private var profileSubtitle: String {
+        var parts: [String] = []
+        if let homeClub, !homeClub.isEmpty { parts.append(homeClub) }
+        parts.append("HCP \(formatHandicap(handicap))")
+        return parts.joined(separator: " · ")
+    }
+    private var totalGamesPlayed: Int {
+        skinGameGroups.reduce(0) { $0 + $1.roundHistory.count }
+    }
+    private var totalSkinsWon: Int {
+        skinGameGroups.reduce(0) { groupTotal, group in
+            let concluded = (group.concludedRound.map { [$0] } ?? [])
+            let history = group.roundHistory
+            return groupTotal + (concluded + history).reduce(0) { $0 + $1.yourSkins }
+        }
+    }
+
     var body: some View {
         ZStack {
-            Color(hex: "#F0F0F0").ignoresSafeArea()
+            Color.white.ignoresSafeArea()
 
             ScrollView {
                 VStack(spacing: 0) {
-                    // MARK: Header
-                    VStack(spacing: 10) {
-                        ZStack {
-                            Circle()
-                                .fill(Color(hex: color).opacity(0.12))
-                            Circle()
-                                .strokeBorder(Color(hex: color).opacity(0.3), lineWidth: 2)
-                            Text(avatar)
-                                .font(.system(size: 44))
-                        }
-                        .frame(width: 88, height: 88)
-                        .padding(.top, 24)
-
-                        Text(displayName)
-                            .font(.system(size: 22, weight: .bold))
-                            .foregroundColor(Color(hex: "#1A1A1A"))
-
-                        HStack(spacing: 8) {
-                            Label {
-                                Text("HCP \(String(format: "%.1f", handicap))")
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .foregroundColor(Color(hex: "#C4A450"))
-                            } icon: {
-                                Image(systemName: "figure.golf")
-                                    .font(.system(size: 12))
-                                    .foregroundColor(Color(hex: "#C4A450"))
+                    // MARK: Profile Header (horizontal)
+                    HStack(spacing: 20) {
+                        // Avatar — tappable
+                        Button {
+                            showPhotoOptions = true
+                        } label: {
+                            if let profileImage {
+                                Image(uiImage: profileImage)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 86, height: 86)
+                                    .clipShape(Circle())
+                            } else if let avatarUrl, let url = URL(string: avatarUrl) {
+                                AsyncImage(url: url) { phase in
+                                    switch phase {
+                                    case .success(let image):
+                                        image
+                                            .resizable()
+                                            .scaledToFill()
+                                            .frame(width: 86, height: 86)
+                                            .clipShape(Circle())
+                                    default:
+                                        ZStack {
+                                            Circle()
+                                                .fill(Color.mintLight)
+                                            Circle()
+                                                .strokeBorder(Color.mintBright, lineWidth: 1.5)
+                                            Text(initials)
+                                                .font(.custom("ANDONESI-Regular", size: 35))
+                                                .foregroundColor(Color.greenDark)
+                                        }
+                                        .frame(width: 86, height: 86)
+                                    }
+                                }
+                            } else {
+                                ZStack {
+                                    Circle()
+                                        .fill(Color.mintLight)
+                                    Circle()
+                                        .strokeBorder(Color.mintBright, lineWidth: 1.5)
+                                    Text(initials)
+                                        .font(.custom("ANDONESI-Regular", size: 35))
+                                        .foregroundColor(Color.greenDark)
+                                }
+                                .frame(width: 86, height: 86)
                             }
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Profile photo")
+                        .accessibilityHint("Double tap to change your profile photo")
 
-                            if let ghin = ghinNumber, !ghin.isEmpty {
-                                Text("·")
-                                    .foregroundColor(Color(hex: "#CCCCCC"))
-                                Text("GHIN \(ghin)")
-                                    .font(.system(size: 13))
-                                    .foregroundColor(Color(hex: "#999999"))
+                        // Name + subtitle + stats
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(fullName)
+                                .font(.system(size: 20, weight: .bold))
+                                .foregroundColor(Color(hexString: "171D28"))
+                                .lineLimit(1)
+
+                            Text(profileSubtitle)
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundColor(Color(hexString: "7A7A7E"))
+                                .lineLimit(1)
+
+                            Text("\(totalGamesPlayed) Games · \(totalSkinsWon) Skins")
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundColor(Color(hexString: "171D28"))
+                                .padding(.top, 2)
+                                .accessibilityLabel("\(totalGamesPlayed) games played, \(totalSkinsWon) skins won")
+                        }
+
+                        Spacer()
+                    }
+                    .padding(.horizontal, 22)
+                    .padding(.top, 16)
+                    .padding(.bottom, 24)
+
+                    // MARK: Subscription / Upgrade
+                    if storeService.isPremium {
+                        capsHeader("SUBSCRIPTION")
+                        settingsGroup {
+                            plainRow("Manage Subscription") {
+                                if let url = URL(string: "https://apps.apple.com/account/subscriptions") {
+                                    UIApplication.shared.open(url)
+                                }
+                            }
+                            groupDivider()
+                            plainRow("Restore Purchases") {
+                                Task { try? await AppStore.sync() }
                             }
                         }
-                        .padding(.bottom, 24)
+                    } else {
+                        Button {
+                            showPaywall = true
+                        } label: {
+                            HStack(spacing: 10) {
+                                Image("premium-crown")
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 20, height: 20)
+                                Text("Upgrade to Premium")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundColor(Color.deepNavy)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 56)
+                            .background(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .stroke(Color.deepNavy, lineWidth: 1.5)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal, 20)
                     }
 
-                    // MARK: Account Section
-                    sectionHeader("ACCOUNT")
-
+                    // MARK: Account
+                    capsHeader("ACCOUNT")
                     settingsGroup {
-                        settingsRow(
-                            iconName: "person.fill",
-                            iconColor: "#4A90D9",
-                            label: "Edit Profile"
-                        ) {
+                        plainRow("Profile") {
                             showEditProfile = true
                         }
-
-                        divider()
-
-                        settingsRow(
-                            iconName: "gauge",
-                            iconColor: "#2ECC71",
-                            label: "Handicap Index",
-                            value: String(format: "%.1f", handicap),
-                            chevronIcon: "chevron.up.chevron.down"
-                        ) {
-                            pickerWhole = Int(handicap)
-                            pickerDecimal = Int((handicap - Double(Int(handicap))) * 10)
-                            showHandicapPicker = true
-                        }
-
-                        divider()
-
-                        settingsRow(
-                            iconName: "number",
-                            iconColor: "#E67E22",
-                            label: "GHIN Number",
-                            value: ghinNumber ?? "Not set"
-                        ) {
+                        groupDivider()
+                        plainRow("GHIN Nr", value: ghinNumber) {
                             showGhinEdit = true
                         }
-                    }
-
-                    // MARK: Preferences Section
-                    sectionHeader("PREFERENCES")
-
-                    settingsGroup {
-                        settingsRow(
-                            iconName: "bell.fill",
-                            iconColor: "#9B59B6",
-                            label: "Notifications"
-                        ) {
+                        groupDivider()
+                        plainRow("Notifications") {
                             showNotifications = true
                         }
                     }
 
-                    // MARK: About Section
-                    sectionHeader("ABOUT")
-
+                    // MARK: About
+                    capsHeader("ABOUT")
                     settingsGroup {
-                        settingsRow(
-                            iconName: "doc.text.fill",
-                            iconColor: "#34495E",
-                            label: "Terms of Service"
-                        ) {
-                            if let url = URL(string: "https://carry.golf/terms") {
+                        plainRow("App FAQ") {
+                            if let url = URL(string: "https://carryapp.site/faq.html") {
                                 UIApplication.shared.open(url)
                             }
                         }
-
-                        divider()
-
-                        settingsRow(
-                            iconName: "hand.raised.fill",
-                            iconColor: "#34495E",
-                            label: "Privacy Policy"
-                        ) {
-                            if let url = URL(string: "https://carry.golf/privacy") {
+                        groupDivider()
+                        plainRow("Terms of Service") {
+                            if let url = URL(string: "https://carryapp.site/terms.html") {
                                 UIApplication.shared.open(url)
                             }
                         }
-
-                        divider()
-
-                        settingsRow(
-                            iconName: "info.circle.fill",
-                            iconColor: "#BBBBBB",
-                            label: "Version",
-                            value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0",
-                            showChevron: false
-                        ) {}
+                        groupDivider()
+                        plainRow("Privacy Policy") {
+                            if let url = URL(string: "https://carryapp.site/privacy.html") {
+                                UIApplication.shared.open(url)
+                            }
+                        }
                     }
+
+                    // MARK: Support
+                    capsHeader("SUPPORT")
+                    settingsGroup {
+                        plainRow("Contact Support") {
+                            if let url = URL(string: "mailto:support@carryapp.site") {
+                                UIApplication.shared.open(url)
+                            }
+                        }
+                        groupDivider()
+                        plainRow("Share Carry with a Friend") {
+                            showShareSheet = true
+                        }
+                    }
+
+                    // MARK: Data
+                    capsHeader("DATA")
+                    settingsGroup {
+                        Button {
+                            showDeleteConfirm = true
+                        } label: {
+                            Text("Delete Account")
+                                .font(.system(size: 16))
+                                .foregroundColor(Color.systemRedColor)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.vertical, 14)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    Text("This permanently removes your account and all data from our servers.")
+                        .font(.system(size: 13))
+                        .foregroundColor(Color.textSecondary)
+                        .padding(.horizontal, 24)
+                        .padding(.top, 6)
 
                     // MARK: Sign Out
                     settingsGroup {
-                        Button {
+                        plainRow("Sign Out") {
                             showSignOutConfirm = true
-                        } label: {
-                            HStack {
-                                Spacer()
-                                Text("Sign Out")
-                                    .font(.system(size: 16, weight: .medium))
-                                    .foregroundColor(Color(hex: "#E05555"))
-                                Spacer()
-                            }
-                            .padding(.vertical, 16)
                         }
-                        .buttonStyle(.plain)
+                    }
+                    .padding(.top, 16)
+
+                    // MARK: Version
+                    settingsGroup {
+                        HStack {
+                            Text("Version")
+                                .font(.system(size: 16))
+                                .foregroundColor(Color.textPrimary)
+                            Spacer()
+                            Text("\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"))")
+                                .font(.system(size: 16))
+                                .foregroundColor(Color.textSecondary)
+                        }
+                        .padding(.vertical, 14)
                     }
                     .padding(.top, 8)
 
                     Spacer().frame(height: 40)
                 }
             }
+
+            // Top fade gradient (matches HomeView scroll overlay)
+            VStack {
+                LinearGradient(
+                    colors: [.white, .white.opacity(0)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: 50)
+                .allowsHitTesting(false)
+                Spacer()
+            }
+            .ignoresSafeArea(edges: .top)
+            .allowsHitTesting(false)
+
+            // Crop overlay removed — now presented as fullScreenCover below
         }
         .confirmationDialog("Sign out of Carry?", isPresented: $showSignOutConfirm, titleVisibility: .visible) {
             Button("Sign Out", role: .destructive) {
-                Task { try? await authService.signOut() }
+                Task {
+                    do {
+                        try await authService.signOut()
+                    } catch {
+                        profileError = "Could not sign out. Please try again."
+                        showProfileError = true
+                    }
+                }
             }
             Button("Cancel", role: .cancel) {}
         }
+        .confirmationDialog("Delete your account?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
+            Button("Delete Account", role: .destructive) {
+                Task {
+                    do {
+                        try await authService.deleteAccount()
+                        await MainActor.run {
+                            ToastManager.shared.success("Account deleted")
+                        }
+                    } catch {
+                        await MainActor.run {
+                            profileError = "Could not delete account. Please try again or contact support@carryapp.site."
+                            showProfileError = true
+                        }
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This permanently removes your account and all data. This cannot be undone.")
+        }
+        .sheet(isPresented: $showShareSheet) {
+            ShareSheetView(items: [URL(string: "https://carryapp.site")!])
+        }
         .sheet(isPresented: $showHandicapPicker) {
             handicapPickerSheet
-                .presentationDetents([.height(340)])
+                .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
+                .presentationBackground(.white)
         }
         .sheet(isPresented: $showEditProfile) {
-            EditProfileSheet()
+            EditProfileSheet(parentProfileImage: $profileImage)
                 .environmentObject(authService)
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
+                .presentationBackground(.white)
+        }
+        .sheet(isPresented: $showClubEdit) {
+            ClubEditSheet()
+                .environmentObject(authService)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(.white)
         }
         .sheet(isPresented: $showGhinEdit) {
             GhinEditSheet()
                 .environmentObject(authService)
                 .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
+                .presentationBackground(.white)
         }
         .sheet(isPresented: $showNotifications) {
             NotificationsSheet()
                 .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
+                .presentationBackground(.white)
+        }
+        .sheet(isPresented: $showPaywall) {
+            PaywallView()
+        }
+        .confirmationDialog("Profile Photo", isPresented: $showPhotoOptions, titleVisibility: .visible) {
+            Button("Take Photo") { showCamera = true }
+            Button("Choose from Library") { showPhotoPicker = true }
+            if hasPhoto {
+                Button("Remove Photo", role: .destructive) { removePhoto() }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+        .fullScreenCover(isPresented: $showCamera) {
+            CameraView(
+                onCapture: { image in
+                    showCamera = false
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        imageToCrop = image
+                    }
+                },
+                onCancel: { showCamera = false }
+            )
+            .ignoresSafeArea()
+        }
+        .photosPicker(isPresented: $showPhotoPicker, selection: $photoItem, matching: .images)
+        .onChange(of: photoItem) {
+            Task {
+                do {
+                    if let data = try await photoItem?.loadTransferable(type: Data.self),
+                       let uiImage = UIImage(data: data) {
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            imageToCrop = uiImage
+                        }
+                    }
+                } catch {
+                    profileError = "Could not load photo."
+                    showProfileError = true
+                }
+            }
+        }
+        .fullScreenCover(isPresented: Binding(
+            get: { imageToCrop != nil },
+            set: { if !$0 { imageToCrop = nil } }
+        )) {
+            if let cropImage = imageToCrop {
+                ImageCropView(
+                    image: cropImage,
+                    onSave: { cropped in
+                        profileImage = cropped
+                        uploadPhoto(cropped)
+                        imageToCrop = nil
+                        photoItem = nil
+                    },
+                    onCancel: {
+                        photoItem = nil
+                        imageToCrop = nil
+                    }
+                )
+                .ignoresSafeArea()
+            }
+        }
+        .alert("Update Failed", isPresented: $showProfileError) {
+            Button("OK") { }
+        } message: {
+            Text(profileError ?? "Something went wrong.")
+        }
+    }
+
+    // MARK: - Photo Helpers
+
+    private func uploadPhoto(_ image: UIImage) {
+        Task {
+            do {
+                let url = try await authService.uploadAvatar(image)
+                if !url.isEmpty {
+                    try await authService.updateProfile(ProfileUpdate(avatarUrl: url))
+                }
+                await MainActor.run {
+                    ToastManager.shared.success("Photo updated")
+                }
+            } catch {
+                #if DEBUG
+                print("[Photo] Upload failed: \(error)")
+                #endif
+                await MainActor.run {
+                    profileError = "Upload error: \(error.localizedDescription)"
+                    showProfileError = true
+                }
+            }
+        }
+    }
+
+    private func removePhoto() {
+        profileImage = nil
+        photoItem = nil
+        Task {
+            do {
+                try await authService.updateProfile(ProfileUpdate(avatarUrl: ""))
+                ToastManager.shared.success("Photo removed")
+            } catch {
+                profileError = "Could not remove photo."
+                showProfileError = true
+            }
         }
     }
 
@@ -205,48 +469,24 @@ struct ProfileView: View {
 
     private var handicapPickerSheet: some View {
         VStack(spacing: 0) {
-            // Header with done button
-            HStack {
-                Button("Cancel") {
-                    showHandicapPicker = false
-                }
-                .font(.system(size: 16))
-                .foregroundColor(Color(hex: "#999999"))
+            Text("Handicap Index")
+                .font(.carry.labelBold)
+                .foregroundColor(Color.textPrimary)
+                .padding(.top, 40)
 
-                Spacer()
+            Spacer()
 
-                Text("Handicap Index")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundColor(Color(hex: "#1A1A1A"))
-
-                Spacer()
-
-                Button("Save") {
-                    let newHandicap = Double(pickerWhole) + Double(pickerDecimal) / 10.0
-                    Task {
-                        try? await authService.updateProfile(ProfileUpdate(handicap: newHandicap))
-                    }
-                    showHandicapPicker = false
-                }
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundColor(Color(hex: "#C4A450"))
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 20)
-            .padding(.bottom, 8)
-
-            // Wheel picker
             HStack(spacing: 0) {
                 Picker("Whole", selection: $pickerWhole) {
-                    ForEach(-5...54, id: \.self) { n in
-                        Text("\(n)").tag(n)
+                    ForEach(-10...54, id: \.self) { n in
+                        Text(n < 0 ? "+\(abs(n))" : "\(n)").tag(n)
                     }
                 }
                 .pickerStyle(.wheel)
 
                 Text(".")
                     .font(.system(size: 24, weight: .medium))
-                    .foregroundColor(Color(hex: "#1A1A1A"))
+                    .foregroundColor(Color.pureBlack)
 
                 Picker("Decimal", selection: $pickerDecimal) {
                     ForEach(0...9, id: \.self) { n in
@@ -257,21 +497,51 @@ struct ProfileView: View {
                 .frame(width: 80)
             }
             .padding(.horizontal, 40)
+
+            Spacer()
+
+            Button {
+                let newHandicap = Double(pickerWhole) + Double(pickerDecimal) / 10.0
+                Task {
+                    do {
+                        try await authService.updateProfile(ProfileUpdate(handicap: newHandicap))
+                        ToastManager.shared.success("Handicap updated")
+                    } catch {
+                        profileError = "Could not update handicap. Please try again."
+                        showProfileError = true
+                    }
+                }
+                showHandicapPicker = false
+            } label: {
+                Text("Save")
+                    .font(.carry.bodyLGSemibold)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 48)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.textPrimary)
+                    )
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 8)
         }
     }
 
     // MARK: - Components
 
-    private func sectionHeader(_ title: String) -> some View {
+    // MARK: - Settings Helpers
+
+    private func capsHeader(_ title: String) -> some View {
         HStack {
             Text(title)
-                .font(.system(size: 12, weight: .semibold))
-                .tracking(1.2)
-                .foregroundColor(Color(hex: "#999999"))
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(Color.textSecondary)
+                .tracking(1)
             Spacer()
         }
-        .padding(.horizontal, 32)
-        .padding(.top, 24)
+        .padding(.horizontal, 24)
+        .padding(.top, 28)
         .padding(.bottom, 8)
     }
 
@@ -279,60 +549,40 @@ struct ProfileView: View {
         VStack(spacing: 0) {
             content()
         }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 4)
         .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(.white)
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.bgSecondary)
         )
         .padding(.horizontal, 20)
     }
 
-    private func divider() -> some View {
+    private func groupDivider() -> some View {
         Rectangle()
-            .fill(Color(hex: "#F0F0F0"))
+            .fill(Color(hexString: "#DADADA"))
             .frame(height: 1)
-            .padding(.leading, 58)
     }
 
-    private func settingsRow(
-        iconName: String,
-        iconColor: String,
-        label: String,
-        value: String? = nil,
-        showChevron: Bool = true,
-        chevronIcon: String = "chevron.right",
-        action: @escaping () -> Void
-    ) -> some View {
+    private func plainRow(_ label: String, value: String? = nil, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(spacing: 14) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color(hex: iconColor))
-                    Image(systemName: iconName)
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.white)
-                }
-                .frame(width: 32, height: 32)
-
+            HStack {
                 Text(label)
                     .font(.system(size: 16))
-                    .foregroundColor(Color(hex: "#1A1A1A"))
+                    .foregroundColor(Color.textPrimary)
 
                 Spacer()
 
-                if let value {
+                if let value, !value.isEmpty {
                     Text(value)
                         .font(.system(size: 15))
-                        .foregroundColor(Color(hex: "#AAAAAA"))
-                }
-
-                if showChevron {
-                    Image(systemName: chevronIcon)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(Color(hex: "#CCCCCC"))
+                        .foregroundColor(Color.textSecondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: 160, alignment: .trailing)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 13)
+            .padding(.vertical, 14)
         }
         .buttonStyle(.plain)
     }
@@ -343,173 +593,542 @@ struct ProfileView: View {
 struct EditProfileSheet: View {
     @EnvironmentObject var authService: AuthService
     @Environment(\.dismiss) var dismiss
-    @State private var name: String = ""
-    @State private var selectedColor: String = "#D4A017"
-    @State private var selectedAvatar: String = "🏌️"
+    @Binding var parentProfileImage: UIImage?
+    @State private var firstName: String = ""
+    @State private var lastName: String = ""
+    @State private var handicap: String = ""
+    enum ProfileField: Hashable { case firstName, lastName, handicap, clubSearch }
+    @FocusState private var profileFocused: ProfileField?
+    @State private var selectedPhoto: UIImage? = nil
+    @State private var photoItem: PhotosPickerItem? = nil
+    @State private var showPhotoOptions = false
+    @State private var showCamera = false
+    @State private var showPhotoPicker = false
+    @State private var photoRemoved = false
+    @State private var imageToCrop: UIImage? = nil
     @State private var isSaving = false
-
-    private let colorOptions = [
-        "#D4A017", "#4A90D9", "#E05555", "#2ECC71",
-        "#9B59B6", "#E67E22", "#1ABC9C", "#34495E",
-        "#C0392B", "#2980B9", "#27AE60", "#F39C12",
-    ]
-
-    private let avatarOptions = [
-        "🏌️", "🧢", "🦅", "🍺", "🎩", "🕶️",
-        "🐊", "⛳", "🔥", "🎯", "🌴", "☀️",
-        "🏆", "💰", "🦈", "🐻", "🎱", "🍀",
-        "🌊", "⚡", "🎪", "🦁", "🐉", "🪶",
-    ]
+    @State private var errorMessage: String?
+    @State private var showError = false
+    // Club search state
+    @State private var selectedClub: GolfCourseResult? = nil
+    @State private var clubSearchText = ""
+    @State private var clubSearchResults: [GolfCourseResult] = []
+    @State private var isSearchingClub = false
+    @State private var clubSearchTask: Task<Void, Never>?
+    @State private var hasExistingClub = false
+    @State private var isClubMember = true
 
     var body: some View {
         VStack(spacing: 0) {
             // Header
-            HStack {
-                Button("Cancel") { dismiss() }
-                    .font(.system(size: 16))
-                    .foregroundColor(Color(hex: "#999999"))
-
-                Spacer()
-
+            ZStack {
                 Text("Edit Profile")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundColor(Color(hex: "#1A1A1A"))
+                    .font(.carry.headline)
+                    .foregroundColor(Color.pureBlack)
 
-                Spacer()
+                HStack {
+                    Button("Cancel") { dismiss() }
+                        .font(.system(size: 16))
+                        .foregroundColor(Color.textTertiary)
 
-                Button("Save") { saveProfile() }
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(isSaving ? Color(hex: "#CCCCCC") : Color(hex: "#C4A450"))
-                    .disabled(isSaving || name.trimmingCharacters(in: .whitespaces).isEmpty)
+                    Spacer()
+
+                    Button("Save") { saveProfile() }
+                        .font(.carry.bodyLGSemibold)
+                        .foregroundColor(isSaving ? Color.textDisabled : Color.textPrimary)
+                        .disabled(isSaving || firstName.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
             }
             .padding(.horizontal, 20)
             .padding(.top, 20)
             .padding(.bottom, 16)
 
+            ScrollViewReader { proxy in
             ScrollView {
                 VStack(spacing: 24) {
-                    // Live preview
-                    ZStack {
-                        Circle()
-                            .fill(Color(hex: selectedColor).opacity(0.12))
-                        Circle()
-                            .strokeBorder(Color(hex: selectedColor).opacity(0.3), lineWidth: 2)
-                        Text(selectedAvatar)
-                            .font(.system(size: 44))
+                    // Photo picker
+                    HStack {
+                        Spacer()
+                        Button { showPhotoOptions = true } label: {
+                            ZStack {
+                                if let image = selectedPhoto {
+                                    Image(uiImage: image)
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(width: 100, height: 100)
+                                        .clipShape(Circle())
+                                } else if !photoRemoved,
+                                          let urlStr = authService.currentUser?.avatarUrl,
+                                          let url = URL(string: urlStr) {
+                                    AsyncImage(url: url) { phase in
+                                        switch phase {
+                                        case .success(let image):
+                                            image
+                                                .resizable()
+                                                .scaledToFill()
+                                                .frame(width: 100, height: 100)
+                                                .clipShape(Circle())
+                                        default:
+                                            ZStack {
+                                                Circle()
+                                                    .fill(Color.mintLight)
+                                                Circle()
+                                                    .strokeBorder(Color.mintBright, lineWidth: 1.5)
+                                                Text(authService.currentUser?.initials ?? "P")
+                                                    .font(.custom("ANDONESI-Regular", size: 38))
+                                                    .foregroundColor(Color.greenDark)
+                                            }
+                                            .frame(width: 100, height: 100)
+                                        }
+                                    }
+                                } else {
+                                    ZStack {
+                                        Circle()
+                                            .fill(Color.mintLight)
+                                        Circle()
+                                            .strokeBorder(Color.mintBright, lineWidth: 1.5)
+                                        Text(authService.currentUser?.initials ?? "P")
+                                            .font(.custom("ANDONESI-Regular", size: 38))
+                                            .foregroundColor(Color.greenDark)
+                                    }
+                                    .frame(width: 100, height: 100)
+                                }
+
+                                // Edit badge
+                                Circle()
+                                    .fill(Color.textPrimary)
+                                    .frame(width: 28, height: 28)
+                                    .overlay(
+                                        Image(systemName: selectedPhoto != nil || (!photoRemoved && authService.currentUser?.avatarUrl != nil) ? "pencil" : "camera.fill")
+                                            .font(.carry.captionBold)
+                                            .foregroundColor(.white)
+                                    )
+                                    .offset(x: 36, y: 36)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        Spacer()
                     }
-                    .frame(width: 88, height: 88)
                     .padding(.top, 8)
 
-                    // Name field
+                    if selectedPhoto != nil || (!photoRemoved && authService.currentUser?.avatarUrl != nil) {
+                        Button {
+                            selectedPhoto = nil
+                            photoItem = nil
+                            photoRemoved = true
+                        } label: {
+                            Text("Remove photo")
+                                .font(.system(size: 14))
+                                .foregroundColor(Color.textDisabled)
+                        }
+                    }
+
+                    // First Name field
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("NAME")
-                            .font(.system(size: 11, weight: .semibold))
-                            .tracking(1.5)
-                            .foregroundColor(Color(hex: "#BBBBBB"))
+                        Text("First Name")
+                            .font(.carry.bodySMBold)
+                            .foregroundColor(Color.textPrimary)
                             .padding(.leading, 4)
 
-                        TextField("Your name", text: $name)
+                        TextField("First name", text: $firstName)
                             .font(.system(size: 16))
-                            .padding(.vertical, 14)
+                            .textContentType(.givenName)
+                            .focused($profileFocused, equals: .firstName)
+                            .carryInput(focused: profileFocused == .firstName)
+                    }
+                    .padding(.horizontal, 24)
+
+                    // Last Name field
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Last Name")
+                            .font(.carry.bodySMBold)
+                            .foregroundColor(Color.textPrimary)
+                            .padding(.leading, 4)
+
+                        TextField("Last name", text: $lastName)
+                            .font(.system(size: 16))
+                            .textContentType(.familyName)
+                            .focused($profileFocused, equals: .lastName)
+                            .carryInput(focused: profileFocused == .lastName)
+                    }
+                    .padding(.horizontal, 24)
+
+                    // Handicap field
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Handicap")
+                            .font(.carry.bodySMBold)
+                            .foregroundColor(Color.textPrimary)
+                            .padding(.leading, 4)
+
+                        TextField("e.g. 12.4", text: $handicap)
+                            .font(.system(size: 16))
+                            .focused($profileFocused, equals: .handicap)
+                            .keyboardType(.decimalPad)
+                            .carryInput(focused: profileFocused == .handicap)
+                    }
+                    .padding(.horizontal, 24)
+
+                    // Home Club / Home Course
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Home Course")
+                            .font(.carry.bodySMBold)
+                            .foregroundColor(Color.textPrimary)
+                            .padding(.leading, 4)
+
+                        if let club = selectedClub {
+                            // Selected club with "Change" button
+                            Button {
+                                selectedClub = nil
+                                clubSearchText = ""
+                                hasExistingClub = false
+                            } label: {
+                                HStack(spacing: 10) {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(club.clubName ?? club.courseName ?? "Golf Club")
+                                            .font(.carry.bodySemibold)
+                                            .foregroundColor(Color.textPrimary)
+                                        if !club.locationLabel.isEmpty {
+                                            Text(club.locationLabel)
+                                                .font(.system(size: 13))
+                                                .foregroundColor(Color.textTertiary)
+                                        }
+                                    }
+
+                                    Spacer()
+
+                                    Text("Change")
+                                        .font(.carry.captionLG)
+                                        .foregroundColor(Color.textTertiary)
+                                }
+                                .padding(.vertical, 14)
+                                .padding(.horizontal, 16)
+                                .background(RoundedRectangle(cornerRadius: 12).fill(.white))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .strokeBorder(Color.borderLight, lineWidth: 1)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        } else if hasExistingClub, let clubName = authService.currentUser?.homeClub, !clubName.isEmpty {
+                            // Existing club name from profile (no GolfCourseResult)
+                            Button {
+                                hasExistingClub = false
+                                clubSearchText = ""
+                            } label: {
+                                HStack(spacing: 10) {
+                                    Text(clubName)
+                                        .font(.carry.bodySemibold)
+                                        .foregroundColor(Color.textPrimary)
+
+                                    Spacer()
+
+                                    Text("Change")
+                                        .font(.carry.captionLG)
+                                        .foregroundColor(Color.textTertiary)
+                                }
+                                .padding(.vertical, 14)
+                                .padding(.horizontal, 16)
+                                .background(RoundedRectangle(cornerRadius: 12).fill(.white))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .strokeBorder(Color.borderLight, lineWidth: 1)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        } else {
+                            // Search field
+                            HStack(spacing: 8) {
+                                if isSearchingClub {
+                                    ProgressView()
+                                        .scaleEffect(0.7)
+                                        .frame(width: 16, height: 16)
+                                } else {
+                                    Image(systemName: "magnifyingglass")
+                                        .font(.system(size: 14))
+                                        .foregroundColor(Color.textDisabled)
+                                }
+
+                                TextField("Search golf clubs", text: $clubSearchText)
+                                    .font(.system(size: 16))
+                                    .focused($profileFocused, equals: .clubSearch)
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled()
+                                    .onChange(of: clubSearchText) {
+                                        debounceClubSearch(clubSearchText)
+                                    }
+
+                                if !clubSearchText.isEmpty {
+                                    Button {
+                                        clubSearchText = ""
+                                        clubSearchResults = []
+                                    } label: {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .font(.system(size: 16))
+                                            .foregroundColor(Color.textDisabled)
+                                    }
+                                }
+                            }
                             .padding(.horizontal, 16)
-                            .background(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .fill(.white)
-                            )
+                            .padding(.vertical, 14)
+                            .background(RoundedRectangle(cornerRadius: 12).fill(.white))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 12)
-                                    .strokeBorder(Color(hex: "#E0E0E0"), lineWidth: 1)
+                                    .strokeBorder(profileFocused == .clubSearch ? Color(hexString: "#333333") : Color.borderLight, lineWidth: profileFocused == .clubSearch ? 1.5 : 1)
                             )
-                    }
-                    .padding(.horizontal, 24)
+                            .animation(.easeOut(duration: 0.15), value: profileFocused)
 
-                    // Color picker
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("COLOR")
-                            .font(.system(size: 11, weight: .semibold))
-                            .tracking(1.5)
-                            .foregroundColor(Color(hex: "#BBBBBB"))
-                            .padding(.leading, 4)
+                            // Search results
+                            if !clubSearchResults.isEmpty {
+                                VStack(spacing: 0) {
+                                    ForEach(clubSearchResults.prefix(5)) { course in
+                                        Button {
+                                            selectedClub = course
+                                            clubSearchText = ""
+                                            clubSearchResults = []
+                                        } label: {
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(course.clubName ?? course.courseName ?? "Golf Club")
+                                                    .font(.carry.body)
+                                                    .foregroundColor(Color.textPrimary)
+                                                if !course.locationLabel.isEmpty {
+                                                    Text(course.locationLabel)
+                                                        .font(.system(size: 13))
+                                                        .foregroundColor(Color.textTertiary)
+                                                }
+                                            }
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .padding(.horizontal, 16)
+                                            .padding(.vertical, 12)
+                                        }
+                                        .buttonStyle(.plain)
 
-                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 6), spacing: 12) {
-                            ForEach(colorOptions, id: \.self) { hex in
-                                Circle()
-                                    .fill(Color(hex: hex))
-                                    .frame(width: 40, height: 40)
-                                    .overlay(
-                                        Circle()
-                                            .strokeBorder(.white, lineWidth: selectedColor == hex ? 3 : 0)
-                                    )
-                                    .overlay(
-                                        Circle()
-                                            .strokeBorder(Color(hex: hex).opacity(0.5), lineWidth: selectedColor == hex ? 1 : 0)
-                                            .padding(-1)
-                                    )
-                                    .scaleEffect(selectedColor == hex ? 1.1 : 1.0)
-                                    .animation(.easeOut(duration: 0.15), value: selectedColor)
-                                    .onTapGesture { selectedColor = hex }
+                                        if course.id != clubSearchResults.prefix(5).last?.id {
+                                            Rectangle()
+                                                .fill(Color.bgPrimary)
+                                                .frame(height: 1)
+                                                .padding(.leading, 16)
+                                        }
+                                    }
+                                }
+                                .background(RoundedRectangle(cornerRadius: 12).fill(.white))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .strokeBorder(Color.borderLight, lineWidth: 1)
+                                )
                             }
                         }
                     }
                     .padding(.horizontal, 24)
+                    .id("homeCourse")
 
-                    // Avatar picker
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("AVATAR")
-                            .font(.system(size: 11, weight: .semibold))
-                            .tracking(1.5)
-                            .foregroundColor(Color(hex: "#BBBBBB"))
-                            .padding(.leading, 4)
+                    // Membership — shown when a club is selected or exists
+                    if selectedClub != nil || hasExistingClub {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Membership")
+                                .font(.carry.bodySMBold)
+                                .foregroundColor(Color.textPrimary)
+                                .padding(.leading, 4)
 
-                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 6), spacing: 10) {
-                            ForEach(avatarOptions, id: \.self) { emoji in
-                                Text(emoji)
-                                    .font(.system(size: 28))
-                                    .frame(width: 48, height: 48)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 12)
-                                            .fill(selectedAvatar == emoji ? Color(hex: selectedColor).opacity(0.1) : .white)
-                                    )
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 12)
-                                            .strokeBorder(
-                                                selectedAvatar == emoji ? Color(hex: selectedColor).opacity(0.4) : Color(hex: "#EFEFEF"),
-                                                lineWidth: selectedAvatar == emoji ? 2 : 1
-                                            )
-                                    )
-                                    .onTapGesture { selectedAvatar = emoji }
+                            MembershipRadioButton(
+                                label: "Club Member",
+                                subtitle: "I'm a member at this course",
+                                isSelected: isClubMember
+                            ) {
+                                withAnimation(.easeOut(duration: 0.15)) { isClubMember = true }
+                            }
+
+                            MembershipRadioButton(
+                                label: "Home Course Only",
+                                subtitle: "I play here regularly but I'm not a member",
+                                isSelected: !isClubMember
+                            ) {
+                                withAnimation(.easeOut(duration: 0.15)) { isClubMember = false }
                             }
                         }
+                        .padding(.horizontal, 24)
                     }
-                    .padding(.horizontal, 24)
                 }
                 .padding(.bottom, 40)
             }
+            .onChange(of: profileFocused) {
+                if profileFocused == .clubSearch {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        withAnimation { proxy.scrollTo("homeCourse", anchor: .center) }
+                    }
+                }
+            }
+            } // ScrollViewReader
         }
-        .background(Color(hex: "#F0F0F0"))
+        .background(Color.white)
         .onAppear {
-            name = authService.currentUser?.displayName ?? ""
-            selectedColor = authService.currentUser?.color ?? "#D4A017"
-            selectedAvatar = authService.currentUser?.avatar ?? "🏌️"
+            firstName = authService.currentUser?.firstName ?? ""
+            lastName = authService.currentUser?.lastName ?? ""
+            selectedPhoto = parentProfileImage
+            if let club = authService.currentUser?.homeClub, !club.isEmpty {
+                hasExistingClub = true
+            }
+            isClubMember = authService.currentUser?.isClubMember ?? true
+            if let hcp = authService.currentUser?.handicap {
+                handicap = String(format: hcp.truncatingRemainder(dividingBy: 1) == 0 ? "%.0f" : "%.1f", hcp)
+            }
+        }
+        .confirmationDialog("Profile Photo", isPresented: $showPhotoOptions, titleVisibility: .visible) {
+            Button("Take Photo") { showCamera = true }
+            Button("Choose from Library") { showPhotoPicker = true }
+            if selectedPhoto != nil || (!photoRemoved && authService.currentUser?.avatarUrl != nil) {
+                Button("Remove Photo", role: .destructive) {
+                    selectedPhoto = nil
+                    photoItem = nil
+                    photoRemoved = true
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+        .fullScreenCover(isPresented: $showCamera) {
+            CameraView(
+                onCapture: { image in
+                    showCamera = false
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        imageToCrop = image
+                    }
+                },
+                onCancel: { showCamera = false }
+            )
+            .ignoresSafeArea()
+        }
+        .photosPicker(isPresented: $showPhotoPicker, selection: $photoItem, matching: .images)
+        .onChange(of: photoItem) {
+            Task {
+                if let data = try? await photoItem?.loadTransferable(type: Data.self),
+                   let uiImage = UIImage(data: data) {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        imageToCrop = uiImage
+                    }
+                }
+            }
+        }
+        .fullScreenCover(isPresented: Binding(
+            get: { imageToCrop != nil },
+            set: { if !$0 { imageToCrop = nil } }
+        )) {
+            if let cropImage = imageToCrop {
+                ImageCropView(
+                    image: cropImage,
+                    onSave: { cropped in
+                        selectedPhoto = cropped
+                        photoRemoved = false
+                        imageToCrop = nil
+                        photoItem = nil
+                    },
+                    onCancel: {
+                        photoItem = nil
+                        imageToCrop = nil
+                    }
+                )
+                .ignoresSafeArea()
+            }
+        }
+        .alert("Update Failed", isPresented: $showError) {
+            Button("OK") { }
+        } message: {
+            Text(errorMessage ?? "Something went wrong.")
         }
     }
 
     private func saveProfile() {
-        let trimmed = name.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { return }
+        let firstTrimmed = firstName.trimmingCharacters(in: .whitespaces)
+        let lastTrimmed = lastName.trimmingCharacters(in: .whitespaces)
+        guard !firstTrimmed.isEmpty else { return }
         isSaving = true
 
         Task {
-            try? await authService.updateProfile(ProfileUpdate(
-                displayName: trimmed,
-                initials: String(trimmed.prefix(2)).uppercased(),
-                color: selectedColor,
-                avatar: selectedAvatar
-            ))
-            isSaving = false
-            dismiss()
+            do {
+                // Upload new photo if selected
+                var avatarUrl: String? = nil
+                if let photo = selectedPhoto {
+                    avatarUrl = try await authService.uploadAvatar(photo)
+                } else if photoRemoved {
+                    avatarUrl = ""  // Clear the avatar URL
+                }
+
+                let parsedHandicap = Double(handicap.trimmingCharacters(in: .whitespaces))
+                let displayName = firstTrimmed  // First name only for scorecard/pills
+                let initials: String = {
+                    let first = firstTrimmed.prefix(1).uppercased()
+                    let last = lastTrimmed.prefix(1).uppercased()
+                    return last.isEmpty ? String(firstTrimmed.prefix(2)).uppercased() : "\(first)\(last)"
+                }()
+
+                // Determine club name and ID
+                var clubName: String?
+                var clubId: Int?
+                if let club = selectedClub {
+                    clubName = club.clubName ?? club.courseName
+                    clubId = club.id
+                } else if hasExistingClub {
+                    clubName = authService.currentUser?.homeClub
+                    clubId = authService.currentUser?.homeClubId
+                }
+
+                var update = ProfileUpdate(
+                    firstName: firstTrimmed,
+                    lastName: lastTrimmed,
+                    displayName: displayName,
+                    initials: initials,
+                    handicap: parsedHandicap ?? 0,
+                    homeClub: clubName,
+                    homeClubId: clubId,
+                    isClubMember: (selectedClub != nil || hasExistingClub) ? isClubMember : nil
+                )
+                if let avatarUrl {
+                    update.avatarUrl = avatarUrl
+                }
+
+                try await authService.updateProfile(update)
+                // Sync photo back to parent ProfileView
+                if let photo = selectedPhoto {
+                    parentProfileImage = photo
+                } else if photoRemoved {
+                    parentProfileImage = nil
+                }
+                isSaving = false
+                ToastManager.shared.success("Profile updated")
+                dismiss()
+            } catch {
+                isSaving = false
+                ToastManager.shared.error("Could not update profile. Please try again.")
+                showError = true
+            }
         }
     }
+
+    private func debounceClubSearch(_ query: String) {
+        clubSearchTask?.cancel()
+
+        guard query.count >= 2 else {
+            clubSearchResults = []
+            isSearchingClub = false
+            return
+        }
+
+        isSearchingClub = true
+
+        clubSearchTask = Task {
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            guard !Task.isCancelled else { return }
+
+            do {
+                let results = try await GolfCourseService.shared.searchCourses(query: query)
+                guard !Task.isCancelled else { return }
+                clubSearchResults = results
+            } catch {
+                guard !Task.isCancelled else { return }
+                clubSearchResults = []
+            }
+            isSearchingClub = false
+        }
+    }
+
 }
 
 // MARK: - GHIN Edit Sheet
@@ -519,6 +1138,8 @@ struct GhinEditSheet: View {
     @Environment(\.dismiss) var dismiss
     @State private var ghinNumber: String = ""
     @State private var isSaving = false
+    @State private var errorMessage: String?
+    @State private var showError = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -526,19 +1147,19 @@ struct GhinEditSheet: View {
             HStack {
                 Button("Cancel") { dismiss() }
                     .font(.system(size: 16))
-                    .foregroundColor(Color(hex: "#999999"))
+                    .foregroundColor(Color.textTertiary)
 
                 Spacer()
 
                 Text("GHIN Number")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundColor(Color(hex: "#1A1A1A"))
+                    .font(.carry.headline)
+                    .foregroundColor(Color.pureBlack)
 
                 Spacer()
 
                 Button("Save") { saveGhin() }
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(isSaving ? Color(hex: "#CCCCCC") : Color(hex: "#C4A450"))
+                    .font(.carry.bodyLGSemibold)
+                    .foregroundColor(isSaving ? Color.textDisabled : Color.textPrimary)
                     .disabled(isSaving)
             }
             .padding(.horizontal, 20)
@@ -546,15 +1167,18 @@ struct GhinEditSheet: View {
             .padding(.bottom, 24)
 
             VStack(alignment: .leading, spacing: 6) {
-                Text("GHIN NUMBER")
-                    .font(.system(size: 11, weight: .semibold))
-                    .tracking(1.5)
-                    .foregroundColor(Color(hex: "#BBBBBB"))
+                Text("GHIN Number")
+                    .font(.carry.bodySMBold)
+                    .foregroundColor(Color.textPrimary)
                     .padding(.leading, 4)
 
-                TextField("e.g. 1234567", text: $ghinNumber)
+                TextField("6-8 numbers", text: $ghinNumber)
                     .font(.system(size: 16))
                     .keyboardType(.numberPad)
+                    .onChange(of: ghinNumber) {
+                        let filtered = ghinNumber.filter { $0.isNumber }
+                        ghinNumber = String(filtered.prefix(8))
+                    }
                     .padding(.vertical, 14)
                     .padding(.horizontal, 16)
                     .background(
@@ -563,22 +1187,23 @@ struct GhinEditSheet: View {
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 12)
-                            .strokeBorder(Color(hex: "#E0E0E0"), lineWidth: 1)
+                            .strokeBorder(Color.borderLight, lineWidth: 1)
                     )
 
-                Text("Your Golf Handicap Information Network number. Find it on your GHIN card or the GHIN app.")
-                    .font(.system(size: 12))
-                    .foregroundColor(Color(hex: "#BBBBBB"))
-                    .padding(.top, 4)
-                    .padding(.leading, 4)
+                // Placeholder text removed for App Store compliance
             }
             .padding(.horizontal, 24)
 
             Spacer()
         }
-        .background(Color(hex: "#F0F0F0"))
+        .background(.white)
         .onAppear {
             ghinNumber = authService.currentUser?.ghinNumber ?? ""
+        }
+        .alert("Update Failed", isPresented: $showError) {
+            Button("OK") { }
+        } message: {
+            Text(errorMessage ?? "Something went wrong.")
         }
     }
 
@@ -586,121 +1211,392 @@ struct GhinEditSheet: View {
         isSaving = true
         let value = ghinNumber.trimmingCharacters(in: .whitespaces)
         Task {
-            try? await authService.updateProfile(ProfileUpdate(
-                ghinNumber: value.isEmpty ? nil : value
-            ))
-            isSaving = false
-            dismiss()
+            do {
+                try await authService.updateProfile(ProfileUpdate(
+                    ghinNumber: value.isEmpty ? nil : value
+                ))
+                isSaving = false
+                ToastManager.shared.success("GHIN number updated")
+                dismiss()
+            } catch {
+                isSaving = false
+                errorMessage = "Could not update GHIN number. Please try again."
+                showError = true
+            }
         }
     }
+}
+
+// MARK: - Club Edit Sheet
+
+struct ClubEditSheet: View {
+    @EnvironmentObject var authService: AuthService
+    @Environment(\.dismiss) var dismiss
+    @State private var searchText = ""
+    @FocusState private var isClubSearchFocused: Bool
+    @State private var searchResults: [GolfCourseResult] = []
+    @State private var isSearching = false
+    @State private var searchTask: Task<Void, Never>?
+    @State private var selectedClub: GolfCourseResult? = nil
+    @State private var isClubMember = true
+    @State private var isSaving = false
+    @State private var errorMessage: String?
+    @State private var showError = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                Button("Cancel") { dismiss() }
+                    .font(.system(size: 16))
+                    .foregroundColor(Color.textTertiary)
+
+                Spacer()
+
+                Text("Home Course")
+                    .font(.carry.headline)
+                    .foregroundColor(Color.pureBlack)
+
+                Spacer()
+
+                Button("Save") { saveClub() }
+                    .font(.carry.bodyLGSemibold)
+                    .foregroundColor(isSaving ? Color.textDisabled : Color.textPrimary)
+                    .disabled(isSaving)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
+            .padding(.bottom, 24)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    // Home Course header
+                    Text("Home Course")
+                        .font(.carry.bodySMBold)
+                        .foregroundColor(Color.textPrimary)
+                        .padding(.leading, 4)
+
+                    if let club = selectedClub {
+                        // Selected club — "Change" button pattern
+                        Button {
+                            selectedClub = nil
+                            searchText = ""
+                        } label: {
+                            HStack(spacing: 10) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(club.clubName ?? club.courseName ?? "Golf Club")
+                                        .font(.carry.bodySemibold)
+                                        .foregroundColor(Color.textPrimary)
+                                    if !club.locationLabel.isEmpty {
+                                        Text(club.locationLabel)
+                                            .font(.system(size: 13))
+                                            .foregroundColor(Color.textTertiary)
+                                    }
+                                }
+
+                                Spacer()
+
+                                Text("Change")
+                                    .font(.carry.captionLG)
+                                    .foregroundColor(Color.textTertiary)
+                            }
+                            .padding(.vertical, 14)
+                            .padding(.horizontal, 16)
+                            .background(RoundedRectangle(cornerRadius: 12).fill(.white))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .strokeBorder(Color.borderLight, lineWidth: 1)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        // Search field
+                        HStack(spacing: 8) {
+                            if isSearching {
+                                ProgressView()
+                                    .scaleEffect(0.7)
+                                    .frame(width: 16, height: 16)
+                            } else {
+                                Image(systemName: "magnifyingglass")
+                                    .font(.system(size: 14))
+                                    .foregroundColor(Color.textDisabled)
+                            }
+
+                            TextField("Search golf clubs", text: $searchText)
+                                .font(.system(size: 16))
+                                .focused($isClubSearchFocused)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .onChange(of: searchText) {
+                                    debounceSearch(searchText)
+                                }
+
+                            if !searchText.isEmpty {
+                                Button {
+                                    searchText = ""
+                                    searchResults = []
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.system(size: 16))
+                                        .foregroundColor(Color.textDisabled)
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 14)
+                        .background(RoundedRectangle(cornerRadius: 12).fill(.white))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .strokeBorder(isClubSearchFocused ? Color(hexString: "#333333") : Color.borderLight, lineWidth: isClubSearchFocused ? 1.5 : 1)
+                        )
+                        .animation(.easeOut(duration: 0.15), value: isClubSearchFocused)
+
+                        // Search results
+                        if !searchResults.isEmpty {
+                            VStack(spacing: 0) {
+                                ForEach(searchResults.prefix(5)) { course in
+                                    Button {
+                                        selectedClub = course
+                                        searchText = ""
+                                        searchResults = []
+                                    } label: {
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(course.clubName ?? course.courseName ?? "Golf Club")
+                                                .font(.carry.body)
+                                                .foregroundColor(Color.textPrimary)
+                                            if !course.locationLabel.isEmpty {
+                                                Text(course.locationLabel)
+                                                    .font(.system(size: 13))
+                                                    .foregroundColor(Color.textTertiary)
+                                            }
+                                        }
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 12)
+                                    }
+                                    .buttonStyle(.plain)
+
+                                    if course.id != searchResults.prefix(5).last?.id {
+                                        Rectangle()
+                                            .fill(Color.bgPrimary)
+                                            .frame(height: 1)
+                                            .padding(.leading, 16)
+                                    }
+                                }
+                            }
+                            .background(RoundedRectangle(cornerRadius: 12).fill(.white))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .strokeBorder(Color.borderLight, lineWidth: 1)
+                            )
+                        }
+                    }
+
+                    // Membership radio buttons — shown after course is selected
+                    if selectedClub != nil {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Membership")
+                                .font(.carry.bodySMBold)
+                                .foregroundColor(Color.textPrimary)
+                                .padding(.leading, 4)
+
+                            MembershipRadioButton(
+                                label: "Club Member",
+                                subtitle: "I'm a member at this course",
+                                isSelected: isClubMember
+                            ) {
+                                withAnimation(.easeOut(duration: 0.15)) { isClubMember = true }
+                            }
+
+                            MembershipRadioButton(
+                                label: "Home Course Only",
+                                subtitle: "I play here regularly but I'm not a member",
+                                isSelected: !isClubMember
+                            ) {
+                                withAnimation(.easeOut(duration: 0.15)) { isClubMember = false }
+                            }
+                        }
+                        .padding(.top, 8)
+                    }
+                }
+                .padding(.horizontal, 24)
+            }
+        }
+        .background(Color.bgSecondary)
+        .onAppear {
+            // Pre-fill membership from current profile
+            isClubMember = authService.currentUser?.isClubMember ?? true
+        }
+        .alert("Update Failed", isPresented: $showError) {
+            Button("OK") { }
+        } message: {
+            Text(errorMessage ?? "Something went wrong.")
+        }
+    }
+
+    private func debounceSearch(_ query: String) {
+        searchTask?.cancel()
+
+        guard query.count >= 2 else {
+            searchResults = []
+            isSearching = false
+            return
+        }
+
+        isSearching = true
+
+        searchTask = Task {
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            guard !Task.isCancelled else { return }
+
+            do {
+                let results = try await GolfCourseService.shared.searchCourses(query: query)
+                guard !Task.isCancelled else { return }
+                searchResults = results
+            } catch {
+                guard !Task.isCancelled else { return }
+                searchResults = []
+            }
+            isSearching = false
+        }
+    }
+
+    private func saveClub() {
+        isSaving = true
+        let clubName = selectedClub?.clubName ?? selectedClub?.courseName
+        let clubId = selectedClub?.id
+
+        Task {
+            do {
+                try await authService.updateProfile(ProfileUpdate(
+                    homeClub: clubName,
+                    homeClubId: clubId,
+                    isClubMember: isClubMember
+                ))
+                isSaving = false
+                dismiss()
+            } catch {
+                isSaving = false
+                errorMessage = "Could not update home club. Please try again."
+                showError = true
+            }
+        }
+    }
+
+}
+
+// MARK: - Share Sheet
+
+struct ShareSheetView: UIViewControllerRepresentable {
+    let items: [Any]
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
 // MARK: - Notifications Sheet
 
 struct NotificationsSheet: View {
     @Environment(\.dismiss) var dismiss
-    @AppStorage("notif_roundInvites") private var roundInvites = true
     @AppStorage("notif_scoreUpdates") private var scoreUpdates = true
     @AppStorage("notif_skinsWon") private var skinsWon = true
 
     var body: some View {
         VStack(spacing: 0) {
-            // Header
+            Text("Notifications")
+                .font(.carry.labelBold)
+                .foregroundColor(Color.textPrimary)
+                .padding(.top, 40)
+                .padding(.bottom, 20)
+
+            // Score Updates toggle
             HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Score Updates")
+                        .font(.carry.body)
+                        .foregroundColor(Color.textPrimary)
+                    Text("When scores are entered in your round")
+                        .font(.carry.caption)
+                        .foregroundColor(Color.textSecondary)
+                }
                 Spacer()
-                Text("Notifications")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundColor(Color(hex: "#1A1A1A"))
-                Spacer()
-            }
-            .overlay(alignment: .trailing) {
-                Button("Done") { dismiss() }
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundColor(Color(hex: "#C4A450"))
+                Toggle("", isOn: $scoreUpdates)
+                    .labelsHidden()
+                    .tint(Color.textPrimary)
             }
             .padding(.horizontal, 20)
-            .padding(.top, 20)
-            .padding(.bottom, 24)
+            .padding(.vertical, 12)
 
-            VStack(spacing: 0) {
-                notifToggle(
-                    icon: "envelope.fill",
-                    iconColor: "#4A90D9",
-                    label: "Round Invites",
-                    subtitle: "When someone invites you to a skins game",
-                    isOn: $roundInvites
-                )
+            Rectangle()
+                .fill(Color.bgPrimary)
+                .frame(height: 1)
+                .padding(.horizontal, 20)
 
-                Rectangle()
-                    .fill(Color(hex: "#F0F0F0"))
-                    .frame(height: 1)
-                    .padding(.leading, 58)
-
-                notifToggle(
-                    icon: "pencil.line",
-                    iconColor: "#2ECC71",
-                    label: "Score Updates",
-                    subtitle: "When scores are entered in your round",
-                    isOn: $scoreUpdates
-                )
-
-                Rectangle()
-                    .fill(Color(hex: "#F0F0F0"))
-                    .frame(height: 1)
-                    .padding(.leading, 58)
-
-                notifToggle(
-                    icon: "dollarsign.circle.fill",
-                    iconColor: "#C4A450",
-                    label: "Skins Won",
-                    subtitle: "When someone wins a skin in your game",
-                    isOn: $skinsWon
-                )
+            // Skins Won toggle
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Skins Won")
+                        .font(.carry.body)
+                        .foregroundColor(Color.textPrimary)
+                    Text("When someone wins a skin in your game")
+                        .font(.carry.caption)
+                        .foregroundColor(Color.textSecondary)
+                }
+                Spacer()
+                Toggle("", isOn: $skinsWon)
+                    .labelsHidden()
+                    .tint(Color.textPrimary)
             }
-            .background(
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(.white)
-            )
             .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+
+            Rectangle()
+                .fill(Color.bgPrimary)
+                .frame(height: 1)
+                .padding(.horizontal, 20)
 
             Text("Push notifications require permission in iOS Settings.")
-                .font(.system(size: 12))
-                .foregroundColor(Color(hex: "#BBBBBB"))
+                .font(.carry.caption)
+                .foregroundColor(Color.textSecondary)
                 .padding(.top, 12)
-                .padding(.horizontal, 24)
+                .padding(.horizontal, 20)
 
             Spacer()
         }
-        .background(Color(hex: "#F0F0F0"))
-    }
-
-    private func notifToggle(icon: String, iconColor: String, label: String, subtitle: String, isOn: Binding<Bool>) -> some View {
-        HStack(spacing: 14) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Color(hex: iconColor))
-                Image(systemName: icon)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(.white)
-            }
-            .frame(width: 32, height: 32)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(label)
-                    .font(.system(size: 16))
-                    .foregroundColor(Color(hex: "#1A1A1A"))
-                Text(subtitle)
-                    .font(.system(size: 11))
-                    .foregroundColor(Color(hex: "#AAAAAA"))
-            }
-
-            Spacer()
-
-            Toggle("", isOn: isOn)
-                .tint(Color(hex: "#C4A450"))
-                .labelsHidden()
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
     }
 }
+
+// MARK: - Previews
+
+#if DEBUG
+#Preview("1 - New user (no profile)") {
+    ProfileView(skinGameGroups: .constant([]))
+        .environmentObject(AuthService())
+        .environmentObject(StoreService())
+}
+
+#Preview("2 - Populated profile") {
+    let auth = AuthService()
+    auth.currentUser = ProfileDTO(
+        id: UUID(),
+        firstName: "Daniel",
+        lastName: "Sigvardsson",
+        username: nil,
+        displayName: "Daniel",
+        initials: "DS",
+        color: "#D4A017",
+        avatar: "🏌️",
+        handicap: 12.4,
+        ghinNumber: "1234567",
+        homeClub: "Pine Valley Golf Club",
+        homeClubId: 12345,
+        email: "daniel@example.com",
+        createdAt: nil,
+        updatedAt: nil
+    )
+    return ProfileView(skinGameGroups: .constant(SavedGroup.demo))
+        .environmentObject(auth)
+        .environmentObject(StoreService())
+}
+#endif

@@ -1,6 +1,6 @@
 import Foundation
 
-struct Hole: Identifiable {
+struct Hole: Identifiable, Hashable, Codable {
     let id: Int
     let num: Int
     let par: Int
@@ -35,4 +35,45 @@ struct Hole: Identifiable {
     static let frontPar: Int = front9.reduce(0) { $0 + $1.par }
     static let backPar: Int = back9.reduce(0) { $0 + $1.par }
     static let totalPar: Int = frontPar + backPar
+
+    // MARK: - Build holes from Golf Course API data
+
+    /// Convert API hole data to 18 `Hole` objects.
+    /// Falls back to `Hole.allHoles` defaults for any missing or incomplete data.
+    static func fromAPI(_ apiHoles: [GolfCourseHole]) -> [Hole] {
+        // Need exactly 18 holes worth of data to be useful
+        guard !apiHoles.isEmpty else {
+            #if DEBUG
+            print("[Hole.fromAPI] No API holes provided, using defaults")
+            #endif
+            return allHoles
+        }
+
+        let defaults = allHoles
+        var result: [Hole] = []
+
+        for i in 0..<18 {
+            let holeNum = i + 1
+            let defaultHole = defaults[i]
+
+            if i < apiHoles.count {
+                let apiHole = apiHoles[i]
+                let par = apiHole.par ?? defaultHole.par
+                let hcp = apiHole.handicap ?? defaultHole.hcp
+                result.append(Hole(id: holeNum, num: holeNum, par: par, hcp: hcp))
+            } else {
+                // API didn't provide this hole — use default
+                result.append(defaultHole)
+            }
+        }
+
+        #if DEBUG
+        let apiCount = min(apiHoles.count, 18)
+        let withPar = apiHoles.prefix(18).filter { $0.par != nil }.count
+        let withHcp = apiHoles.prefix(18).filter { $0.handicap != nil }.count
+        print("[Hole.fromAPI] Built \(result.count) holes from API: \(apiCount) provided, \(withPar) with par, \(withHcp) with handicap")
+        #endif
+
+        return result
+    }
 }

@@ -31,33 +31,64 @@ struct PlayerRow: View {
                     } else {
                         Text("–")
                             .font(.system(size: scoreFont - 2))
-                            .foregroundColor(Color(hex: "#CCCCCC"))
+                            .foregroundColor(Color.borderMedium)
                     }
 
                     // Pop dot — top right
                     if pops > 0 {
                         Circle()
-                            .fill(Color(hex: "#1A1A1A"))
+                            .fill(Color.textPrimary)
                             .frame(width: max(4, cellWidth * 0.1), height: max(4, cellWidth * 0.1))
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                             .padding(.top, max(3, cellWidth * 0.08))
                             .padding(.trailing, max(3, cellWidth * 0.08))
+                            .accessibilityHidden(true)
                     }
                 }
                 .frame(width: cellWidth, height: rowHeight)
                 .contentShape(Rectangle())
                 .onTapGesture { onTapCell(hole.num, player) }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel({
+                    let name = isYou ? "You" : player.shortName
+                    if let s = score {
+                        let diff = s - hole.par
+                        let desc: String
+                        switch diff {
+                        case _ where s == 1: desc = "hole in one"
+                        case ...(-3): desc = "albatross"
+                        case -2: desc = "eagle"
+                        case -1: desc = "birdie"
+                        case 0: desc = "par"
+                        case 1: desc = "bogey"
+                        case 2: desc = "double bogey"
+                        default: desc = "\(diff) over par"
+                        }
+                        return "\(name), Hole \(hole.num), \(s), \(desc)"
+                    } else {
+                        return "\(name), Hole \(hole.num), no score"
+                    }
+                }())
+                .accessibilityHint("Double tap to enter score")
+                .accessibilityAddTraits(.isButton)
                 .overlay(alignment: .trailing) {
                     Rectangle()
-                        .fill(isNineBoundary ? Color(hex: "#E0E0E0") : Color(hex: "#F0F0F0"))
+                        .fill(Color.gridLine)
                         .frame(width: isNineBoundary ? 2 : 1)
+                        .accessibilityHidden(true)
                 }
             }
 
-            // Summary columns
-            summaryCell(value: viewModel.hasFrontScores(for: player.id) ? viewModel.frontTotal(for: player.id) : nil, width: sumWidth, isFirst: true)
-            summaryCell(value: viewModel.hasBackScores(for: player.id) ? viewModel.backTotal(for: player.id) : nil, width: sumWidth)
-            summaryCell(value: (viewModel.hasFrontScores(for: player.id) || viewModel.hasBackScores(for: player.id)) ? viewModel.total(for: player.id) : nil, width: sumWidth, isBold: true)
+            // Summary columns: Out (front 9), In (back 9), Tot (combined)
+            let hasFront = viewModel.hasFrontScores(for: player.id)
+            let hasBack = viewModel.hasBackScores(for: player.id)
+
+            summaryCell(value: hasFront ? viewModel.frontTotal(for: player.id) : nil, width: sumWidth, isFirst: true)
+                .accessibilityLabel(hasFront ? "\(player.shortName) front nine, \(viewModel.frontTotal(for: player.id))" : "\(player.shortName) front nine, no score")
+            summaryCell(value: hasBack ? viewModel.backTotal(for: player.id) : nil, width: sumWidth)
+                .accessibilityLabel(hasBack ? "\(player.shortName) back nine, \(viewModel.backTotal(for: player.id))" : "\(player.shortName) back nine, no score")
+            summaryCell(value: (hasFront && hasBack) ? viewModel.total(for: player.id) : nil, width: sumWidth, isBold: true, isLast: true)
+                .accessibilityLabel((hasFront && hasBack) ? "\(player.shortName) total, \(viewModel.total(for: player.id))" : "\(player.shortName) total, incomplete")
         }
     }
 
@@ -69,9 +100,9 @@ struct PlayerRow: View {
         // Under-par colors by level
         let underColor: Color = {
             switch diff {
-            case ...(-3): return Color(hex: "#FFD700") // Albatross / HIO — gold
-            case -2:      return Color(hex: "#E5451F") // Eagle — red-orange
-            case -1:      return Color(hex: "#2ECC71") // Birdie — green
+            case ...(-3): return Color.goldStandard // Albatross / HIO — gold
+            case -2:      return Color(hexString: "#E5451F") // Eagle — red-orange
+            case -1:      return Color.birdieGreen // Birdie — green
             default:      return .clear
             }
         }()
@@ -84,32 +115,33 @@ struct PlayerRow: View {
             }
             if isOver {
                 RoundedRectangle(cornerRadius: 3)
-                    .strokeBorder(Color(hex: "#DDDDDD"), lineWidth: 1.5)
+                    .strokeBorder(Color(hexString: "#DDDDDD"), lineWidth: 1.5)
                     .frame(width: circleSize, height: circleSize)
             }
             Text("\(score)")
                 .font(.system(size: scoreFont, weight: isYou ? .semibold : .medium))
                 .monospacedDigit()
-                .foregroundColor(diff < 0 ? underColor : Color(hex: "#1A1A1A"))
+                .foregroundColor(diff < 0 ? underColor : Color.textPrimary)
         }
     }
 
     @ViewBuilder
-    private func summaryCell(value: Int?, width: CGFloat, isFirst: Bool = false, isBold: Bool = false) -> some View {
+    private func summaryCell(value: Int?, width: CGFloat, isFirst: Bool = false, isBold: Bool = false, isLast: Bool = false) -> some View {
         Group {
             if let v = value {
                 Text("\(v)")
                     .font(.system(size: isBold ? scoreFont : scoreFont - 1, weight: isYou ? (isBold ? .heavy : .bold) : (isBold ? .semibold : .medium)))
                     .monospacedDigit()
-                    .foregroundColor(Color(hex: "#1A1A1A"))
+                    .foregroundColor(Color.textPrimary)
             }
         }
         .frame(width: width, height: rowHeight)
         .overlay(alignment: .leading) {
-            if isFirst {
+            if !isFirst {
                 Rectangle()
-                    .fill(Color(hex: "#E0E0E0"))
-                    .frame(width: 2)
+                    .fill(Color.gridLine)
+                    .frame(width: 1)
+                    .accessibilityHidden(true)
             }
         }
     }
@@ -122,9 +154,9 @@ struct PulsingCircle: View {
 
     var body: some View {
         Circle()
-            .strokeBorder(Color(hex: "#CCCCCC"), lineWidth: 2)
+            .strokeBorder(Color.borderMedium, lineWidth: 2)
             .frame(width: size, height: size)
-            .background(Circle().fill(Color(hex: "#F5F5F5")))
+            .background(Circle().fill(Color.bgSecondary))
             .scaleEffect(isPulsing ? 1.06 : 1.0)
             .animation(.easeInOut(duration: 1).repeatForever(autoreverses: true), value: isPulsing)
             .onAppear { isPulsing = true }

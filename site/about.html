@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>About — Carry</title>
+    <meta name="description" content="The story behind Carry — built by a golfer, for golfers.">
+    <meta name="theme-color" content="#1A1A1A">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/png" href="appicon.png">
+    <link rel="apple-touch-icon" href="appicon.png">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        html, body { overflow-x: hidden; }
+        .legal-header {
+            background: var(--black);
+            padding: 32px 0;
+        }
+        .legal-header .container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .legal-header a.logo-link {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            text-decoration: none;
+        }
+        .legal-header img {
+            height: 32px;
+            width: auto;
+        }
+        .legal-header span {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--white);
+            letter-spacing: -0.3px;
+        }
+        .header-nav {
+            display: flex;
+            gap: 24px;
+        }
+        .header-nav a {
+            font-size: 14px;
+            font-weight: 600;
+            color: #fff;
+            text-decoration: none;
+        }
+        .header-nav a:hover {
+            color: #fff;
+        }
+        .header-nav a.active {
+            color: #fff;
+        }
+        .about-body {
+            padding: 64px 0 100px;
+            background: var(--white);
+        }
+        .about-body .container {
+            max-width: 720px;
+        }
+        .about-body h1 {
+            font-size: 36px;
+            font-weight: 800;
+            letter-spacing: -1px;
+            color: var(--gray-900);
+            margin-bottom: 12px;
+        }
+        .about-subtitle {
+            font-size: 18px;
+            color: var(--gray-500);
+            margin-bottom: 48px;
+            font-weight: 500;
+        }
+        .about-section {
+            margin-bottom: 48px;
+        }
+        .about-section h2 {
+            font-size: 14px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--gold);
+            margin-bottom: 16px;
+        }
+        .about-section p {
+            font-size: 16px;
+            color: var(--gray-700);
+            line-height: 1.8;
+            margin-bottom: 16px;
+        }
+        .about-section p:last-child {
+            margin-bottom: 0;
+        }
+        .about-cta-wrapper {
+            margin-top: 64px;
+            padding: 0;
+            background: #D9F7D2;
+            margin-left: -5%;
+            margin-right: -5%;
+            border-radius: 0;
+        }
+        .about-cta {
+            text-align: center;
+            padding: 64px 32px;
+            max-width: 720px;
+            margin: 0 auto;
+        }
+        .about-cta h3 {
+            font-size: 36px;
+            font-weight: 800;
+            color: #0C4501;
+            margin-bottom: 12px;
+        }
+        .about-cta p {
+            font-size: 18px;
+            color: #0C4501;
+            opacity: 0.7;
+            line-height: 1.7;
+            margin-bottom: 28px;
+        }
+        .about-cta a.cta-button {
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+            padding: 16px 32px;
+            background: #BCF0B5;
+            color: #0C4501;
+            font-size: 17px;
+            font-weight: 600;
+            border-radius: 16px;
+            text-decoration: none;
+            transition: transform 0.2s;
+            white-space: nowrap;
+        }
+        .about-cta a.cta-button:hover {
+            transform: scale(1.03);
+            background: #A8E4A0;
+        }
+        .about-cta a.cta-button svg {
+            fill: #0C4501;
+        }
+        @media (max-width: 640px) {
+            .header-nav {
+                gap: 16px;
+            }
+            .header-nav a {
+                font-size: 13px;
+            }
+            .about-body h1 {
+                font-size: 28px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header class="legal-header">
+        <div class="container">
+            <a href="index.html" class="logo-link">
+                <img src="horion_logo.svg" alt="Carry" style="height: 32px;">
+            </a>
+            <nav class="header-nav">
+                <a href="faq.html" style="color: #fff !important; text-decoration: none;">FAQ</a>
+                <a href="about.html" style="color: #fff !important; text-decoration: none;">About</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="about-body">
+        <div class="container">
+            <h1>Built by a golfer, for golfers.</h1>
+            <p class="about-subtitle">The story behind Carry.</p>
+
+            <div class="about-section">
+                <h2>The Problem</h2>
+                <p>Every Friday at my club, the same thing happens. Twelve guys show up for skins. Someone pulls out their phone to track scores in the Notes app. Someone else texts the group chat asking who won hole 7. By the 18th hole, nobody agrees on the payouts.</p>
+                <p>We've been playing skins for years, and every week it's the same chaos. Scraps of paper, mental math, arguments about carries. There had to be a better way.</p>
+            </div>
+
+            <div class="about-section">
+                <h2>The Solution</h2>
+                <p>Carry is the app I wished existed. Set up your skins game in seconds, assign tee times and groups, invite players via SMS, and let everyone follow the action live from their phone. Scores sync across all groups every 15 seconds. No more guessing who's winning. No more end-of-round debates about who owes what.</p>
+                <p>The app handles carries, tracks every skin won, calculates payouts instantly, sends push notifications when someone wins a skin, and lets you settle up through Venmo before you even leave the clubhouse. It even works offline on the course.</p>
+            </div>
+
+            <div class="about-section">
+                <h2>About Me</h2>
+                <p>I'm Daniel, the founder of Carry. I'm a member at a club in the East Bay, Bay Area, where skins games are a way of life. I built Carry because I was tired of the friction — setting up games via group texts, tracking scores on napkins, and spending 20 minutes after the round figuring out who won what.</p>
+                <p>Carry started as a tool for my own Friday game and grew into something I think every skins group needs. Whether you play at a private club, a muni, or a resort course on vacation — if you play skins, Carry is for you.</p>
+            </div>
+
+            <div class="about-section">
+                <h2>What's In The App</h2>
+                <p>Carry now includes cross-group live score syncing, handicap-adjusted net scoring, offline support, push notifications for tee times and skin wins, recurring game scheduling, SMS invites, Venmo settlement links, avatar photos, home club designation, and season leaderboards. Carry Premium ($29.99/year or $4.99/month, with a 7-day free trial) unlocks unlimited groups, full round history, and all-time stats.</p>
+                <p>Quick Games let you start a skins game in seconds with no accounts or invites needed. Just type in player names, pick a course, and go. You get 3 free Quick Games per month, or unlimited with Premium.</p>
+                <p>I'd love to hear from you. Whether it's a feature request, a bug report, or just to tell me about your skins game — your feedback shapes what gets built next. Reach out anytime at <a href="mailto:support@carryapp.site">support@carryapp.site</a>.</p>
+            </div>
+
+        </div>
+    </main>
+
+    <div class="about-cta-wrapper">
+        <div class="about-cta">
+            <h3>Ready to Play?</h3>
+            <p>Download Carry and set up your skins game in under a minute.</p>
+            <a href="#" class="cta-button">
+                <svg width="20" height="24" viewBox="0 0 17 20" fill="white"><path d="M13.545 10.418c-.024-2.524 2.06-3.732 2.153-3.792-1.17-1.713-2.997-1.947-3.647-1.974-1.552-.157-3.03.914-3.818.914-.788 0-2.003-.891-3.293-.867-1.695.024-3.259.986-4.132 2.506-1.762 3.057-.451 7.586 1.266 10.066.839 1.213 1.84 2.575 3.154 2.527 1.265-.051 1.743-.818 3.273-.818 1.53 0 1.96.818 3.29.793 1.361-.024 2.224-1.237 3.06-2.452.964-1.406 1.362-2.767 1.386-2.838-.03-.014-2.659-1.021-2.685-4.05v-.015zM11.015 3.082c.698-.846 1.168-2.021 1.04-3.193-1.004.041-2.22.669-2.94 1.514-.647.749-1.213 1.947-1.062 3.096 1.121.087 2.264-.569 2.962-1.417z"/></svg>
+                Download Free on the App Store
+            </a>
+        </div>
+    </div>
+
+    <footer>
+        <div class="container footer-content">
+            <p class="copyright">&copy; 2026 Carry. All rights reserved.</p>
+            <div class="footer-links">
+                <a href="index.html">Home</a>
+                <a href="faq.html">FAQ</a>
+                <a href="about.html">About</a>
+                <a href="privacy.html">Privacy Policy</a>
+                <a href="terms.html">Terms of Service</a>
+            </div>
+        </div>
+    </footer>
+</body>
+</html>

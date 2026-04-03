@@ -6,71 +6,141 @@ struct AuthView: View {
     @State private var error: String?
     @State private var isSigningIn = false
 
+    /// Optional: in debug/test flows, tapping the sign-in button calls this instead of real Apple Sign-In.
+    var onDebugSkip: (() -> Void)? = nil
+
     var body: some View {
-        ZStack {
-            Color(hex: "#F0F0F0").ignoresSafeArea()
+        GeometryReader { geo in
+            let h = geo.size.height + geo.safeAreaInsets.top + geo.safeAreaInsets.bottom
+            let w = geo.size.width
 
-            VStack(spacing: 32) {
-                Spacer()
+            VStack(spacing: 0) {
+                    // ~32% from screen top to logo
+                    Spacer()
+                        .frame(height: h * 0.32)
 
-                // Logo
-                ZStack {
-                    RoundedRectangle(cornerRadius: 24)
-                        .fill(LinearGradient(
-                            colors: [Color(hex: "#1B5E20"), Color(hex: "#2E7D32")],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ))
-                        .frame(width: 80, height: 80)
-                        .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
-                    RoundedRectangle(cornerRadius: 20)
-                        .strokeBorder(Color(hex: "#C4A450").opacity(0.3), lineWidth: 2)
-                        .frame(width: 72, height: 72)
-                    Text("$")
-                        .font(.system(size: 36, weight: .heavy, design: .serif))
-                        .foregroundColor(Color(hex: "#C4A450"))
+                    // Logo: icon + wordmark + tagline
+                    Image("carry-logo")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: w * 0.683) // 268/393
+                        .accessibilityLabel("Carry")
+
+                    // ~7.7% gap to text block
+                    Spacer()
+                        .frame(height: h * 0.077)
+
+                    // Text block
+                    VStack(spacing: 8) {
+                        Text("Track Your Skins Games")
+                            .font(.system(size: 23, weight: .bold))
+                            .foregroundColor(.white)
+                            .tracking(CarryTracking.tight)
+
+                        Text("Set up skins games in seconds,\nfollow the action live,\n& crown your winners.")
+                            .font(.carry.bodyLG)
+                            .foregroundColor(.white)
+                            .tracking(CarryTracking.tight)
+                            .lineSpacing(4)
+                    }
+                    .multilineTextAlignment(.center)
+
+                    // Flexible gap pushes button toward bottom
+                    Spacer()
+
+                    // Sign in with Apple
+                    if let skip = onDebugSkip {
+                        // Debug mode: tappable button that skips real sign-in
+                        Button(action: skip) {
+                            HStack(spacing: 12) {
+                                Image(systemName: "apple.logo")
+                                    .font(.system(size: 20))
+                                Text("Sign in using Apple")
+                                    .font(.carry.label)
+                                    .tracking(CarryTracking.tight)
+                            }
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 51)
+                            .background(RoundedRectangle(cornerRadius: 18).fill(.black))
+                        }
+                        .padding(.horizontal, w * 0.084)
+                    } else {
+                        // Real sign-in flow — use native Apple button directly
+                        SignInWithAppleButton(.signIn) { request in
+                            request.requestedScopes = [.fullName, .email]
+                        } onCompletion: { result in
+                            handleSignIn(result: result)
+                        }
+                        .signInWithAppleButtonStyle(.black)
+                        .frame(height: 51)
+                        .cornerRadius(18)
+                        .disabled(isSigningIn)
+                        .padding(.horizontal, w * 0.084)
+                    }
+
+                    if isSigningIn {
+                        ProgressView()
+                            .tint(.white)
+                            .padding(.top, 12)
+                    }
+
+                    if let error {
+                        Text(error)
+                            .font(.carry.captionLG)
+                            .foregroundColor(Color.systemRedColor)
+                            .multilineTextAlignment(.center)
+                            .padding(.top, 8)
+                    }
+
+                    // Terms
+                    HStack(spacing: 0) {
+                        Text("By continuing you agree to ")
+                            .foregroundColor(Color(hexString: "#A8A8A8"))
+                        Button {
+                            if let url = URL(string: "https://carryapp.site/terms.html") {
+                                UIApplication.shared.open(url)
+                            }
+                        } label: {
+                            Text("Terms")
+                                .underline()
+                                .foregroundColor(Color.textMid)
+                        }
+                        Text(" & ")
+                            .foregroundColor(Color(hexString: "#A8A8A8"))
+                        Button {
+                            if let url = URL(string: "https://carryapp.site/privacy.html") {
+                                UIApplication.shared.open(url)
+                            }
+                        } label: {
+                            Text("Privacy Policy")
+                                .underline()
+                                .foregroundColor(Color.textMid)
+                        }
+                    }
+                    .font(.carry.captionLG)
+                    .tracking(CarryTracking.tight)
+                    .multilineTextAlignment(.center)
+                    .padding(.top, 16)
+
+                    // ~4% from screen bottom
+                    Spacer()
+                        .frame(height: h * 0.04)
                 }
-
-                VStack(spacing: 8) {
-                    Text("Carry")
-                        .font(.system(size: 32, weight: .bold))
-                        .foregroundColor(Color(hex: "#1A1A1A"))
-                    Text("Golf Skins Tracker")
-                        .font(.system(size: 16))
-                        .foregroundColor(Color(hex: "#999999"))
-                }
-
-                Spacer()
-
-                // Sign in button
-                SignInWithAppleButton(.signIn) { request in
-                    request.requestedScopes = [.fullName, .email]
-                } onCompletion: { result in
-                    handleSignIn(result: result)
-                }
-                .signInWithAppleButtonStyle(.black)
-                .frame(height: 52)
-                .cornerRadius(12)
-                .padding(.horizontal, 40)
-                .disabled(isSigningIn)
-
-                if isSigningIn {
-                    ProgressView()
-                        .tint(Color(hex: "#C4A450"))
-                }
-
-                if let error {
-                    Text(error)
-                        .font(.system(size: 13))
-                        .foregroundColor(Color(hex: "#E05555"))
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 40)
-                }
-
-                Spacer()
-                    .frame(height: 80)
-            }
+            .frame(width: w, height: h)
+            .offset(y: -geo.safeAreaInsets.top)
+            .background(
+                Image("welcome-bg")
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: w, height: h)
+                    .clipped()
+                    .accessibilityHidden(true)
+            )
         }
+        .ignoresSafeArea()
+        .preferredColorScheme(.dark)
+        .statusBarHidden(false)
     }
 
     private func handleSignIn(result: Result<ASAuthorization, Error>) {

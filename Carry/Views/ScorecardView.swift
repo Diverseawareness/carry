@@ -1,44 +1,114 @@
 import SwiftUI
 
-// Reference type so UIKit coordinator and SwiftUI closures share the same flag
-private final class ScrollSuppression {
-    var isSuppressed = false
-}
-
 struct ScorecardView: View {
     let config: RoundConfig
+    @State private var isViewer: Bool
     var onBack: (() -> Void)?
+    var onEditPlayers: (() -> Void)?
+    var onCourseChanged: ((SelectedCourse) -> Void)?
+    var onCreateGroup: (() -> Void)?
+    var onDeclineGroup: (() -> Void)?
+    var isQuickGame: Bool = false
     @StateObject private var viewModel: RoundViewModel
     @State private var showInput = false
     @State private var inputHole: Int?
     @State private var inputPlayer: Player?
     @State private var showLabels = true
-    private let scrollSuppression = ScrollSuppression()
+    @State private var sheetDrag: CGFloat = 0
+    @State private var suppressDetection = false
+    @State private var showRoundComplete = false
+    @State private var roundCompleteCollapsed = false
+    @State private var showOptionsMenu = false
+    @State private var showEndRoundAlert = false
+    @State private var showEndShareRoundAlert = false
+    @State private var showCourseSelector = false
+    @State private var showScorerPicker = false
+    @State private var activeToast: GameEvent?
+    @State private var showShareSheet = false
+    @State private var shareText = ""
+    @State private var showScoringInfo = false
+
+    private static let scoringInfoKeyPrefix = "scoringInfoShownCount"
 
     let currentUserId: Int
 
-    init(config: RoundConfig = .default, onBack: (() -> Void)? = nil, currentUserId: Int = 1) {
+    init(config: RoundConfig, onBack: (() -> Void)? = nil, onEditPlayers: (() -> Void)? = nil, onCourseChanged: ((SelectedCourse) -> Void)? = nil, onCreateGroup: (() -> Void)? = nil, onDeclineGroup: (() -> Void)? = nil, isQuickGame: Bool = false, currentUserId: Int = 1, demoScores: Bool = false, demoMode: RoundViewModel.DemoMode = .none, isViewer: Bool = false) {
         self.config = config
+        // In "everyone scores" mode, nobody is a viewer — all players can enter scores
+        self._isViewer = State(initialValue: config.scoringMode == .everyone ? false : isViewer)
         self.onBack = onBack
+        self.onEditPlayers = onEditPlayers
+        self.onCourseChanged = onCourseChanged
+        self.onCreateGroup = onCreateGroup
+        self.onDeclineGroup = onDeclineGroup
+        self.isQuickGame = isQuickGame
         self.currentUserId = currentUserId
-        _viewModel = StateObject(wrappedValue: RoundViewModel(config: config, currentUserId: currentUserId))
+        let mode: RoundViewModel.DemoMode = demoScores ? .midGame : demoMode
+        _viewModel = StateObject(wrappedValue: RoundViewModel(config: config, currentUserId: currentUserId, demoMode: mode))
     }
 
-    private var screenTopInset: CGFloat {
+    /// Init with an externally-owned viewmodel (keeps state across navigation)
+    init(viewModel: RoundViewModel, onBack: (() -> Void)? = nil, onEditPlayers: (() -> Void)? = nil, onCourseChanged: ((SelectedCourse) -> Void)? = nil) {
+        self.config = viewModel.config
+        self._isViewer = State(initialValue: false)
+        self.onBack = onBack
+        self.onEditPlayers = onEditPlayers
+        self.onCourseChanged = onCourseChanged
+        self.currentUserId = viewModel.currentUserId
+        _viewModel = StateObject(wrappedValue: viewModel)
+    }
+
+    private var safeAreaInsets: (top: CGFloat, bottom: CGFloat) {
         guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
               let window = scene.windows.first
-        else { return 59 }
-        return window.safeAreaInsets.top
+        else { return (59, 34) }
+        return (window.safeAreaInsets.top, window.safeAreaInsets.bottom)
     }
 
     var body: some View {
-        GeometryReader { geo in
-            let layout = LayoutMetrics(size: geo.size, playerCount: viewModel.groupPlayers.count)
-            mainContent(layout: layout)
-                .padding(.top, screenTopInset - 7)
+        ZStack {
+            GeometryReader { geo in
+                let insets = safeAreaInsets
+                let topPad = insets.top - 7
+                let collapsedBarH: CGFloat = (showRoundComplete && roundCompleteCollapsed) ? 90 : 0
+                let contentH = UIScreen.main.bounds.height - topPad - insets.bottom - collapsedBarH
+                let stableSize = CGSize(width: geo.size.width, height: contentH)
+                let layout = LayoutMetrics(size: stableSize, playerCount: viewModel.groupPlayers.count)
+                mainContent(layout: layout)
+                    .padding(.top, topPad)
+            }
+
+            if showScoringInfo {
+                ScoringInfoModal(isQuickGame: isQuickGame) {
+                    withAnimation(.easeOut(duration: 0.25)) {
+                        showScoringInfo = false
+                    }
+                }
+                .transition(.opacity)
+                .zIndex(100)
+            }
+
+            // Score dispute modal (Everyone Scores mode)
+            if viewModel.activeProposal != nil {
+                scoreDisputeOverlay(proposal: viewModel.activeProposal!)
+                    .transition(.opacity)
+                    .zIndex(200)
+            }
         }
         .ignoresSafeArea(.container, edges: .top)
         .ignoresSafeArea(.keyboard)
+        .onAppear {
+            let perUserKey = "\(Self.scoringInfoKeyPrefix)_\(currentUserId)"
+            let count = UserDefaults.standard.integer(forKey: perUserKey)
+            if count < 5 {
+                UserDefaults.standard.set(count + 1, forKey: perUserKey)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    withAnimation(.easeIn(duration: 0.3)) {
+                        showScoringInfo = true
+                    }
+                }
+            }
+        }
     }
 
     @ViewBuilder
@@ -46,20 +116,225 @@ struct ScorecardView: View {
         let players = viewModel.groupPlayers
         let active = viewModel.activeHole
 
-        ZStack {
-            Color(hex: "#F0F0F0").ignoresSafeArea()
+        ZStack(alignment: .top) {
+            Color.bgPrimary.ignoresSafeArea()
 
-            VStack(spacing: 6) {
+            VStack(spacing: 0) {
                 headerBar()
 
                 CashGamesBar(viewModel: viewModel)
                     .padding(.horizontal, layout.cardM)
-                    .padding(.vertical, 4)
+                    .padding(.top, layout.gapAbovePills)
+                    .padding(.bottom, layout.gapBelowPills)
 
                 scorecardSection(layout: layout, players: players, active: active)
             }
 
             scoreInputOverlay()
+
+            // Toast notification overlay
+            VStack {
+                if let toast = activeToast {
+                    GameToastView(event: toast)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .padding(.horizontal, 16)
+                        .padding(.top, 8)
+                        .zIndex(5)
+                }
+                Spacer()
+            }
+            .animation(.spring(response: 0.4, dampingFraction: 0.8), value: activeToast?.id)
+            .allowsHitTesting(false)
+
+            // Round complete overlay
+            if showRoundComplete {
+                RoundCompleteView(viewModel: viewModel, onDismiss: {
+                    withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
+                        showRoundComplete = false
+                    }
+                }, onExitRound: {
+                    // Just navigate back — don't mark round as completed
+                    // Round completion is handled by the Create Group card or when all groups finish
+                    onBack?()
+                }, isCreator: currentUserId == config.creatorId,
+                   isQuickGame: isQuickGame,
+                   onCreateGroup: onCreateGroup,
+                   onDeclineGroup: onDeclineGroup,
+                   isCollapsed: $roundCompleteCollapsed)
+                .transition(.opacity)
+                .zIndex(10)
+            }
+        }
+        .onReceive(viewModel.$myGroupFinished) { finished in
+            if finished && !showRoundComplete {
+                withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
+                    showRoundComplete = true
+                }
+            }
+        }
+        .onReceive(viewModel.$gameEvents) { events in
+            guard !events.isEmpty, activeToast == nil else { return }
+            showNextToast()
+        }
+        .alert("End Round?", isPresented: $showEndRoundAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("End Round", role: .destructive) {
+                Task {
+                    viewModel.forceCompleted = true
+                    viewModel.calculateSkins()
+                    if let roundId = viewModel.config.supabaseRoundId {
+                        try? await RoundService().updateRoundStatus(roundId: roundId, status: "concluded")
+                    }
+                    if let groupId = viewModel.config.supabaseGroupId {
+                        await GroupService().advanceScheduledDateIfRecurring(groupId: groupId)
+                    }
+                    await MainActor.run {
+                        NotificationCenter.default.post(name: .didEndRound, object: nil)
+                        withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
+                            viewModel.isRoundComplete = true
+                        }
+                    }
+                }
+            }
+        } message: {
+            Text(viewModel.allGroupsFinished
+                 ? "This will end the round and show results."
+                 : "Not all groups have finished scoring. Skins will be awarded based on completed holes.")
+        }
+        .alert("End Round & Share Results?", isPresented: $showEndShareRoundAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Share Results", role: .destructive) {
+                Task {
+                    viewModel.forceCompleted = true
+                    viewModel.calculateSkins()
+                    if let roundId = viewModel.config.supabaseRoundId {
+                        try? await RoundService().updateRoundStatus(roundId: roundId, status: "concluded")
+                    }
+                    if let groupId = viewModel.config.supabaseGroupId {
+                        await GroupService().advanceScheduledDateIfRecurring(groupId: groupId)
+                    }
+                    await MainActor.run {
+                        NotificationCenter.default.post(name: .didEndRound, object: nil)
+                        withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
+                            viewModel.isRoundComplete = true
+                        }
+                    }
+                }
+            }
+        } message: {
+            Text(viewModel.allGroupsFinished
+                 ? "This will end the round and share results with all players."
+                 : "Not all groups have finished scoring. Skins will be awarded based on completed holes and shared with all players.")
+        }
+        .fullScreenCover(isPresented: $showCourseSelector) {
+            CourseSelectionView { course in
+                onCourseChanged?(course)
+                showCourseSelector = false
+            }
+            .presentationBackground(.white)
+        }
+        .sheet(isPresented: $showShareSheet) {
+            ShareSheet(items: [shareText])
+        }
+        .sheet(isPresented: $showScorerPicker) {
+            scorerPickerSheet()
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(.white)
+        }
+    }
+
+    // MARK: - Share Sheet
+    private struct ShareSheet: UIViewControllerRepresentable {
+        let items: [Any]
+        func makeUIViewController(context: Context) -> UIActivityViewController {
+            UIActivityViewController(activityItems: items, applicationActivities: nil)
+        }
+        func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+    }
+
+    // MARK: - Scorer Picker
+
+    @ViewBuilder
+    private func scorerPickerSheet() -> some View {
+        VStack(spacing: 0) {
+            Text("Change Scorer")
+                .font(.carry.headline)
+                .foregroundColor(Color.textPrimary)
+                .padding(.top, 24)
+                .padding(.bottom, 4)
+
+            Text("Select who enters scores")
+                .font(.carry.caption)
+                .foregroundColor(Color.textSecondary)
+                .padding(.bottom, 20)
+
+            ForEach(config.players) { player in
+                let isCurrentScorer = player.id == (viewModel.config.scorerProfileId.map { Player.stableId(from: $0) } ?? config.creatorId)
+
+                Button {
+                    changeScorer(to: player)
+                } label: {
+                    HStack(spacing: 14) {
+                        PlayerAvatar(player: player, size: 43)
+
+                        Text(player.shortName)
+                            .font(.carry.bodySemibold)
+                            .foregroundColor(Color.textPrimary)
+                            .lineLimit(1)
+
+                        Spacer()
+
+                        if isCurrentScorer {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 20))
+                                .foregroundColor(Color.goldAccent)
+                        }
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 12)
+                }
+                .buttonStyle(.plain)
+
+                if player.id != config.players.last?.id {
+                    Divider().padding(.leading, 81)
+                }
+            }
+
+            Spacer()
+        }
+    }
+
+    private func changeScorer(to player: Player) {
+        guard let roundId = config.supabaseRoundId,
+              let profileId = player.profileId else {
+            showScorerPicker = false
+            return
+        }
+
+        // Update locally
+        if config.scoringMode == .everyone {
+            isViewer = false
+        } else {
+            let isCreator = currentUserId == config.creatorId
+            let isNewScorer = player.id == currentUserId
+            isViewer = !isCreator && !isNewScorer
+        }
+
+        showScorerPicker = false
+
+        // Update Supabase
+        Task {
+            do {
+                try await RoundService().updateScorer(roundId: roundId, scorerId: profileId)
+                await MainActor.run {
+                    ToastManager.shared.success("\(player.shortName) is now the scorer")
+                }
+            } catch {
+                #if DEBUG
+                print("[ScorecardView] Failed to update scorer: \(error)")
+                #endif
+            }
         }
     }
 
@@ -67,30 +342,111 @@ struct ScorecardView: View {
     private func headerBar() -> some View {
         ZStack {
             // Centered title + subtitle
-            VStack(spacing: 1) {
-                Text("Skins Game")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundColor(Color(hex: "#1A1A1A"))
-                Text("Friday Meetings")
-                    .font(.system(size: 12, weight: .regular))
-                    .foregroundColor(Color(hex: "#999999"))
+            VStack(spacing: 2) {
+                Spacer().frame(height: 4)
+                HStack(spacing: 6) {
+                    Text(config.groupName)
+                        .font(.carry.headline)
+                        .foregroundColor(Color.textPrimary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    if !SyncQueue.shared.isOnline {
+                        Image(systemName: "icloud.slash")
+                            .font(.system(size: 11))
+                            .foregroundColor(Color.textDisabled)
+                    } else if SyncQueue.shared.pendingCount > 0 {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .font(.system(size: 11))
+                            .foregroundColor(Color.goldMuted)
+                    }
+                }
+                HStack(spacing: 4) {
+                    Text(config.course)
+                        .font(.carry.caption)
+                        .foregroundColor(Color.textSecondary)
+                    if let tee = config.teeBox {
+                        Circle()
+                            .fill(Color(hexString: tee.color))
+                            .frame(width: 6, height: 6)
+                        Text(tee.name)
+                            .font(.carry.caption)
+                            .foregroundColor(Color.textSecondary)
+                    }
+                }
             }
+            .padding(.horizontal, 56)
 
-            // Leading back button
+            // Leading close button + trailing options
             HStack {
                 if let onBack {
                     Button {
                         onBack()
                     } label: {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(Color(hex: "#1A1A1A"))
-                            .frame(width: 34, height: 34)
+                        Image(systemName: "xmark")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(Color.textPrimary)
+                            .frame(width: 40, height: 40)
                             .background(Circle().fill(.white))
                             .clipShape(Circle())
                     }
+                    .accessibilityLabel("Close scorecard")
+                    .accessibilityHint("Returns to the previous screen")
                 }
+
                 Spacer()
+
+                // Options button — creator only
+                if currentUserId == config.creatorId {
+                Menu {
+                    let isRoundCreator = true
+
+                    if isRoundCreator && !isQuickGame {
+                        Button {
+                            onEditPlayers?()
+                        } label: {
+                            Label("Group Settings", systemImage: "gearshape")
+                        }
+                    }
+
+                    Button {
+                        shareText = viewModel.generateScorecard()
+                        showShareSheet = true
+                    } label: {
+                        Label("Share Scorecard", systemImage: "square.and.arrow.up")
+                    }
+
+                    if isRoundCreator {
+                        Button {
+                            showScorerPicker = true
+                        } label: {
+                            Label("Change Scorer", systemImage: "person.badge.key")
+                        }
+
+                        Divider()
+
+                        Button(role: .destructive) {
+                            showEndRoundAlert = true
+                        } label: {
+                            Label("End Round", systemImage: "xmark.circle")
+                        }
+
+                        Button(role: .destructive) {
+                            showEndShareRoundAlert = true
+                        } label: {
+                            Label("End Round & Share Results", systemImage: "square.and.arrow.up")
+                        }
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(Color.textPrimary)
+                        .frame(width: 40, height: 40)
+                        .background(Circle().fill(.white))
+                        .clipShape(Circle())
+                }
+                .accessibilityLabel("Round options")
+                .accessibilityHint("Shows settings, course change, share, and end round options")
+                } // end if creator
             }
         }
         .padding(.horizontal, 16)
@@ -119,20 +475,31 @@ struct ScorecardView: View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 0) {
+                    // Detector must be INSIDE VStack (not .background) to guarantee
+                    // it's in the UIScrollView's content hierarchy on first load.
+                    ScrollDirectionDetector(suppressDetection: $suppressDetection) { shouldShow in
+                        guard shouldShow != showLabels else { return }
+                        withAnimation(.easeOut(duration: shouldShow ? 0.1 : 0.15)) {
+                            showLabels = shouldShow
+                        }
+                    }
+                    .frame(height: 0)
+
                     SkinsRow(
                         viewModel: viewModel,
-                        holes: Hole.allHoles,
+                        holes: viewModel.holes,
                         activeHole: active,
                         cellWidth: layout.cellW,
                         sumWidth: layout.sumW,
                         skinsHeight: layout.skinsH
                     )
-                    .background(Color(hex: "#FAFAFA"))
+                    .background(Color.bgCard)
 
-                    Divider()
+                    Rectangle().fill(Color.gridLine).frame(height: 1)
+                        .accessibilityHidden(true)
 
                     HoleHeaderRow(
-                        holes: Hole.allHoles,
+                        holes: viewModel.holes,
                         activeHole: active,
                         cellWidth: layout.cellW,
                         sumWidth: layout.sumW,
@@ -140,7 +507,8 @@ struct ScorecardView: View {
                         numFont: layout.numFont
                     )
 
-                    Divider()
+                    Rectangle().fill(Color.gridLine).frame(height: 1)
+                        .accessibilityHidden(true)
 
                     playerRows(layout: layout, players: players, active: active)
                 }
@@ -151,37 +519,25 @@ struct ScorecardView: View {
                         cellWidth: layout.cellW
                     )
                 }
-                .padding(.leading, showLabels ? layout.labelW : 0)
-                .overlay(alignment: .topLeading) {
-                    ScrollDirectionDetector(suppression: scrollSuppression) { scrollingLeft in
-                        if scrollingLeft && showLabels {
-                            withAnimation(.easeOut(duration: 0.15)) { showLabels = false }
-                        } else if !scrollingLeft && !showLabels {
-                            withAnimation(.easeOut(duration: 0.1)) { showLabels = true }
-                        }
-                    }
-                    .frame(width: 1, height: 1)
-                }
+                .padding(.leading, layout.labelW)
             }
             .onAppear {
-                if let num = active {
-                    // First hole in play order is already visible — no scroll needed
-                    guard num != viewModel.playOrder.first?.num else { return }
-                    scrollSuppression.isSuppressed = true
+                if let num = active, num != viewModel.playOrder.first?.num {
+                    suppressDetection = true
                     proxy.scrollTo("hole_\(num)", anchor: .center)
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [scrollSuppression] in
-                        scrollSuppression.isSuppressed = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        suppressDetection = false
                     }
                 }
             }
-            .onChange(of: active) { newActive in
+            .onChange(of: active) { _, newActive in
                 if let num = newActive {
-                    scrollSuppression.isSuppressed = true
+                    suppressDetection = true
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                         proxy.scrollTo("hole_\(num)", anchor: .center)
                     }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [scrollSuppression] in
-                        scrollSuppression.isSuppressed = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        suppressDetection = false
                     }
                 }
             }
@@ -190,13 +546,13 @@ struct ScorecardView: View {
 
     @ViewBuilder
     private func playerRows(layout: LayoutMetrics, players: [Player], active: Int?) -> some View {
+        let minRows = 4
         ForEach(players) { player in
             let isYou = player.id == viewModel.currentUserId
-            let isLast = player.id == players.last?.id
 
             PlayerRow(
                 player: player,
-                holes: Hole.allHoles,
+                holes: viewModel.holes,
                 viewModel: viewModel,
                 activeHole: active,
                 cellWidth: layout.cellW,
@@ -206,17 +562,34 @@ struct ScorecardView: View {
                 circleSize: layout.circleSize,
                 isYou: isYou,
                 onTapCell: { holeNum, p in
+                    guard !isViewer else { return }
+                    guard !viewModel.isScoringBlocked else { return }
+                    guard !showRoundComplete || roundCompleteCollapsed else { return }
                     guard viewModel.canScore(holeNum: holeNum) else { return }
                     inputHole = holeNum
                     inputPlayer = p
-                    showInput = true
+                    sheetDrag = 0
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.9)) {
+                        showInput = true
+                    }
                 }
             )
-            .background(isYou ? Color(hex: "#D4A017").opacity(0.03) : .clear)
+            .background(isYou ? Color.gold.opacity(0.03) : .clear)
 
-            if !isLast {
+            Rectangle()
+                .fill(Color.gridLine)
+                .frame(height: 1)
+                .accessibilityHidden(true)
+        }
+
+        // Empty placeholder rows to fill to minRows
+        if players.count < minRows {
+            ForEach(0..<(minRows - players.count), id: \.self) { _ in
+                Color.clear
+                    .frame(height: layout.rowH)
+
                 Rectangle()
-                    .fill(Color(hex: "#F0F0F0"))
+                    .fill(Color.gridLine)
                     .frame(height: 1)
             }
         }
@@ -225,13 +598,17 @@ struct ScorecardView: View {
     @ViewBuilder
     private func stickyLeftColumn(layout: LayoutMetrics, players: [Player]) -> some View {
         VStack(spacing: 0) {
-            stickyLabel(text: "Skins", height: layout.skinsH, font: layout.labelFont, bg: Color(hex: "#FAFAFA"), layout: layout)
+            stickyLabel(text: "Skins", height: layout.skinsH, font: layout.labelFont, bg: Color.bgCard, layout: layout)
+                .accessibilityAddTraits(.isHeader)
 
-            Rectangle().fill(Color(hex: "#EAEAEA")).frame(height: 0.5)
+            Rectangle().fill(Color.gridLine).frame(height: 1)
+                .accessibilityHidden(true)
 
             stickyLabel(text: "Hole", height: layout.holeRowH, font: layout.labelFont, bg: .white, layout: layout)
+                .accessibilityAddTraits(.isHeader)
 
-            Rectangle().fill(Color(hex: "#EAEAEA")).frame(height: 0.5)
+            Rectangle().fill(Color.gridLine).frame(height: 1)
+                .accessibilityHidden(true)
 
             stickyPlayerLabels(layout: layout, players: players)
         }
@@ -240,61 +617,302 @@ struct ScorecardView: View {
         .clipShape(UnevenRoundedRectangle(topLeadingRadius: 16, bottomLeadingRadius: 16, bottomTrailingRadius: 0, topTrailingRadius: 0))
         .overlay(alignment: .trailing) {
             Rectangle()
-                .fill(Color(hex: "#EAEAEA"))
+                .fill(Color.gridLine)
                 .frame(width: 1)
+                .accessibilityHidden(true)
         }
         .shadow(color: .black.opacity(0.04), radius: 4, x: 4)
     }
 
     @ViewBuilder
     private func stickyPlayerLabels(layout: LayoutMetrics, players: [Player]) -> some View {
+        let minRows = 4
         ForEach(players) { player in
             let isYou = player.id == viewModel.currentUserId
-            let isLast = player.id == players.last?.id
-            let bg = isYou ? Color(hex: "#FFFDF7") : Color.white
+            let bg = isYou ? Color(hexString: "#FFFDF7") : Color.white
 
-            Text(player.truncatedName)
+            Text(player.shortName)
                 .font(.system(size: layout.labelFont, weight: isYou ? .bold : .medium))
-                .foregroundColor(isYou ? Color(hex: "#1A1A1A") : Color(hex: "#888888"))
+                .foregroundColor(isYou ? Color.textPrimary : Color.textMid)
                 .lineLimit(1)
                 .padding(.leading, layout.labelPad)
             .frame(width: layout.labelW, height: layout.rowH, alignment: .leading)
             .background(bg)
 
-            if !isLast {
-                Rectangle().fill(Color(hex: "#F0F0F0")).frame(height: 1)
-                    .background(bg)
+            Rectangle().fill(Color.gridLine).frame(height: 1)
+                .background(bg)
+        }
+
+        // Empty placeholder rows to fill to minRows
+        if players.count < minRows {
+            ForEach(0..<(minRows - players.count), id: \.self) { _ in
+                Color.white
+                    .frame(width: layout.labelW, height: layout.rowH)
+
+                Rectangle().fill(Color.gridLine).frame(height: 1)
             }
+        }
+    }
+
+    /// Next unscored player on the current hole, or first unscored player on the next hole.
+    /// Returns (player, hole) — hole may differ from input when advancing to the next hole.
+    private func nextUnscoredTarget(after player: Player, hole: Int) -> (Player, Int)? {
+        let group = viewModel.groupPlayers
+        guard let idx = group.firstIndex(where: { $0.id == player.id }) else { return nil }
+
+        // First: find next unscored player on the SAME hole
+        for offset in 1..<group.count {
+            let next = group[(idx + offset) % group.count]
+            if viewModel.scores[next.id]?[hole] == nil {
+                return (next, hole)
+            }
+        }
+
+        // All players scored this hole — advance to next hole's first unscored player
+        let order = viewModel.playOrder
+        guard let holeIdx = order.firstIndex(where: { $0.num == hole }) else { return nil }
+        for hOffset in 1..<order.count {
+            let nextHole = order[(holeIdx + hOffset) % order.count]
+            if let first = group.first(where: { viewModel.scores[$0.id]?[nextHole.num] == nil }) {
+                return (first, nextHole.num)
+            }
+        }
+
+        return nil
+    }
+
+    // MARK: - Toast Queue
+
+    private func showNextToast() {
+        guard let event = viewModel.gameEvents.first, activeToast == nil else { return }
+        viewModel.consumeGameEvent(event)
+        withAnimation {
+            activeToast = event
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+            withAnimation {
+                activeToast = nil
+            }
+            // Check for more queued events after brief gap
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                showNextToast()
+            }
+        }
+    }
+
+    // MARK: - Score Dispute Modal (Everyone Scores)
+
+    @ViewBuilder
+    private func scoreDisputeOverlay(proposal: (playerId: Int, holeNum: Int, original: Int, proposed: Int, proposedByUUID: UUID)) -> some View {
+        let playerName = viewModel.allPlayers.first(where: { $0.id == proposal.playerId })?.name ?? "Player"
+        // Reserved for future dispute UI enhancement:
+        // let proposerName = viewModel.allPlayers.first(where: { viewModel.playerUUIDs[$0.id] == proposal.proposedByUUID })?.name ?? "Someone"
+        // let originalEnteredBy = viewModel.allPlayers.first(where: { viewModel.playerUUIDs[$0.id] != proposal.proposedByUUID && $0.id != proposal.playerId })?.name ?? "Scorer"
+
+        ZStack {
+            Color.black.opacity(0.5)
+                .ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                // Title
+                Text("Score Conflict")
+                    .font(.carry.label)
+                    .foregroundColor(Color.deepNavy)
+                    .padding(.top, 26)
+
+                // Hole & player
+                Text("Hole \(proposal.holeNum) - \(playerName)")
+                    .font(.carry.sectionTitle)
+                    .foregroundColor(Color.textPrimary)
+                    .padding(.top, 22)
+
+                // Current → Proposed
+                HStack(spacing: 54) {
+                    VStack(spacing: 14) {
+                        Text("Current")
+                            .font(.carry.bodySM)
+                            .foregroundColor(Color.textSecondary)
+                        Text("\(proposal.original)")
+                            .font(.carry.displaySM)
+                            .foregroundColor(Color.textPrimary)
+                    }
+
+                    Image(systemName: "arrow.right")
+                        .font(.carry.bodyLG)
+                        .foregroundColor(Color.textSecondary)
+
+                    VStack(spacing: 14) {
+                        Text("Proposed")
+                            .font(.carry.bodySM)
+                            .foregroundColor(Color.textSecondary)
+                        Text("\(proposal.proposed)")
+                            .font(.carry.displaySM)
+                            .foregroundColor(Color.textPrimary)
+                    }
+                }
+                .padding(.top, 33)
+
+                // Action buttons
+                HStack(spacing: 10) {
+                    Button {
+                        viewModel.resolveActiveProposal(accept: false)
+                    } label: {
+                        Text("Keep \(proposal.original)")
+                            .font(.carry.bodyLGSemibold)
+                            .foregroundColor(Color.textPrimary)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 52)
+                            .background(
+                                RoundedRectangle(cornerRadius: 13)
+                                    .strokeBorder(Color.textPrimary, lineWidth: 1)
+                            )
+                    }
+
+                    Button {
+                        viewModel.resolveActiveProposal(accept: true)
+                    } label: {
+                        Text("Accept \(proposal.proposed)")
+                            .font(.carry.bodyLGSemibold)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 52)
+                            .background(
+                                RoundedRectangle(cornerRadius: 13)
+                                    .fill(Color.textPrimary)
+                            )
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 33)
+                .padding(.bottom, 35)
+            }
+            .background(
+                RoundedRectangle(cornerRadius: 21)
+                    .fill(.white)
+                    .shadow(color: .black.opacity(0.15), radius: 20, y: 10)
+            )
+            .padding(.horizontal, 32)
         }
     }
 
     @ViewBuilder
     private func scoreInputOverlay() -> some View {
         if showInput, let hole = inputHole, let player = inputPlayer {
-            ScoreInputView(
-                player: player,
-                holeNum: hole,
-                holes: Hole.allHoles,
-                strokesGiven: {
-                    if let h = Hole.allHoles.first(where: { $0.num == hole }) {
-                        return viewModel.strokes(for: player, hole: h)
-                    }
-                    return 0
-                }(),
-                onSelect: { score in
-                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                        viewModel.enterScore(playerId: player.id, holeNum: hole, score: score)
-                    }
-                    showInput = false
-                    inputPlayer = nil
-                },
-                onCancel: {
-                    showInput = false
-                    inputPlayer = nil
+            let existingScore = viewModel.scores[player.id]?[hole]
+            let strokes: Int = {
+                if let h = viewModel.holes.first(where: { $0.num == hole }) {
+                    return viewModel.strokes(for: player, hole: h)
                 }
-            )
-            .transition(.opacity.combined(with: .move(edge: .bottom)))
-            .animation(.spring(response: 0.25, dampingFraction: 0.85), value: showInput)
+                return 0
+            }()
+            let dismiss: () -> Void = {
+                withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
+                    showInput = false; inputPlayer = nil
+                }
+            }
+            let onSelect: (Int) -> Void = { score in
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                    viewModel.enterScore(playerId: player.id, holeNum: hole, score: score)
+                }
+                dismiss()
+            }
+            let nextTarget = nextUnscoredTarget(after: player, hole: hole)
+            let onScoreNext: ((Int) -> Void) = { score in
+                viewModel.enterScore(playerId: player.id, holeNum: hole, score: score)
+                if let (nextP, nextH) = nextTarget, nextH == hole {
+                    // Same hole — rotate to next unscored player
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                        inputPlayer = nextP
+                    }
+                } else {
+                    // All players scored this hole (or round complete) — dismiss
+                    dismiss()
+                }
+            }
+
+            ZStack(alignment: .bottom) {
+                // ── Dim backdrop ─────────────────────────────────────────
+                Color.black.opacity(0.30)
+                    .ignoresSafeArea()
+                    .onTapGesture { sheetDrag = 0; dismiss() }
+                    .transition(.opacity)
+
+                // ── Sheet card ───────────────────────────────────────────
+                VStack(spacing: 0) {
+                    // Drag handle
+                    Capsule()
+                        .fill(Color.gridLine)
+                        .frame(width: 36, height: 4)
+                        .padding(.top, 17)
+                        .padding(.bottom, 0)
+                        .frame(maxWidth: .infinity, minHeight: 36)
+                        .contentShape(Rectangle())
+                        .accessibilityHidden(true)
+
+                    ScoreInputSheet(
+                        player: player,
+                        holeNum: hole,
+                        holes: viewModel.holes,
+                        strokesGiven: strokes,
+                        currentScore: existingScore,
+                        onSelect: onSelect,
+                        onScoreNext: onScoreNext,
+                        extraBottomPadding: roundCompleteCollapsed ? 88 : 0
+                    )
+                    .id(player.id)
+                    .transition(.asymmetric(
+                        insertion: .move(edge: .trailing).combined(with: .opacity),
+                        removal: .move(edge: .leading).combined(with: .opacity)
+                    ))
+                }
+                .clipped()
+                // Fixed 62% of screen — matches Figma score sheet proportions
+                .frame(height: UIScreen.main.bounds.height * 0.62 + (roundCompleteCollapsed ? 90 : 0))
+                .offset(y: max(0, sheetDrag))
+                .gesture(
+                    DragGesture()
+                        .onChanged { v in
+                            if v.translation.height > 0 {
+                                sheetDrag = v.translation.height
+                            }
+                        }
+                        .onEnded { v in
+                            let velocity = v.predictedEndTranslation.height
+                            if v.translation.height > 80 || velocity > 300 {
+                                withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) {
+                                    sheetDrag = UIScreen.main.bounds.height * 0.5
+                                }
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                                    showInput = false; inputPlayer = nil; sheetDrag = 0
+                                }
+                            } else {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                    sheetDrag = 0
+                                }
+                            }
+                        }
+                )
+                .background(
+                    Group {
+                        if roundCompleteCollapsed {
+                            // Flat bottom — fills seamlessly into the collapsed bar
+                            UnevenRoundedRectangle(
+                                topLeadingRadius: 48,
+                                bottomLeadingRadius: 0,
+                                bottomTrailingRadius: 0,
+                                topTrailingRadius: 48,
+                                style: .continuous
+                            )
+                            .fill(Color.white)
+                        } else {
+                            RoundedRectangle(cornerRadius: 48, style: .continuous)
+                                .fill(Color.white)
+                                .ignoresSafeArea(edges: .bottom)
+                        }
+                    }
+                )
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
         }
     }
 
@@ -302,10 +920,155 @@ struct ScorecardView: View {
     private func stickyLabel(text: String, height: CGFloat, font: CGFloat, bg: Color, layout: LayoutMetrics) -> some View {
         Text(text)
             .font(.system(size: font, weight: .semibold))
-            .foregroundColor(Color(hex: "#1A1A1A"))
+            .foregroundColor(Color.textPrimary)
             .padding(.leading, layout.labelPad)
             .frame(width: layout.labelW, height: height, alignment: .leading)
             .background(bg)
+    }
+}
+
+// MARK: - Scroll Direction Detection
+
+/// Placed inside ScrollView content VStack. Uses CADisplayLink to poll
+/// for the parent UIScrollView every frame until found (handles SwiftUI's
+/// deferred UIScrollView creation on first app launch).
+private struct ScrollDirectionDetector: UIViewRepresentable {
+    @Binding var suppressDetection: Bool
+    var onDirectionChange: (Bool) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onDirectionChange: onDirectionChange)
+    }
+
+    func makeUIView(context: Context) -> ProbeView {
+        let v = ProbeView()
+        v.coordinator = context.coordinator
+        return v
+    }
+
+    func updateUIView(_ uiView: ProbeView, context: Context) {
+        context.coordinator.onDirectionChange = onDirectionChange
+        context.coordinator.isSuppressed = suppressDetection
+    }
+
+    /// Zero-size, touch-transparent view that polls for its parent UIScrollView.
+    class ProbeView: UIView {
+        weak var coordinator: Coordinator?
+        private var displayLink: CADisplayLink?
+        private var frameCount = 0
+
+        override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? { nil }
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            if window != nil {
+                startPolling()
+            } else {
+                stopPolling()
+            }
+        }
+
+        private func startPolling() {
+            guard displayLink == nil else { return }
+            frameCount = 0
+            let link = CADisplayLink(target: self, selector: #selector(tick))
+            link.add(to: .main, forMode: .common)
+            displayLink = link
+        }
+
+        private func stopPolling() {
+            displayLink?.invalidate()
+            displayLink = nil
+        }
+
+        @objc private func tick() {
+            frameCount += 1
+            guard let coordinator else { stopPolling(); return }
+            if coordinator.isAttached { stopPolling(); return }
+
+            // Walk up superview chain
+            coordinator.tryAttachUp(from: self)
+
+            // If walk-up failed, search entire window hierarchy as fallback
+            if !coordinator.isAttached, let window {
+                coordinator.tryAttachFromWindow(window)
+            }
+
+            // Stop after ~2 seconds (120 frames at 60fps)
+            if coordinator.isAttached || frameCount > 120 {
+                stopPolling()
+            }
+        }
+
+        deinit { stopPolling() }
+    }
+
+    class Coordinator: NSObject {
+        var onDirectionChange: (Bool) -> Void
+        var isSuppressed = false
+        private weak var scrollView: UIScrollView?
+
+        var isAttached: Bool { scrollView != nil }
+
+        init(onDirectionChange: @escaping (Bool) -> Void) {
+            self.onDirectionChange = onDirectionChange
+        }
+
+        /// Walk up the superview chain looking for a UIScrollView.
+        func tryAttachUp(from view: UIView) {
+            guard scrollView == nil else { return }
+            var current: UIView? = view.superview
+            while let v = current {
+                if let sv = v as? UIScrollView {
+                    attach(to: sv)
+                    return
+                }
+                current = v.superview
+            }
+        }
+
+        /// Search the entire window hierarchy for the first horizontal UIScrollView.
+        func tryAttachFromWindow(_ window: UIWindow) {
+            guard scrollView == nil else { return }
+            if let sv = Self.findHorizontalScrollView(in: window) {
+                attach(to: sv)
+            }
+        }
+
+        private static func findHorizontalScrollView(in view: UIView) -> UIScrollView? {
+            for sub in view.subviews {
+                if let sv = sub as? UIScrollView, sv.alwaysBounceHorizontal || sv.contentSize.width > sv.bounds.width {
+                    return sv
+                }
+                if let found = findHorizontalScrollView(in: sub) {
+                    return found
+                }
+            }
+            return nil
+        }
+
+        private func attach(to sv: UIScrollView) {
+            scrollView = sv
+            sv.delaysContentTouches = false
+            sv.panGestureRecognizer.addTarget(self, action: #selector(handlePan(_:)))
+        }
+
+        @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
+            guard !isSuppressed else { return }
+            guard gesture.state == .ended || gesture.state == .cancelled else { return }
+            let vx = gesture.velocity(in: gesture.view).x
+            if vx > 150 {
+                DispatchQueue.main.async { self.onDirectionChange(true) }
+            } else if vx < -150 {
+                DispatchQueue.main.async { self.onDirectionChange(false) }
+            }
+        }
+
+        deinit {
+            if let sv = scrollView {
+                sv.panGestureRecognizer.removeTarget(self, action: #selector(handlePan(_:)))
+            }
+        }
     }
 }
 
@@ -317,13 +1080,14 @@ private struct ActiveHoleStroke: View {
 
     private var columnIndex: Int {
         guard let num = activeHole else { return 0 }
-        return Hole.allHoles.firstIndex(where: { $0.num == num }) ?? 0
+        // Holes are always numbered 1-18 in order
+        return max(0, num - 1)
     }
 
     var body: some View {
         GeometryReader { geo in
             RoundedRectangle(cornerRadius: 6)
-                .strokeBorder(Color(hex: "#1A1A1A"), lineWidth: 1.5)
+                .strokeBorder(Color.textPrimary, lineWidth: 1.5)
                 .frame(width: cellWidth, height: geo.size.height)
                 .offset(x: CGFloat(columnIndex) * cellWidth)
                 .opacity(activeHole != nil ? 1 : 0)
@@ -339,6 +1103,8 @@ private struct LayoutMetrics {
     let cardM: CGFloat
     let headerH: CGFloat
     let gap: CGFloat
+    let gapAbovePills: CGFloat
+    let gapBelowPills: CGFloat
     let rowH: CGFloat
     let holeRowH: CGFloat
     let skinsH: CGFloat
@@ -353,27 +1119,31 @@ private struct LayoutMetrics {
     let numFont: CGFloat
 
     init(size: CGSize, playerCount: Int) {
+        // size.height is the usable content height (safe areas already subtracted)
         let h = size.height
         cardM = 12
         headerH = 34
-        let gamesBarH: CGFloat = 80
+        let gamesBarH: CGFloat = 110
         gap = 4
-        let homeIndicator: CGFloat = 34
+        // Split vertical breathing room around the CashGamesBar:
+        // 10% less above pills, 40% less below (tighter layout)
+        gapAbovePills = 2
+        gapBelowPills = 0   // scorecard sits tight against pills
 
         // Fixed base for sizing text/cells (as if 6 rows)
         let baseRow = max(32, floor((h - headerH - gamesBarH - gap * 2 - cardM) / 6))
 
         // Compact header rows based on baseRow
-        skinsH = max(28, floor(baseRow * 0.7))
+        skinsH = 48  // match CashGamesBar pill avatar (40px) + padding
         holeRowH = max(24, floor(baseRow * 0.6))
 
-        // Player rows grow to fill remaining space to the safe line
-        let n = CGFloat(max(1, playerCount))
+        // Player rows grow to fill remaining space — always size for at least 4 rows
+        let displayRows = CGFloat(max(4, playerCount))
         let dividers: CGFloat = 3
-        let playerDividers = CGFloat(max(0, playerCount - 1))
-        let cardH = h - headerH - gamesBarH - gap - homeIndicator
+        let playerDividers = CGFloat(max(0, Int(displayRows) - 1))
+        let cardH = h - headerH - gamesBarH - gap + 4  // reclaimed 4px from pill gap
         let fixedH = skinsH + holeRowH + dividers + playerDividers
-        rowH = max(baseRow, floor((cardH - fixedH) / n))
+        rowH = max(baseRow, floor((cardH - fixedH) / displayRows))
 
         // Fonts and element sizes stay based on baseRow (don't grow)
         labelFont = 18
@@ -390,84 +1160,4 @@ private struct LayoutMetrics {
     }
 }
 
-// MARK: - UIKit Scroll Direction Observer
-
-private struct ScrollDirectionDetector: UIViewRepresentable {
-    let suppression: ScrollSuppression
-    let onDirectionChange: (Bool) -> Void  // true = scrolling left
-
-    func makeUIView(context: Context) -> UIView {
-        let view = UIView(frame: .init(x: 0, y: 0, width: 1, height: 1))
-        view.isUserInteractionEnabled = false
-        view.backgroundColor = .clear
-        DispatchQueue.main.async {
-            if let scrollView = view.findParentScrollView() {
-                context.coordinator.observe(scrollView)
-            }
-        }
-        return view
-    }
-
-    func updateUIView(_ uiView: UIView, context: Context) {}
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(suppression: suppression, onDirectionChange: onDirectionChange)
-    }
-
-    class Coordinator: NSObject {
-        let suppression: ScrollSuppression
-        let onDirectionChange: (Bool) -> Void
-        private var lastOffset: CGFloat = 0
-        private var observation: NSKeyValueObservation?
-        private var ignoreUntil: Date = .distantPast
-
-        init(suppression: ScrollSuppression, onDirectionChange: @escaping (Bool) -> Void) {
-            self.suppression = suppression
-            self.onDirectionChange = onDirectionChange
-        }
-
-        func observe(_ scrollView: UIScrollView) {
-            lastOffset = scrollView.contentOffset.x
-            observation = scrollView.observe(\.contentOffset, options: [.new]) { [weak self] sv, _ in
-                guard let self else { return }
-
-                // Check suppression via reference type (always up-to-date)
-                if self.suppression.isSuppressed {
-                    self.lastOffset = sv.contentOffset.x
-                    return
-                }
-
-                let now = Date()
-                let current = sv.contentOffset.x
-
-                // Skip offset jumps caused by padding animation
-                if now < self.ignoreUntil {
-                    self.lastOffset = current
-                    return
-                }
-
-                let delta = current - self.lastOffset
-                if delta > 3 {
-                    self.ignoreUntil = now.addingTimeInterval(0.3)
-                    DispatchQueue.main.async { self.onDirectionChange(true) }
-                } else if delta < -3 {
-                    self.ignoreUntil = now.addingTimeInterval(0.5)
-                    DispatchQueue.main.async { self.onDirectionChange(false) }
-                }
-                self.lastOffset = current
-            }
-        }
-    }
-}
-
-private extension UIView {
-    func findParentScrollView() -> UIScrollView? {
-        var current: UIView? = superview
-        while let view = current {
-            if let sv = view as? UIScrollView { return sv }
-            current = view.superview
-        }
-        return nil
-    }
-}
 

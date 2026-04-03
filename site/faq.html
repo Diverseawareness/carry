@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FAQ — Carry</title>
+    <meta name="description" content="Frequently asked questions about Carry, the iOS golf skins game tracker.">
+    <meta name="theme-color" content="#1A1A1A">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/png" href="appicon.png">
+    <link rel="apple-touch-icon" href="appicon.png">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        html, body { overflow-x: hidden; }
+        .legal-header {
+            background: var(--black);
+            padding: 32px 0;
+        }
+        .legal-header .container {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .legal-header a {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            text-decoration: none;
+        }
+        .legal-header img {
+            height: 32px;
+            width: auto;
+        }
+        .legal-header span {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--white);
+            letter-spacing: -0.3px;
+        }
+        .legal-header .container {
+            justify-content: space-between;
+        }
+        .legal-header a.logo-link {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            text-decoration: none;
+        }
+        .header-nav {
+            display: flex;
+            gap: 24px;
+        }
+        .header-nav a {
+            font-size: 14px;
+            font-weight: 600;
+            color: #fff;
+            text-decoration: none;
+        }
+        .header-nav a:hover {
+            color: #fff;
+        }
+        .header-nav a.active {
+            color: #fff;
+        }
+        @media (max-width: 640px) {
+            .header-nav {
+                gap: 16px;
+            }
+            .header-nav a {
+                font-size: 13px;
+            }
+        }
+        .faq-body {
+            padding: 64px 0 100px;
+            background: var(--white);
+        }
+        .faq-body .container {
+            max-width: 720px;
+        }
+        .faq-body h1 {
+            font-size: 36px;
+            font-weight: 800;
+            letter-spacing: -1px;
+            color: var(--gray-900);
+            margin-bottom: 32px;
+        }
+
+        /* Tab switcher */
+        .faq-tabs {
+            display: flex;
+            gap: 0;
+            margin-bottom: 48px;
+            border-bottom: 2px solid var(--gray-200);
+        }
+        .faq-tab {
+            padding: 12px 24px;
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--gray-400);
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+            transition: color 0.2s, border-color 0.2s;
+            user-select: none;
+        }
+        .faq-tab:hover {
+            color: var(--gray-600);
+        }
+        .faq-tab.active {
+            color: var(--gray-900);
+            border-bottom-color: var(--gray-900);
+        }
+        .faq-tab-content {
+            display: none;
+        }
+        .faq-tab-content.active {
+            display: block;
+        }
+
+        /* FAQ items */
+        .faq-section {
+            margin-bottom: 48px;
+        }
+        .faq-section h2 {
+            font-size: 14px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--gold);
+            margin-bottom: 24px;
+        }
+        .faq-item {
+            border-bottom: 1px solid var(--gray-200);
+            padding: 20px 0;
+        }
+        .faq-item:first-of-type {
+            border-top: 1px solid var(--gray-200);
+        }
+        .faq-question {
+            font-size: 17px;
+            font-weight: 600;
+            color: var(--gray-900);
+            margin-bottom: 0;
+            letter-spacing: -0.2px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+        }
+        .faq-question::after {
+            content: '+';
+            font-size: 22px;
+            font-weight: 400;
+            color: var(--gray-400);
+            flex-shrink: 0;
+        }
+        .faq-item.open .faq-question {
+            margin-bottom: 8px;
+        }
+        .faq-item.open .faq-question::after {
+            content: '\2212';
+        }
+        .faq-answer {
+            font-size: 15px;
+            color: var(--gray-600);
+            line-height: 1.7;
+            display: none;
+            padding-top: 4px;
+        }
+        .faq-item.open .faq-answer {
+            display: block;
+        }
+        .faq-answer a {
+            color: var(--gold);
+            text-decoration: none;
+        }
+        .faq-answer a:hover {
+            text-decoration: underline;
+        }
+        .faq-footer {
+            margin-top: 64px;
+            text-align: center;
+            padding: 40px 32px;
+            background: var(--gray-100);
+            border-radius: 20px;
+        }
+        .faq-footer h3 {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--gray-900);
+            margin-bottom: 8px;
+        }
+        .faq-footer p {
+            font-size: 15px;
+            color: var(--gray-600);
+            line-height: 1.6;
+        }
+        .faq-footer a {
+            color: var(--gold);
+            text-decoration: none;
+            font-weight: 600;
+        }
+        .faq-footer a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <header class="legal-header">
+        <div class="container">
+            <a href="index.html" class="logo-link">
+                <img src="horion_logo.svg" alt="Carry" style="height: 32px;">
+            </a>
+            <nav class="header-nav">
+                <a href="faq.html" style="color: #fff !important; text-decoration: none;">FAQ</a>
+                <a href="about.html" style="color: #fff !important; text-decoration: none;">About</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="faq-body">
+        <div class="container">
+            <h1>Frequently Asked Questions</h1>
+
+            <!-- Tabs -->
+            <div class="faq-tabs">
+                <div class="faq-tab active" data-tab="general">General</div>
+                <div class="faq-tab" data-tab="app">App Guide</div>
+            </div>
+
+            <!-- ======================== -->
+            <!-- GENERAL TAB -->
+            <!-- ======================== -->
+            <div class="faq-tab-content active" id="tab-general">
+
+                <!-- About Carry -->
+                <div class="faq-section">
+                    <h2>About Carry</h2>
+
+                    <div class="faq-item open">
+                        <div class="faq-question">What is Carry?</div>
+                        <div class="faq-answer">Carry is a live skins game tracker for golf. Create a skins game, invite players via SMS, and track every skin, carry, and payout in real time from your phone. Scores sync across all groups every 15 seconds, push notifications alert you when someone wins a skin, and everything works offline on the course. Settle up instantly with Venmo deep links.</div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">What is a skins game?</div>
+                        <div class="faq-answer">A skins game is a golf betting format where each hole has a value (a "skin"). The player with the lowest score on a hole wins that skin. If two or more players tie, the skin can either carry over to the next hole or be voided, depending on your group's rules.</div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">Who is Carry for?</div>
+                        <div class="faq-answer">Anyone who plays skins. Whether you're in a weekly club game with 16 players across four tee times, or a casual weekend round with three friends, Carry handles the math and keeps everyone honest.</div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">What devices does Carry support?</div>
+                        <div class="faq-answer">Carry is available on iPhone running iOS 17 or later.</div>
+                    </div>
+                </div>
+
+                <!-- Pricing -->
+                <div class="faq-section">
+                    <h2>Pricing</h2>
+
+                    <div class="faq-item">
+                        <div class="faq-question">Is Carry free?</div>
+                        <div class="faq-answer">Carry offers a free tier that lets you create 1 skins game group, view your 3 most recent rounds, and access the last round leaderboard. Carry Premium ($29.99/year or $4.99/month) unlocks unlimited groups, full round history, all-time season leaderboard, and season statistics.</div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">Is there a free trial?</div>
+                        <div class="faq-answer">Yes. New users can try Carry Premium free for 7 days. No charge until the trial ends, and you can cancel anytime.</div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">How do I cancel my subscription?</div>
+                        <div class="faq-answer">Subscriptions are managed through the App Store. On your iPhone, go to Settings &gt; Apple ID &gt; Subscriptions to manage or cancel Carry Premium. You'll keep access until the end of your billing period.</div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">How many Quick Games can I play for free?</div>
+                        <div class="faq-answer">Free users get 3 Quick Games per calendar month. Premium subscribers get unlimited Quick Games.</div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">What happens after I use my 3 free Quick Games?</div>
+                        <div class="faq-answer">You'll be prompted to start a 7-day free trial of Carry Premium, which includes unlimited Quick Games and group features.</div>
+                    </div>
+                </div>
+
+                <!-- How Skins Work -->
+                <div class="faq-section">
+                    <h2>How Skins Work</h2>
+
+                    <div class="faq-item">
+                        <div class="faq-question">What are carries?</div>
+                        <div class="faq-answer">When carries are enabled and a hole is tied (no outright winner), the skin's value carries over and adds to the next hole. This means a single hole can be worth multiple skins. For example, if holes 5 and 6 are tied, hole 7's skin is worth 3x. You can toggle carries on or off in your game settings.</div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">How are payouts calculated?</div>
+                        <div class="faq-answer">The total pot (number of players &times; buy-in) is divided by the number of skins won. Each skin is worth an equal share. For example: 4 players at $50 buy-in = $200 pot. If 10 skins are won across 18 holes, each skin is worth $20. A player who won 3 skins takes home $60.</div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">Can I use handicaps?</div>
+                        <div class="faq-answer">Yes. Set each player's handicap index and choose a percentage (100%, 80%, etc.) in game settings. Carry automatically calculates playing handicaps based on the course's slope and rating, and applies strokes to the right holes.</div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">How many players can be in a game?</div>
+                        <div class="faq-answer">There's no hard limit. Carry automatically groups players into foursomes and lets you stagger tee times at 8, 10, or 12 minute intervals. Whether it's 4 players or 16, everything is tracked in one game.</div>
+                    </div>
+                </div>
+
+                <!-- Payments -->
+                <div class="faq-section">
+                    <h2>Payments & Settling Up</h2>
+
+                    <div class="faq-item">
+                        <div class="faq-question">Does Carry handle money?</div>
+                        <div class="faq-answer">No. Carry calculates exact payouts and connects you to Venmo for the transfer. No money flows through the app. You can also settle up in cash or any other way you prefer.</div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">Do I need Venmo?</div>
+                        <div class="faq-answer">Venmo integration is optional. It's a convenience feature that pre-fills the amount and recipient. You're free to settle up however your group prefers.</div>
+                    </div>
+                </div>
+
+                <!-- Privacy & Security -->
+                <div class="faq-section">
+                    <h2>Privacy & Security</h2>
+
+                    <div class="faq-item">
+                        <div class="faq-question">How do I sign up?</div>
+                        <div class="faq-answer">Carry uses Sign in with Apple for fast, secure, private authentication. No passwords to create or remember. Your Apple ID email can be hidden if you prefer.</div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">Is my data secure?</div>
+                        <div class="faq-answer">Yes. Carry uses industry-standard encryption and secure cloud infrastructure. Your scores and game data are only visible to members of your skins groups. We never sell your data. See our <a href="privacy.html">Privacy Policy</a> for details.</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ======================== -->
+            <!-- APP GUIDE TAB -->
+            <!-- ======================== -->
+            <div class="faq-tab-content" id="tab-app">
+
+                <!-- Setting Up a Game -->
+                <div class="faq-section">
+                    <h2>Setting Up a Game</h2>
+
+                    <div class="faq-item open">
+                        <div class="faq-question">How do I create a skins game?</div>
+                        <div class="faq-answer">Go to the Skins tab and tap +. Name your game, set the buy-in amount, search for and select your course, then invite players. You'll be added automatically as the first member and scorer.</div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">How do I invite players?</div>
+                        <div class="faq-answer">From your skins group, tap "Invite &amp; Manage." Send SMS invitations directly from the app using the native message composer, or search for existing Carry users by name. Invited players appear as pending until they accept.</div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">How do tee times work with multiple groups?</div>
+                        <div class="faq-answer">When you have more than 4 players, Carry auto-groups them into foursomes. Set a base tee time, then use Consecutive Tee Times (+8, +10, or +12 min intervals) to stagger each group. All tee times must be set before you can start the round.</div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">Can I add players after creating the game?</div>
+                        <div class="faq-answer">Yes. Open your skins group and tap "Invite &amp; Manage" to add new members at any time. New players will appear in the tee time groups as pending until they accept the invite.</div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">How do I set up carries?</div>
+                        <div class="faq-answer">In your skins group settings (tap the gear icon), toggle "Carries" on or off. When on, tied holes carry their skin value to the next hole. When off, tied holes are dead skins.</div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">What is a Quick Game?</div>
+                        <div class="faq-answer">A Quick Game is a streamlined way to start a skins game in seconds without creating a group or sending invites. Only one Carry account is needed per group &mdash; the scorer types in player names, picks a course, and starts scoring right away.</div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">How do I start a Quick Game?</div>
+                        <div class="faq-answer">Tap the + button on the Games tab, select Quick Game, fill in player names and handicaps, choose a course, and tap Continue.</div>
+                    </div>
+                </div>
+
+                <!-- Scoring -->
+                <div class="faq-section">
+                    <h2>Scoring</h2>
+
+                    <div class="faq-item">
+                        <div class="faq-question">How do I start scoring?</div>
+                        <div class="faq-answer">The game creator starts the round from the skins group. Once started, all members see a "LIVE Score Card" button on their Home and Skins tabs. The designated scorer in each group enters scores hole by hole.</div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">Who is the scorer?</div>
+                        <div class="faq-answer">The first confirmed player in each tee time group is the default scorer. You can change the scorer by tapping the "Scorer" badge in the tee time card and selecting a different player.</div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">Can I edit scores?</div>
+                        <div class="faq-answer">Yes, at any time. Tap any score cell on the scorecard to change it. Skins calculations update automatically. After the round, the creator can still edit scores from the "Edit Scores" button on the results screen.</div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">What do the colors on the scorecard mean?</div>
+                        <div class="faq-answer">Circle (green fill) = birdie or better. No border = par. Square outline = bogey or worse. In the skins row, a gold avatar means that player won the skin. A pulsating avatar shows the current leader on an unsettled hole. A pulsating gold dot means no scores have been entered for that hole yet. Skins update live as scores come in from all groups.</div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">Do I need cell service to score?</div>
+                        <div class="faq-answer">No. Scores save to your device instantly and sync to the cloud when you have a connection. You won't lose any data playing in a dead zone. When connectivity returns, all pending scores upload automatically.</div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">Do Quick Game players need a Carry account?</div>
+                        <div class="faq-answer">No. Only one person per group needs a Carry account &mdash; they're the scorer. Everyone else is entered by name and handicap. No sign-ups, no downloads required to play.</div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">Can I turn a Quick Game into a recurring group?</div>
+                        <div class="faq-answer">Yes. After the round, you'll be asked if you want to play again. Tap "Yes" and your Quick Game converts into a full skins group. You can name it, set up weekly tee times, and invite players to join Carry so they can track their own stats.</div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">What's the difference between a Quick Game and a Skins Group?</div>
+                        <div class="faq-answer">A Quick Game is a one-off &mdash; one scorer, no invites, start in seconds. A Skins Group is a recurring setup where all players have accounts, can score independently, and track their stats over time. You can always convert a Quick Game into a group after the round.</div>
+                    </div>
+                </div>
+
+                <!-- Results & History -->
+                <div class="faq-section">
+                    <h2>Results & History</h2>
+
+                    <div class="faq-item">
+                        <div class="faq-question">Where do I see results?</div>
+                        <div class="faq-answer">Active games show a live card on your Home tab. When all groups finish, tap "Show Final Results" to see the full breakdown: who won which skins and the total payout per player.</div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">What are pending results?</div>
+                        <div class="faq-answer">When some groups have finished but others are still playing, results are "pending." You can see which skins are decided and which are still being contested. Final results appear once all groups complete 18 holes.</div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">How do I settle up?</div>
+                        <div class="faq-answer">The final results screen shows exactly who owes what. Use your preferred payment app to settle up based on the amounts shown.</div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">Where is my round history?</div>
+                        <div class="faq-answer">Past rounds appear in the "Recent Games" section on your Home tab. Free users see their 3 most recent rounds. Carry Premium ($29.99/year or $4.99/month) unlocks full round history. Each group's leaderboard has two tabs: "Last Round" shows the most recent round, and "All Time" (Premium) shows cumulative skins won, total winnings, and season statistics across all rounds.</div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">Can I share results?</div>
+                        <div class="faq-answer">Yes. On the final results screen, tap the share icon (top right) to share a text summary of the round results with your group via Messages, email, or any other app.</div>
+                    </div>
+                </div>
+
+                <!-- Notifications & Offline -->
+                <div class="faq-section">
+                    <h2>Notifications & Offline</h2>
+
+                    <div class="faq-item">
+                        <div class="faq-question">What notifications does Carry send?</div>
+                        <div class="faq-answer">Carry uses Apple Push Notification service (APNs) to send real-time alerts, including game-started notifications when the creator starts a round, group invite notifications, round completion updates, and scorer assignment changes. You can also receive tee time reminders and cross-group skin-won notifications. You can manage notification preferences at any time through your iPhone Settings.</div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">Does Carry work offline on the course?</div>
+                        <div class="faq-answer">Yes. Scores save to your device instantly and skins calculations happen locally. If you lose cell signal during a round, everything keeps working. When connectivity returns, pending scores automatically sync to the cloud and cross-group score syncing resumes.</div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">Can I watch a game without scoring?</div>
+                        <div class="faq-answer">Yes. Viewers see the same live scorecard, skins results, and celebrations as scorers, but cannot enter or edit scores. This is great for spectators or friends following along remotely.</div>
+                    </div>
+                </div>
+
+                <!-- Profile & Settings -->
+                <div class="faq-section">
+                    <h2>Profile & Settings</h2>
+
+                    <div class="faq-item">
+                        <div class="faq-question">How do I update my profile?</div>
+                        <div class="faq-answer">Go to the Profile tab. Tap your name or photo to open the edit sheet. You can change your display name, avatar photo (take a new one with your camera or pick from your photo library), handicap index, home club, club membership status, and GHIN number.</div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">What is home club vs. club membership?</div>
+                        <div class="faq-answer">Home Club is the golf course you designate as your home course. Club Membership indicates whether you're a member or non-member. Both are optional and visible to other players in your groups.</div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">What is the GHIN number?</div>
+                        <div class="faq-answer">GHIN is the Golf Handicap and Information Network, managed by the USGA. You can enter your GHIN number in your profile for reference. Automatic handicap index syncing via GHIN is coming soon &mdash; for now, you can manually set your handicap index in your profile settings.</div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">How do I update my handicap?</div>
+                        <div class="faq-answer">On the Profile tab, tap your handicap index to open the picker. Select your current index. This is used to calculate playing handicaps for skins games that use handicap-adjusted scoring.</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Contact -->
+            <div class="faq-footer">
+                <h3>Still have questions?</h3>
+                <p>Reach out to us at <a href="mailto:support@carryapp.site">support@carryapp.site</a></p>
+            </div>
+        </div>
+    </main>
+
+    <footer>
+        <div class="container footer-content">
+            <span class="copyright">&copy; 2026 Carry. All rights reserved.</span>
+            <div class="footer-links">
+                <a href="privacy.html">Privacy Policy</a>
+                <a href="terms.html">Terms of Service</a>
+                <a href="faq.html">FAQ</a>
+                <a href="about.html">About</a>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // Tab switching
+        document.querySelectorAll('.faq-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.faq-tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.faq-tab-content').forEach(c => c.classList.remove('active'));
+                tab.classList.add('active');
+                document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+            });
+        });
+
+        // Accordion
+        document.querySelectorAll('.faq-question').forEach(q => {
+            q.addEventListener('click', () => {
+                const item = q.parentElement;
+                const section = item.closest('.faq-tab-content');
+                const wasOpen = item.classList.contains('open');
+                section.querySelectorAll('.faq-item').forEach(i => i.classList.remove('open'));
+                if (!wasOpen) item.classList.add('open');
+            });
+        });
+    </script>
+</body>
+</html>

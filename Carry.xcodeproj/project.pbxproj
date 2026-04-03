@@ -7,6 +7,20 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		552AF7443964484AA3D2F35A /* SkinConfettiBurst.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E4B1697B91D41F1A81D3762 /* SkinConfettiBurst.swift */; };
+		602CE3392F735F7C0028D0AF /* ScoringInfoModal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 602CE3382F735F7C0028D0AF /* ScoringInfoModal.swift */; };
+		602CE33D2F747A2F0028D0AF /* TeeTimePickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 602CE33C2F747A2F0028D0AF /* TeeTimePickerSheet.swift */; };
+		60385FDD2F76EC5C00FBF213 /* QuickStartSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60385FDC2F76EC5C00FBF213 /* QuickStartSheet.swift */; };
+		60385FDF2F76EC9B00FBF213 /* GuestProfileService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60385FDE2F76EC9B00FBF213 /* GuestProfileService.swift */; };
+		60385FE12F78D10200FBF213 /* ResultsShareCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60385FE02F78D10200FBF213 /* ResultsShareCard.swift */; };
+		7F68AD8196384B3AB96CBCFF /* GuestClaimView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEC0B2BCD1224503A328768D /* GuestClaimView.swift */; };
+		60385FE32F78D12100FBF213 /* ShareCardRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60385FE22F78D12100FBF213 /* ShareCardRenderer.swift */; };
+		60385FE52F7A167800FBF213 /* SMSInviteSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60385FE42F7A167800FBF213 /* SMSInviteSheet.swift */; };
+		6067A5C52F75E4140055DE9A /* PostHog in Frameworks */ = {isa = PBXBuildFile; productRef = 6067A5C42F75E4140055DE9A /* PostHog */; };
+		6067A5C72F75E7980055DE9A /* AnalyticsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6067A5C62F75E7980055DE9A /* AnalyticsService.swift */; };
+		70E6DD8F93DE4E9B947D2ADE /* GolfCourseService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC29B0CF11FF413AA819A069 /* GolfCourseService.swift */; };
+		8F4CA1E527DB49E3A6D8B193 /* PlayerSearchService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3B7E2D419CF4FA8B1C60D72 /* PlayerSearchService.swift */; };
+		95379D27DEDC14C1D60D06A4 /* VenmoLogo.swift in Sources */ = {isa = PBXBuildFile; fileRef = A298F2722FC1DED0209E5BB2 /* VenmoLogo.swift */; };
 		A10001 /* CarryApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10001 /* CarryApp.swift */; };
 		A10002 /* Player.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10002 /* Player.swift */; };
 		A10003 /* Hole.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10003 /* Hole.swift */; };
@@ -40,9 +54,51 @@
 		A10033 /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10033 /* MainTabView.swift */; };
 		A10034 /* GroupsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10034 /* GroupsListView.swift */; };
 		A10035 /* ProfileSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10035 /* ProfileSheetView.swift */; };
+		A10100 /* GolfBallLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10100 /* GolfBallLoader.swift */; };
+		A20001 /* StoreService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001 /* StoreService.swift */; };
+		A20002 /* PaywallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20002 /* PaywallView.swift */; };
+		A20003 /* CarryInputModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20003 /* CarryInputModifier.swift */; };
+		B5263A87AFF44D4C95F2CB91 /* CourseSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7A80C81F7A84402810B5460 /* CourseSelectionView.swift */; };
+		C20001 /* AppRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20001 /* AppRouter.swift */; };
+		C20002 /* GroupInviteParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20002 /* GroupInviteParser.swift */; };
+		C20005 /* ScoreInputSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20005 /* ScoreInputSheet.swift */; };
+		C20006 /* RoundCompleteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20006 /* RoundCompleteView.swift */; };
+		C20007 /* DebugMenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20007 /* DebugMenuView.swift */; };
+		D20008 /* LaunchSplashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20009 /* LaunchSplashView.swift */; };
+		E30001 /* GroupStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = E40001 /* GroupStorage.swift */; };
+		E30002 /* ScoreStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = E40002 /* ScoreStorage.swift */; };
+		E30003 /* GameEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = E40003 /* GameEvent.swift */; };
+		E30004 /* GameToastView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E40004 /* GameToastView.swift */; };
+		E30005 /* CarryToast.swift in Sources */ = {isa = PBXBuildFile; fileRef = E40005 /* CarryToast.swift */; };
+		EEF79AF1C0C64C8A9A994DFC /* GolfCourseAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = F007D3C867C846239A99A99E /* GolfCourseAPI.swift */; };
+		F50001 /* TypeRamp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F60001 /* TypeRamp.swift */; };
+		F50002 /* DebugScenario.swift in Sources */ = {isa = PBXBuildFile; fileRef = F60002 /* DebugScenario.swift */; };
+		F50099 /* CarryColors.swift in Sources */ = {isa = PBXBuildFile; fileRef = F60099 /* CarryColors.swift */; };
+		F70001 /* ImageCropView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F80001 /* ImageCropView.swift */; };
+		F70002 /* CameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F80002 /* CameraView.swift */; };
+		F90001 /* ANDONESI.ttf in Resources */ = {isa = PBXBuildFile; fileRef = F90002 /* ANDONESI.ttf */; };
+		F90003 /* ManageMembersSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F90004 /* ManageMembersSheet.swift */; };
+		GS0001 /* GroupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = GS0002 /* GroupService.swift */; };
+		M10002 /* MembershipRadioButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = M10001 /* MembershipRadioButton.swift */; };
+		N10002 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = N10001 /* NotificationService.swift */; };
+		S10002 /* SyncQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = S10001 /* SyncQueue.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		602CE3382F735F7C0028D0AF /* ScoringInfoModal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoringInfoModal.swift; sourceTree = "<group>"; };
+		602CE33C2F747A2F0028D0AF /* TeeTimePickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeeTimePickerSheet.swift; sourceTree = "<group>"; };
+		60385FDC2F76EC5C00FBF213 /* QuickStartSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickStartSheet.swift; sourceTree = "<group>"; };
+		60385FDE2F76EC9B00FBF213 /* GuestProfileService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuestProfileService.swift; sourceTree = "<group>"; };
+		60385FE02F78D10200FBF213 /* ResultsShareCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResultsShareCard.swift; sourceTree = "<group>"; };
+		FEC0B2BCD1224503A328768D /* GuestClaimView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuestClaimView.swift; sourceTree = "<group>"; };
+		60385FE22F78D12100FBF213 /* ShareCardRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareCardRenderer.swift; sourceTree = "<group>"; };
+		60385FE42F7A167800FBF213 /* SMSInviteSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SMSInviteSheet.swift; sourceTree = "<group>"; };
+		6056B3532F71DA0E00943125 /* Configuration.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; name = Configuration.storekit; path = Carry/Configuration.storekit; sourceTree = "<group>"; };
+		6067A5C62F75E7980055DE9A /* AnalyticsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsService.swift; sourceTree = "<group>"; };
+		9E4B1697B91D41F1A81D3762 /* SkinConfettiBurst.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkinConfettiBurst.swift; sourceTree = "<group>"; };
+		A298F2722FC1DED0209E5BB2 /* VenmoLogo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VenmoLogo.swift; sourceTree = "<group>"; };
+		A3B7E2D419CF4FA8B1C60D72 /* PlayerSearchService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerSearchService.swift; sourceTree = "<group>"; };
+		A7A80C81F7A84402810B5460 /* CourseSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CourseSelectionView.swift; sourceTree = "<group>"; };
 		B10001 /* CarryApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarryApp.swift; sourceTree = "<group>"; };
 		B10002 /* Player.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Player.swift; sourceTree = "<group>"; };
 		B10003 /* Hole.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Hole.swift; sourceTree = "<group>"; };
@@ -78,6 +134,35 @@
 		B10033 /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
 		B10034 /* GroupsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupsListView.swift; sourceTree = "<group>"; };
 		B10035 /* ProfileSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileSheetView.swift; sourceTree = "<group>"; };
+		B10100 /* GolfBallLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GolfBallLoader.swift; sourceTree = "<group>"; };
+		B20001 /* StoreService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreService.swift; sourceTree = "<group>"; };
+		B20002 /* PaywallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaywallView.swift; sourceTree = "<group>"; };
+		B20003 /* CarryInputModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarryInputModifier.swift; sourceTree = "<group>"; };
+		D20001 /* AppRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRouter.swift; sourceTree = "<group>"; };
+		D20002 /* GroupInviteParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupInviteParser.swift; sourceTree = "<group>"; };
+		D20005 /* ScoreInputSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoreInputSheet.swift; sourceTree = "<group>"; };
+		D20006 /* RoundCompleteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoundCompleteView.swift; sourceTree = "<group>"; };
+		D20007 /* DebugMenuView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugMenuView.swift; sourceTree = "<group>"; };
+		D20009 /* LaunchSplashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchSplashView.swift; sourceTree = "<group>"; };
+		E40001 /* GroupStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupStorage.swift; sourceTree = "<group>"; };
+		E40002 /* ScoreStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoreStorage.swift; sourceTree = "<group>"; };
+		E40003 /* GameEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameEvent.swift; sourceTree = "<group>"; };
+		E40004 /* GameToastView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameToastView.swift; sourceTree = "<group>"; };
+		E40005 /* CarryToast.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarryToast.swift; sourceTree = "<group>"; };
+		F007D3C867C846239A99A99E /* GolfCourseAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GolfCourseAPI.swift; sourceTree = "<group>"; };
+		F60001 /* TypeRamp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TypeRamp.swift; sourceTree = "<group>"; };
+		F60002 /* DebugScenario.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugScenario.swift; sourceTree = "<group>"; };
+		F60099 /* CarryColors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarryColors.swift; sourceTree = "<group>"; };
+		F80001 /* ImageCropView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageCropView.swift; sourceTree = "<group>"; };
+		F80002 /* CameraView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraView.swift; sourceTree = "<group>"; };
+		F90002 /* ANDONESI.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = ANDONESI.ttf; sourceTree = "<group>"; };
+		F90004 /* ManageMembersSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManageMembersSheet.swift; sourceTree = "<group>"; };
+		FC29B0CF11FF413AA819A069 /* GolfCourseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GolfCourseService.swift; sourceTree = "<group>"; };
+		GS0002 /* GroupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupService.swift; sourceTree = "<group>"; };
+		M10001 /* MembershipRadioButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MembershipRadioButton.swift; sourceTree = "<group>"; };
+		N10001 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
+		S10001 /* SyncQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncQueue.swift; sourceTree = "<group>"; };
+		SC0001 /* Secrets.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Secrets.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -86,17 +171,29 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10025 /* Supabase in Frameworks */,
+				6067A5C52F75E4140055DE9A /* PostHog in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		6056B3522F70CA1C00943125 /* Recovered References */ = {
+			isa = PBXGroup;
+			children = (
+				SC0001 /* Secrets.xcconfig */,
+			);
+			name = "Recovered References";
+			sourceTree = "<group>";
+		};
 		C10001 = {
 			isa = PBXGroup;
 			children = (
+				6056B3532F71DA0E00943125 /* Configuration.storekit */,
 				C10002 /* Carry */,
 				C10003 /* Products */,
+				6056B3522F70CA1C00943125 /* Recovered References */,
+				602CE33C2F747A2F0028D0AF /* TeeTimePickerSheet.swift */,
 			);
 			sourceTree = "<group>";
 		};
@@ -105,11 +202,15 @@
 			children = (
 				B10001 /* CarryApp.swift */,
 				B10021 /* Config.swift */,
+				F60001 /* TypeRamp.swift */,
+				F60099 /* CarryColors.swift */,
+				F60002 /* DebugScenario.swift */,
 				B10027 /* Carry.entitlements */,
 				C10004 /* Models */,
 				C10005 /* ViewModels */,
 				C10006 /* Views */,
 				C10007 /* Services */,
+				C10008 /* Fonts */,
 				B10018 /* Assets.xcassets */,
 				B10019 /* Info.plist */,
 			);
@@ -130,10 +231,12 @@
 				B10002 /* Player.swift */,
 				B10003 /* Hole.swift */,
 				B10004 /* SkinResult.swift */,
+				E40003 /* GameEvent.swift */,
 				B10005 /* ScoreLabel.swift */,
 				B10006 /* RoundConfig.swift */,
 				B10022 /* SupabaseModels.swift */,
 				B10028 /* TeeBox.swift */,
+				F007D3C867C846239A99A99E /* GolfCourseAPI.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -149,14 +252,23 @@
 		C10006 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				60385FE42F7A167800FBF213 /* SMSInviteSheet.swift */,
+				60385FE02F78D10200FBF213 /* ResultsShareCard.swift */,
+				FEC0B2BCD1224503A328768D /* GuestClaimView.swift */,
+				60385FDC2F76EC5C00FBF213 /* QuickStartSheet.swift */,
+				602CE3382F735F7C0028D0AF /* ScoringInfoModal.swift */,
 				B10008 /* ScorecardView.swift */,
 				B10009 /* HeaderView.swift */,
 				B10010 /* CashGamesBar.swift */,
+				E40004 /* GameToastView.swift */,
+				E40005 /* CarryToast.swift */,
 				B10011 /* HoleHeaderRow.swift */,
 				B10012 /* PlayerRow.swift */,
 				B10013 /* SkinsRow.swift */,
+				9E4B1697B91D41F1A81D3762 /* SkinConfettiBurst.swift */,
 				B10014 /* ScoreInputView.swift */,
 				B10015 /* BottomBar.swift */,
+				M10001 /* MembershipRadioButton.swift */,
 				B10016 /* PlayerAvatar.swift */,
 				B10017 /* SplashShape.swift */,
 				B10026 /* AuthView.swift */,
@@ -164,9 +276,21 @@
 				B10030 /* GroupManagerView.swift */,
 				B10031 /* RoundCoordinatorView.swift */,
 				B10032 /* HomeView.swift */,
+				B10100 /* GolfBallLoader.swift */,
+				B20003 /* CarryInputModifier.swift */,
+				B20002 /* PaywallView.swift */,
 				B10033 /* MainTabView.swift */,
 				B10034 /* GroupsListView.swift */,
+				A298F2722FC1DED0209E5BB2 /* VenmoLogo.swift */,
 				B10035 /* ProfileSheetView.swift */,
+				A7A80C81F7A84402810B5460 /* CourseSelectionView.swift */,
+				D20005 /* ScoreInputSheet.swift */,
+				F90004 /* ManageMembersSheet.swift */,
+				D20006 /* RoundCompleteView.swift */,
+				D20007 /* DebugMenuView.swift */,
+				D20009 /* LaunchSplashView.swift */,
+				F80001 /* ImageCropView.swift */,
+				F80002 /* CameraView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -174,11 +298,32 @@
 		C10007 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				60385FE22F78D12100FBF213 /* ShareCardRenderer.swift */,
+				60385FDE2F76EC9B00FBF213 /* GuestProfileService.swift */,
 				B10023 /* SupabaseManager.swift */,
 				B10024 /* AuthService.swift */,
+				B20001 /* StoreService.swift */,
+				S10001 /* SyncQueue.swift */,
+				N10001 /* NotificationService.swift */,
 				B10025 /* RoundService.swift */,
+				GS0002 /* GroupService.swift */,
+				FC29B0CF11FF413AA819A069 /* GolfCourseService.swift */,
+				A3B7E2D419CF4FA8B1C60D72 /* PlayerSearchService.swift */,
+				D20001 /* AppRouter.swift */,
+				D20002 /* GroupInviteParser.swift */,
+				E40001 /* GroupStorage.swift */,
+				E40002 /* ScoreStorage.swift */,
+				6067A5C62F75E7980055DE9A /* AnalyticsService.swift */,
 			);
 			path = Services;
+			sourceTree = "<group>";
+		};
+		C10008 /* Fonts */ = {
+			isa = PBXGroup;
+			children = (
+				F90002 /* ANDONESI.ttf */,
+			);
+			path = Fonts;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -199,6 +344,7 @@
 			name = Carry;
 			packageProductDependencies = (
 				P10002 /* Supabase */,
+				6067A5C42F75E4140055DE9A /* PostHog */,
 			);
 			productName = Carry;
 			productReference = B10020 /* Carry.app */;
@@ -230,6 +376,7 @@
 			mainGroup = C10001;
 			packageReferences = (
 				P10001 /* XCRemoteSwiftPackageReference "supabase-swift" */,
+				6067A5C32F75E4140055DE9A /* XCRemoteSwiftPackageReference "posthog-ios" */,
 			);
 			productRefGroup = C10003 /* Products */;
 			projectDirPath = "";
@@ -246,6 +393,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10018 /* Assets.xcassets in Resources */,
+				F90001 /* ANDONESI.ttf in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -257,6 +405,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10001 /* CarryApp.swift in Sources */,
+				6067A5C72F75E7980055DE9A /* AnalyticsService.swift in Sources */,
+				F90003 /* ManageMembersSheet.swift in Sources */,
 				A10019 /* Config.swift in Sources */,
 				A10002 /* Player.swift in Sources */,
 				A10003 /* Hole.swift in Sources */,
@@ -267,16 +417,30 @@
 				A10007 /* RoundViewModel.swift in Sources */,
 				A10021 /* SupabaseManager.swift in Sources */,
 				A10022 /* AuthService.swift in Sources */,
+				A20003 /* CarryInputModifier.swift in Sources */,
+				A20001 /* StoreService.swift in Sources */,
+				A20002 /* PaywallView.swift in Sources */,
+				S10002 /* SyncQueue.swift in Sources */,
+				N10002 /* NotificationService.swift in Sources */,
 				A10023 /* RoundService.swift in Sources */,
+				GS0001 /* GroupService.swift in Sources */,
+				60385FE12F78D10200FBF213 /* ResultsShareCard.swift in Sources */,
+				7F68AD8196384B3AB96CBCFF /* GuestClaimView.swift in Sources */,
 				A10008 /* ScorecardView.swift in Sources */,
 				A10009 /* HeaderView.swift in Sources */,
 				A10010 /* CashGamesBar.swift in Sources */,
 				A10011 /* HoleHeaderRow.swift in Sources */,
 				A10012 /* PlayerRow.swift in Sources */,
 				A10013 /* SkinsRow.swift in Sources */,
+				602CE33D2F747A2F0028D0AF /* TeeTimePickerSheet.swift in Sources */,
+				552AF7443964484AA3D2F35A /* SkinConfettiBurst.swift in Sources */,
 				A10014 /* ScoreInputView.swift in Sources */,
+				60385FE52F7A167800FBF213 /* SMSInviteSheet.swift in Sources */,
 				A10015 /* BottomBar.swift in Sources */,
+				60385FE32F78D12100FBF213 /* ShareCardRenderer.swift in Sources */,
+				M10002 /* MembershipRadioButton.swift in Sources */,
 				A10016 /* PlayerAvatar.swift in Sources */,
+				60385FDF2F76EC9B00FBF213 /* GuestProfileService.swift in Sources */,
 				A10017 /* SplashShape.swift in Sources */,
 				A10024 /* AuthView.swift in Sources */,
 				A10026 /* TeeBox.swift in Sources */,
@@ -284,9 +448,33 @@
 				A10028 /* GroupManagerView.swift in Sources */,
 				A10031 /* RoundCoordinatorView.swift in Sources */,
 				A10032 /* HomeView.swift in Sources */,
+				A10100 /* GolfBallLoader.swift in Sources */,
 				A10033 /* MainTabView.swift in Sources */,
 				A10034 /* GroupsListView.swift in Sources */,
+				95379D27DEDC14C1D60D06A4 /* VenmoLogo.swift in Sources */,
 				A10035 /* ProfileSheetView.swift in Sources */,
+				EEF79AF1C0C64C8A9A994DFC /* GolfCourseAPI.swift in Sources */,
+				70E6DD8F93DE4E9B947D2ADE /* GolfCourseService.swift in Sources */,
+				8F4CA1E527DB49E3A6D8B193 /* PlayerSearchService.swift in Sources */,
+				B5263A87AFF44D4C95F2CB91 /* CourseSelectionView.swift in Sources */,
+				C20001 /* AppRouter.swift in Sources */,
+				C20002 /* GroupInviteParser.swift in Sources */,
+				C20005 /* ScoreInputSheet.swift in Sources */,
+				C20006 /* RoundCompleteView.swift in Sources */,
+				C20007 /* DebugMenuView.swift in Sources */,
+				D20008 /* LaunchSplashView.swift in Sources */,
+				E30001 /* GroupStorage.swift in Sources */,
+				E30002 /* ScoreStorage.swift in Sources */,
+				E30003 /* GameEvent.swift in Sources */,
+				E30004 /* GameToastView.swift in Sources */,
+				60385FDD2F76EC5C00FBF213 /* QuickStartSheet.swift in Sources */,
+				E30005 /* CarryToast.swift in Sources */,
+				F50001 /* TypeRamp.swift in Sources */,
+				F50099 /* CarryColors.swift in Sources */,
+				F50002 /* DebugScenario.swift in Sources */,
+				F70001 /* ImageCropView.swift in Sources */,
+				F70002 /* CameraView.swift in Sources */,
+				602CE3392F735F7C0028D0AF /* ScoringInfoModal.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -301,7 +489,7 @@
 				CODE_SIGN_ENTITLEMENTS = Carry/Carry.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 4HC6HD76J4;
 				INFOPLIST_FILE = Carry/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -330,7 +518,7 @@
 				CODE_SIGN_ENTITLEMENTS = Carry/Carry.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 4HC6HD76J4;
 				INFOPLIST_FILE = Carry/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -354,6 +542,7 @@
 		};
 		G10003 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = SC0001 /* Secrets.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -413,6 +602,7 @@
 		};
 		G10004 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = SC0001 /* Secrets.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -486,6 +676,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		6067A5C32F75E4140055DE9A /* XCRemoteSwiftPackageReference "posthog-ios" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/PostHog/posthog-ios.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 3.48.2;
+			};
+		};
 		P10001 /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/supabase/supabase-swift.git";
@@ -497,6 +695,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		6067A5C42F75E4140055DE9A /* PostHog */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 6067A5C32F75E4140055DE9A /* XCRemoteSwiftPackageReference "posthog-ios" */;
+			productName = PostHog;
+		};
 		P10002 /* Supabase */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = P10001 /* XCRemoteSwiftPackageReference "supabase-swift" */;

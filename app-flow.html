@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Carry — App Flow</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro', sans-serif; background: #1a1a1a; color: #fff; overflow: hidden; }
+
+  /* Canvas */
+  #canvas { width: 100vw; height: 100vh; position: relative; cursor: grab; }
+  #canvas.dragging { cursor: grabbing; }
+  #world { position: absolute; transform-origin: 0 0; }
+
+  /* Zoom controls */
+  .controls { position: fixed; bottom: 20px; right: 20px; display: flex; gap: 8px; z-index: 100; }
+  .controls button { width: 36px; height: 36px; border-radius: 8px; border: 1px solid #333; background: #2a2a2a; color: #fff; font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  .controls button:hover { background: #3a3a3a; }
+
+  /* Legend */
+  .legend { position: fixed; top: 16px; left: 16px; background: #2a2a2a; border-radius: 12px; padding: 14px 18px; z-index: 100; font-size: 12px; border: 1px solid #333; }
+  .legend h3 { font-size: 13px; margin-bottom: 8px; color: #C4A450; }
+  .legend-item { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 3px; }
+
+  /* Title */
+  .page-title { position: fixed; top: 16px; right: 16px; z-index: 100; text-align: right; }
+  .page-title h1 { font-size: 20px; font-weight: 800; color: #C4A450; }
+  .page-title p { font-size: 11px; color: #666; margin-top: 2px; }
+
+  /* Screen nodes */
+  .screen { position: absolute; border-radius: 14px; padding: 14px 18px; min-width: 150px; cursor: pointer; transition: transform 0.15s, box-shadow 0.15s; user-select: none; }
+  .screen:hover { transform: scale(1.04); box-shadow: 0 8px 24px rgba(0,0,0,0.4); z-index: 10; }
+  .screen h4 { font-size: 13px; font-weight: 700; margin-bottom: 3px; }
+  .screen p { font-size: 10px; opacity: 0.7; line-height: 1.4; }
+  .screen .badge { display: inline-block; font-size: 9px; font-weight: 600; padding: 2px 6px; border-radius: 4px; margin-top: 5px; background: rgba(255,255,255,0.15); }
+
+  /* Colors by category */
+  .cat-auth { background: #2d2040; border: 1.5px solid #7c3aed; }
+  .cat-auth h4 { color: #c084fc; }
+  .cat-tab { background: #1e293b; border: 1.5px solid #3b82f6; }
+  .cat-tab h4 { color: #60a5fa; }
+  .cat-home { background: #1a2e1a; border: 1.5px solid #22c55e; }
+  .cat-home h4 { color: #4ade80; }
+  .cat-round { background: #2a2010; border: 1.5px solid #C4A450; }
+  .cat-round h4 { color: #C4A450; }
+  .cat-score { background: #2a1515; border: 1.5px solid #ef4444; }
+  .cat-score h4 { color: #f87171; }
+  .cat-profile { background: #1a2a2a; border: 1.5px solid #14b8a6; }
+  .cat-profile h4 { color: #2dd4bf; }
+  .cat-debug { background: #2a2a2a; border: 1.5px solid #666; }
+  .cat-debug h4 { color: #999; }
+
+  /* Section labels */
+  .section-label { position: absolute; font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: #555; }
+
+  /* Connections (SVG) */
+  svg.connections { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+  svg.connections path { fill: none; stroke-width: 1.5; opacity: 0.4; }
+  svg.connections path.highlight { opacity: 0.9; stroke-width: 2.5; }
+
+  /* Tooltip */
+  .tooltip { position: fixed; background: #333; border: 1px solid #555; border-radius: 8px; padding: 10px 14px; font-size: 11px; line-height: 1.5; max-width: 260px; z-index: 200; pointer-events: none; display: none; }
+  .tooltip h5 { font-size: 12px; font-weight: 700; margin-bottom: 4px; color: #C4A450; }
+</style>
+</head>
+<body>
+
+<div class="legend">
+  <h3>Carry App Flow</h3>
+  <div class="legend-item"><div class="legend-dot" style="background:#7c3aed"></div> Auth & Onboarding</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#3b82f6"></div> Tab Navigation</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#22c55e"></div> Home Screens</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#C4A450"></div> Round Flow</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#ef4444"></div> Scorecard & Scoring</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#14b8a6"></div> Profile</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#666"></div> Debug</div>
+</div>
+
+<div class="page-title">
+  <h1>CARRY</h1>
+  <p>Scroll to zoom &middot; Drag to pan &middot; Hover for details</p>
+</div>
+
+<div class="controls">
+  <button onclick="zoomIn()">+</button>
+  <button onclick="zoomOut()">&minus;</button>
+  <button onclick="resetView()">&#8634;</button>
+</div>
+
+<div class="tooltip" id="tooltip"></div>
+
+<div id="canvas">
+  <div id="world">
+    <svg class="connections" id="svg"></svg>
+  </div>
+</div>
+
+<script>
+// ── Screen data ──────────────────────────────────────────────────
+const screens = [
+  // Auth flow
+  { id: 'app',         x: 80,  y: 280, cat: 'auth',    title: 'CarryApp', desc: 'Root entry point', detail: 'Checks auth state, shows debug button (ladybug) when devMode=true. Handles deep link URLs for group invites.' },
+  { id: 'auth',        x: 80,  y: 420, cat: 'auth',    title: 'AuthView', desc: 'Sign in with Apple', detail: 'Full-screen sign-in. Apple auth flow. Debug skip available. Animated welcome text.' },
+  { id: 'onboard',     x: 80,  y: 560, cat: 'auth',    title: 'OnboardingView', desc: '3-step setup', detail: 'Step 0: Username + Home Club search\nStep 1: Profile photo (PhotosPicker)\nStep 2: GHIN number + Handicap Index\nSkippable steps, animated transitions.' },
+  { id: 'onboard0',    x: 30,  y: 700, cat: 'auth',    title: 'Step 0', desc: 'Username + Club', detail: 'Username field with @ prefix, live availability check.\nHome Club: search-as-you-type via GolfCourseAPI, 400ms debounce.\n"Not a club member" checkbox option.\nSelected club shows "Change" button.' },
+  { id: 'onboard1',    x: 180, y: 700, cat: 'auth',    title: 'Step 1', desc: 'Profile Photo', detail: 'PhotosPicker integration.\nCircular avatar preview.\nSkippable — can proceed without photo.' },
+  { id: 'onboard2',    x: 330, y: 700, cat: 'auth',    title: 'Step 2', desc: 'GHIN + Handicap', detail: 'GHIN Number: 6-8 digit numeric input.\nHandicap Index: supports +1.0 to +10.0 (plus handicap) and 0 to 54.0.\nKeyboard: numbersAndPunctuation.' },
+
+  // Main tabs
+  { id: 'tabs',        x: 400, y: 280, cat: 'tab',     title: 'MainTabView', desc: '3-tab navigation', detail: 'Custom sticky tab bar at bottom.\nTabs: Home, Skin Games, Profile.\nHandles deep link group invites.\nAuto-switches new users to Profile tab.\nControls tab bar visibility (hidden during rounds).' },
+
+  // Home
+  { id: 'home',        x: 350, y: 420, cat: 'home',    title: 'HomeView', desc: 'Active, Invited, Recent', detail: 'Three sections:\n• Active Rounds — LIVE badge, hole indicator\n• Invites — Join/Decline actions\n• Recent — swipe to delete, tap for leaderboard\n\nRound cards show group name, course, tee time, player pills.' },
+  { id: 'home-active', x: 280, y: 560, cat: 'home',    title: 'Active Round Card', desc: 'LIVE badge + hole pill', detail: 'Green pulsating LIVE dot.\nBlack capsule with hole number.\nShows course name, tee time.\nPlayer pills with $0 winnings.\nTap → opens RoundCoordinatorView at Phase 4.' },
+  { id: 'home-invite', x: 430, y: 560, cat: 'home',    title: 'Invite Card', desc: 'Join / Decline', detail: 'Shows inviter name and group.\nJoin → creates SavedGroup, switches to Skin Games tab.\nDecline → removes from list.' },
+  { id: 'home-recent', x: 580, y: 560, cat: 'home',    title: 'Recent Card', desc: 'Tap for leaderboard', detail: 'Shows group name, course, rounds played, time label.\nDisplays skins winnings ($amount).\nSwipe left → delete/leave.\nTap → LeaderboardSheet.' },
+  { id: 'leaderboard', x: 580, y: 700, cat: 'home',    title: 'LeaderboardSheet', desc: 'Bottom sheet', detail: 'Sheet with .large detent.\nShows final standings.\nSkins won, net winnings per player.\nPlayer avatars + HCP display.' },
+
+  // Groups
+  { id: 'groups',      x: 700, y: 420, cat: 'tab',     title: 'GroupsListView', desc: 'All skins groups', detail: 'List of SavedGroup cards.\nTwo card variants:\n• Active: LIVE badge, hole, player pills with $\n• Idle: buy-in pill, course, tee time, player pills\n\nCreate Group button.\nShare app button.' },
+  { id: 'group-active',x: 650, y: 560, cat: 'tab',     title: 'Group Card (Active)', desc: 'LIVE + player pills', detail: 'Group name (16pt bold).\nGreen LIVE pill + hole number in black capsule.\nCourse name + tee time.\nPlayer pills with avatar + name + $0.' },
+  { id: 'group-idle',  x: 800, y: 560, cat: 'tab',     title: 'Group Card (Idle)', desc: 'Buy-in + members', detail: 'Group name (16pt bold).\nGold buy-in capsule ($X Buy-In).\nCourse name + scheduled tee time.\nPlayer pills with avatar + name.' },
+
+  // Round flow
+  { id: 'coordinator', x: 1050, y: 280, cat: 'round',  title: 'RoundCoordinatorView', desc: '4-phase state machine', detail: 'Manages entire round lifecycle.\nPhase transitions with spring animations.\nCreator vs Participant paths.\nBack button behavior varies by phase and role.' },
+  { id: 'course-sel',  x: 950,  y: 420, cat: 'round',  title: 'CourseSelectionView', desc: 'Phase 1: Search + tee', detail: 'Search courses via GolfCourseAPI.\nRecent courses list.\nTee box picker (men\'s/women\'s tees).\nShows course rating + slope.\nSelect tee → advances to Phase 2.' },
+  { id: 'group-mgr',   x: 1100, y: 420, cat: 'round',  title: 'GroupManagerView', desc: 'Phase 2: Players + groups', detail: 'Player grid (4-col, drag & drop).\nAdd guest → GuestEntrySheet.\nTee time pickers per group.\nBuy-in amount input.\nScorer assignment per group.\nChange course → CourseSelectionView sheet.\nShare invite link.\n\nCreator: full edit access.\nParticipant: view only.' },
+  { id: 'splash',      x: 1250, y: 420, cat: 'round',  title: 'StartingSplash', desc: 'Phase 3: Animated start', detail: 'Staggered animations:\nFlag → Title → Details → Stats → Pulse.\n"Go to Scorecard" → Phase 4.\n"Back to Groups" → Phase 2.' },
+  { id: 'guest-sheet', x: 1100, y: 560, cat: 'round',  title: 'GuestEntrySheet', desc: 'Add guest player', detail: 'Name input + Handicap Index.\nSupports plus handicaps (+1.0 to +10.0).\nAdds to available players grid.' },
+  { id: 'share-invite',x: 1250, y: 560, cat: 'round',  title: 'ShareInviteSheet', desc: 'Share group link', detail: 'Native share sheet.\nGenerates invite URL via GroupInviteParser.\nRecipient taps link → deep link into app.' },
+
+  // Scorecard
+  { id: 'scorecard',   x: 1450, y: 280, cat: 'score',  title: 'ScorecardView', desc: 'Phase 4: Live scorecard', detail: 'Sticky left column: player names.\nHorizontal scroll: 18 holes + skins.\nActive hole highlighted.\nSwipe: left shows labels, right hides.\n\nMenu: Group Settings, Change Course, Share, End Round.\n\nCreator: back → GroupManagerView.\nParticipant: back → Home.' },
+  { id: 'score-input', x: 1350, y: 420, cat: 'score',  title: 'ScoreInputSheet', desc: 'Dial score picker', detail: 'Bottom sheet with drag handle.\nShows player name + hole number.\nDial picker for score selection.\n"Next" → rotates to next unscored player.\n"Save" → enters score, dismisses.' },
+  { id: 'cash-bar',    x: 1500, y: 420, cat: 'score',  title: 'CashGamesBar', desc: 'Pot + skins breakdown', detail: 'Shows total pot amount.\nSkins won per player.\nAnimated confetti on new skin wins.\nTracks score changes for winner detection.' },
+  { id: 'round-done',  x: 1650, y: 420, cat: 'score',  title: 'RoundCompleteView', desc: 'Celebration + results', detail: 'Expandable/collapsible overlay.\nConfetti burst on winners.\nCheckmark animation.\nLeaderboard with skins + net winnings.\nDrag down to collapse.\nShare results button.' },
+
+  // Profile
+  { id: 'profile',     x: 900, y: 140, cat: 'profile', title: 'ProfileSheetView', desc: 'Settings + account', detail: 'Avatar with camera badge.\nHandicap display (HCP pill, tap to edit).\nDisplay name, username.\n\nSections:\n• Personal Information\n• Home Club\n• GHIN Number\n• Notifications\n• Sign Out' },
+  { id: 'hcp-picker',  x: 800, y: 30,  cat: 'profile', title: 'HandicapPicker', desc: 'Wheel picker +10…54', detail: 'Two-wheel picker (whole + decimal).\nRange: +10 (displayed as "+10") to 54.\nNegative stored values = plus handicaps.\nSave → updates via AuthService.' },
+  { id: 'edit-profile',x: 950, y: 30,  cat: 'profile', title: 'EditProfileSheet', desc: 'Name + photo', detail: 'Edit first name, last name.\nChange profile photo.\nPhotoPicker integration.' },
+  { id: 'club-edit',   x: 1100, y: 30,  cat: 'profile', title: 'ClubEditSheet', desc: 'Search + select club', detail: 'Same search pattern as onboarding.\nGolfCourseAPI search, 400ms debounce.\nSelected club shows "Change" button.\n"Not a club member" checkbox.\nClear → removes club.' },
+
+  // Debug
+  { id: 'debug',       x: 80,  y: 100, cat: 'debug',   title: 'DebugMenuView', desc: 'Dev/QA menu (shake)', detail: 'Full-screen cover via device shake or ladybug button.\n\nNav: Home, Groups, Onboarding, Auth, Welcome, Splash.\n\nScorecard states:\n• Empty, Mid-game (Hole 6), Hole 17, Hole 18\n• Viewer (read-only), Auto-score\n• Pill celebration, Provisional Results\n• Round Complete\n\nAuth toggles, group reset/clear.' },
+];
+
+// ── Connections ──────────────────────────────────────────────────
+const connections = [
+  // Auth flow
+  { from: 'app', to: 'auth', label: 'not authenticated', color: '#7c3aed' },
+  { from: 'app', to: 'tabs', label: 'authenticated', color: '#3b82f6' },
+  { from: 'auth', to: 'onboard', label: 'sign in success', color: '#7c3aed' },
+  { from: 'onboard', to: 'onboard0', color: '#7c3aed' },
+  { from: 'onboard', to: 'onboard1', color: '#7c3aed' },
+  { from: 'onboard', to: 'onboard2', color: '#7c3aed' },
+  { from: 'onboard2', to: 'tabs', label: "Let's Go", color: '#7c3aed' },
+
+  // Tabs
+  { from: 'tabs', to: 'home', color: '#3b82f6' },
+  { from: 'tabs', to: 'groups', color: '#3b82f6' },
+  { from: 'tabs', to: 'profile', color: '#3b82f6' },
+
+  // Home
+  { from: 'home', to: 'home-active', color: '#22c55e' },
+  { from: 'home', to: 'home-invite', color: '#22c55e' },
+  { from: 'home', to: 'home-recent', color: '#22c55e' },
+  { from: 'home-recent', to: 'leaderboard', label: 'tap', color: '#22c55e' },
+  { from: 'home-active', to: 'coordinator', label: 'tap → Phase 4', color: '#C4A450' },
+
+  // Groups
+  { from: 'groups', to: 'group-active', color: '#3b82f6' },
+  { from: 'groups', to: 'group-idle', color: '#3b82f6' },
+  { from: 'groups', to: 'coordinator', label: 'tap / create', color: '#C4A450' },
+
+  // Round flow
+  { from: 'coordinator', to: 'course-sel', label: 'Phase 1', color: '#C4A450' },
+  { from: 'coordinator', to: 'group-mgr', label: 'Phase 2', color: '#C4A450' },
+  { from: 'coordinator', to: 'splash', label: 'Phase 3', color: '#C4A450' },
+  { from: 'coordinator', to: 'scorecard', label: 'Phase 4', color: '#C4A450' },
+  { from: 'course-sel', to: 'group-mgr', label: 'select tee', color: '#C4A450' },
+  { from: 'group-mgr', to: 'splash', label: 'confirm', color: '#C4A450' },
+  { from: 'splash', to: 'scorecard', label: 'go to scorecard', color: '#C4A450' },
+  { from: 'group-mgr', to: 'guest-sheet', label: 'add guest', color: '#C4A450' },
+  { from: 'group-mgr', to: 'share-invite', label: 'share', color: '#C4A450' },
+  { from: 'group-mgr', to: 'course-sel', label: 'change course', color: '#C4A450' },
+
+  // Scorecard
+  { from: 'scorecard', to: 'score-input', label: 'tap cell', color: '#ef4444' },
+  { from: 'scorecard', to: 'cash-bar', color: '#ef4444' },
+  { from: 'scorecard', to: 'round-done', label: 'all 18 scored', color: '#ef4444' },
+  { from: 'scorecard', to: 'group-mgr', label: 'edit players', color: '#C4A450' },
+
+  // Profile
+  { from: 'profile', to: 'hcp-picker', label: 'edit HCP', color: '#14b8a6' },
+  { from: 'profile', to: 'edit-profile', label: 'edit profile', color: '#14b8a6' },
+  { from: 'profile', to: 'club-edit', label: 'edit club', color: '#14b8a6' },
+  { from: 'profile', to: 'auth', label: 'sign out', color: '#7c3aed' },
+
+  // Debug
+  { from: 'app', to: 'debug', label: 'shake', color: '#666' },
+  { from: 'debug', to: 'home', color: '#666' },
+  { from: 'debug', to: 'groups', color: '#666' },
+  { from: 'debug', to: 'onboard', color: '#666' },
+  { from: 'debug', to: 'scorecard', color: '#666' },
+];
+
+// ── Render ───────────────────────────────────────────────────────
+const world = document.getElementById('world');
+const svg = document.getElementById('svg');
+const canvas = document.getElementById('canvas');
+const tooltip = document.getElementById('tooltip');
+
+// Create screen nodes
+const screenEls = {};
+screens.forEach(s => {
+  const el = document.createElement('div');
+  el.className = `screen cat-${s.cat}`;
+  el.style.left = s.x + 'px';
+  el.style.top = s.y + 'px';
+  el.innerHTML = `<h4>${s.title}</h4><p>${s.desc}</p>`;
+  el.dataset.id = s.id;
+
+  el.addEventListener('mouseenter', e => {
+    tooltip.style.display = 'block';
+    tooltip.innerHTML = `<h5>${s.title}</h5>${s.detail.replace(/\n/g, '<br>')}`;
+    // Highlight connected paths
+    document.querySelectorAll(`path[data-from="${s.id}"], path[data-to="${s.id}"]`).forEach(p => p.classList.add('highlight'));
+  });
+  el.addEventListener('mousemove', e => {
+    tooltip.style.left = (e.clientX + 14) + 'px';
+    tooltip.style.top = (e.clientY + 14) + 'px';
+  });
+  el.addEventListener('mouseleave', () => {
+    tooltip.style.display = 'none';
+    document.querySelectorAll('path.highlight').forEach(p => p.classList.remove('highlight'));
+  });
+
+  world.appendChild(el);
+  screenEls[s.id] = el;
+});
+
+// Draw connections
+function getCenter(id) {
+  const el = screenEls[id];
+  if (!el) return { x: 0, y: 0 };
+  const x = parseFloat(el.style.left) + el.offsetWidth / 2;
+  const y = parseFloat(el.style.top) + el.offsetHeight / 2;
+  return { x, y };
+}
+
+function drawConnections() {
+  svg.innerHTML = '';
+  connections.forEach(c => {
+    const a = getCenter(c.from);
+    const b = getCenter(c.to);
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const cx1 = a.x + dx * 0.4;
+    const cy1 = a.y;
+    const cx2 = b.x - dx * 0.4;
+    const cy2 = b.y;
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', `M${a.x},${a.y} C${cx1},${cy1} ${cx2},${cy2} ${b.x},${b.y}`);
+    path.setAttribute('stroke', c.color || '#555');
+    path.dataset.from = c.from;
+    path.dataset.to = c.to;
+    svg.appendChild(path);
+  });
+}
+
+requestAnimationFrame(drawConnections);
+
+// ── Pan & Zoom ───────────────────────────────────────────────────
+let scale = 0.85, panX = 60, panY = 40;
+let isPanning = false, startX, startY;
+
+function applyTransform() {
+  world.style.transform = `translate(${panX}px,${panY}px) scale(${scale})`;
+}
+applyTransform();
+
+canvas.addEventListener('mousedown', e => {
+  if (e.target.closest('.screen')) return;
+  isPanning = true;
+  startX = e.clientX - panX;
+  startY = e.clientY - panY;
+  canvas.classList.add('dragging');
+});
+window.addEventListener('mousemove', e => {
+  if (!isPanning) return;
+  panX = e.clientX - startX;
+  panY = e.clientY - startY;
+  applyTransform();
+});
+window.addEventListener('mouseup', () => { isPanning = false; canvas.classList.remove('dragging'); });
+
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const delta = e.deltaY > 0 ? 0.92 : 1.08;
+  scale = Math.min(3, Math.max(0.25, scale * delta));
+  applyTransform();
+}, { passive: false });
+
+function zoomIn() { scale = Math.min(3, scale * 1.2); applyTransform(); }
+function zoomOut() { scale = Math.max(0.25, scale * 0.8); applyTransform(); }
+function resetView() { scale = 0.85; panX = 60; panY = 40; applyTransform(); }
+</script>
+</body>
+</html>

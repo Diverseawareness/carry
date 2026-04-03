@@ -8,8 +8,10 @@ struct SkinsRow: View {
     let sumWidth: CGFloat
     let skinsHeight: CGFloat
 
+    @State private var activeCelebrations: Set<Int> = []
+
     private var skins: [Int: SkinStatus] {
-        viewModel.calculateSkins()
+        viewModel.cachedSkins
     }
 
     var body: some View {
@@ -17,17 +19,53 @@ struct SkinsRow: View {
             ForEach(holes) { hole in
                 let sk = skins[hole.num]
                 let isActive = hole.num == activeHole
-                let badgeSize = max(16, skinsHeight * 0.55)
+                let badgeSize: CGFloat = 40  // match CashGamesBar pill avatar
                 let isNineBoundary = hole.num == 9
 
                 ZStack {
                     skinContent(status: sk, isActive: isActive, badgeSize: badgeSize)
                 }
                 .frame(width: cellWidth, height: skinsHeight)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel({
+                    switch sk {
+                    case .won(let winner, _, _, let carry):
+                        let carryLabel = carry > 1 ? ", \(carry) skins carried" : ""
+                        return "Hole \(hole.num), skin won by \(winner.name)\(carryLabel)"
+                    case .squashed:
+                        return "Hole \(hole.num), skin squashed"
+                    case .carried:
+                        return "Hole \(hole.num), skin carried forward"
+                    case .provisional(let leaders, _, _, _, _):
+                        if leaders.count == 1, let leader = leaders.first {
+                            return "Hole \(hole.num), \(leader.name) leading"
+                        } else if leaders.count > 1 {
+                            return "Hole \(hole.num), \(leaders.count) players tied"
+                        }
+                        return "Hole \(hole.num), provisional"
+                    case .pending:
+                        return "Hole \(hole.num), pending"
+                    case .none:
+                        return "Hole \(hole.num), no skin"
+                    }
+                }())
+                .overlay {
+                    // Confetti burst — larger frame so particles are visible
+                    if activeCelebrations.contains(hole.num),
+                       case .won(let winner, _, _, _) = sk {
+                        SkinConfettiBurst(playerColor: winner.swiftColor) {
+                            activeCelebrations.remove(hole.num)
+                        }
+                        .frame(width: 160, height: 160)
+                    }
+                }
+                .allowsHitTesting(false)
+                .zIndex(activeCelebrations.contains(hole.num) ? 1 : 0)
                 .overlay(alignment: .trailing) {
                     Rectangle()
-                        .fill(isNineBoundary ? Color(hex: "#E0E0E0") : Color(hex: "#F0F0F0"))
+                        .fill(Color.gridLine)
                         .frame(width: isNineBoundary ? 2 : 1)
+                        .accessibilityHidden(true)
                 }
             }
 
@@ -35,13 +73,25 @@ struct SkinsRow: View {
             ForEach(0..<3, id: \.self) { i in
                 Color.clear
                     .frame(width: sumWidth, height: skinsHeight)
+                    .accessibilityHidden(true)
                     .overlay(alignment: .leading) {
-                        if i == 0 {
+                        if i > 0 {
                             Rectangle()
-                                .fill(Color(hex: "#E0E0E0"))
-                                .frame(width: 2)
+                                .fill(Color.gridLine)
+                                .frame(width: 1)
+                                .accessibilityHidden(true)
                         }
                     }
+            }
+        }
+        .onReceive(viewModel.$pendingSkinCelebrations) { celebrations in
+            guard !celebrations.isEmpty else { return }
+            for (index, celebration) in celebrations.enumerated() {
+                let delay = 0.15 + Double(index) * 0.5
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                    activeCelebrations.insert(celebration.holeNum)
+                }
+                viewModel.consumeSkinCelebration(celebration)
             }
         }
     }
@@ -51,7 +101,7 @@ struct SkinsRow: View {
         switch status {
         case .won(let winner, _, _, let carry):
             ZStack(alignment: .topTrailing) {
-                PlayerAvatar(player: winner, size: badgeSize, showTrophy: true)
+                PlayerAvatar(player: winner, size: badgeSize, showCheckBadge: true)
                 if carry > 1 {
                     Text("\(carry)x")
                         .font(.system(size: max(7, skinsHeight * 0.22), weight: .heavy))
@@ -59,23 +109,24 @@ struct SkinsRow: View {
                         .padding(.horizontal, 3)
                         .padding(.vertical, 1)
                         .background(
-                            Capsule().fill(Color(hex: "#C4A450"))
+                            Capsule().fill(Color.goldMuted)
                         )
                         .offset(x: 4, y: -4)
                 }
             }
 
         case .squashed:
-            SplashIcon(size: max(14, skinsHeight * 0.5), color: Color(hex: "#CCCCCC"))
+            SplashIcon(size: max(14, skinsHeight * 0.5), color: Color.borderMedium)
 
         case .carried:
             Image(systemName: "arrow.right")
                 .font(.system(size: max(10, skinsHeight * 0.3), weight: .medium))
-                .foregroundColor(Color(hex: "#C4A450").opacity(0.5))
+                .foregroundColor(Color.goldMuted.opacity(0.5))
 
-        case .provisional(let leaders, _, let bestGross, _, _):
-            if let leader = leaders.first {
-                PlayerAvatar(player: leader, size: badgeSize, showPulse: true, badgeNumber: bestGross)
+        case .provisional(let leaders, let bestNet, _, _, _):
+            if let leader = leaders.last {
+                // Show the most recent leader (even if tied) — pulsing with net score to beat
+                PlayerAvatar(player: leader, size: badgeSize, showPulse: true, badgeNumber: bestNet)
             }
 
         case .pending:
@@ -83,13 +134,13 @@ struct SkinsRow: View {
                 PulsingDot()
             } else {
                 Circle()
-                    .fill(Color(hex: "#EAEAEA"))
+                    .fill(Color(hexString: "#EAEAEA"))
                     .frame(width: 4, height: 4)
             }
 
         case .none:
             Circle()
-                .fill(Color(hex: "#EAEAEA"))
+                .fill(Color(hexString: "#EAEAEA"))
                 .frame(width: 4, height: 4)
         }
     }
@@ -100,32 +151,13 @@ struct PulsingDot: View {
 
     var body: some View {
         Circle()
-            .fill(Color(hex: "#C4A450"))
+            .fill(Color.goldMuted)
             .frame(width: 6, height: 6)
             .scaleEffect(isPulsing ? 1.6 : 1.0)
             .opacity(isPulsing ? 0.4 : 1.0)
             .animation(.easeInOut(duration: 1).repeatForever(autoreverses: true), value: isPulsing)
             .onAppear { isPulsing = true }
+            .accessibilityHidden(true)
     }
 }
 
-struct PulsingDashedCircle: View {
-    let count: Int
-    let size: CGFloat
-    @State private var isPulsing = false
-
-    var body: some View {
-        ZStack {
-            Circle()
-                .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
-                .foregroundColor(Color(hex: "#CCCCCC"))
-            Text("\(count)")
-                .font(.system(size: max(6, size * 0.38), weight: .semibold))
-                .foregroundColor(Color(hex: "#CCCCCC"))
-        }
-        .frame(width: size, height: size)
-        .shadow(color: .black.opacity(isPulsing ? 0.06 : 0), radius: isPulsing ? 3 : 0)
-        .animation(.easeInOut(duration: 1).repeatForever(autoreverses: true), value: isPulsing)
-        .onAppear { isPulsing = true }
-    }
-}

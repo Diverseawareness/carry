@@ -4,8 +4,10 @@ struct ScoreInputView: View {
     let player: Player
     let holeNum: Int
     let holes: [Hole]
-    let strokesGiven: Int  // pre-computed by caller using tee box data
+    let strokesGiven: Int
+    let currentScore: Int?       // nil = new entry; non-nil = editing existing score
     let onSelect: (Int) -> Void
+    let onClear: (() -> Void)?   // non-nil when a score can be cleared
     let onCancel: () -> Void
 
     private var hole: Hole? {
@@ -17,113 +19,124 @@ struct ScoreInputView: View {
     }
 
     private var scoreOptions: [(val: Int, label: String, color: Color)] {
-        let gold = Color(hex: "#FFD700")
-        let darkGold = Color(hex: "#D4A017")
+        let gold     = Color.goldStandard
+        let darkGold = Color.gold
         var opts: [(val: Int, label: String, color: Color)] = []
 
-        // HIO (1) — always available
         opts.append((1, "HIO", gold))
 
-        // Albatross (par-3) — only on par 5+ where it's distinct from HIO
         if par >= 5 {
             opts.append((par - 3, "Albatross", gold))
         }
 
-        // Eagle (par-2) — skip if it would be 1 (already shown as HIO)
         if par - 2 > 1 {
             opts.append((par - 2, "Eagle", darkGold))
         }
 
-        opts.append((par - 1, "Birdie", Color(hex: "#2ECC71")))
-        opts.append((par, "Par", Color(hex: "#1A1A1A")))
-        opts.append((par + 1, "Bogey", Color(hex: "#999999")))
-        opts.append((par + 2, "Double", Color(hex: "#E05555")))
-        opts.append((par + 3, "Triple+", Color(hex: "#E05555")))
+        opts.append((par - 1, "Birdie", Color.birdieGreen))
+        opts.append((par,     "Par",    Color.textPrimary))
+        opts.append((par + 1, "Bogey",  Color.textSecondary))
+        opts.append((par + 2, "Double", Color.bogeyRed))
+        opts.append((par + 3, "Triple+",Color.bogeyRed))
 
         return opts
     }
 
     var body: some View {
         ZStack {
-            // Blurred white background
-            Color.white.opacity(0.97)
-                .ignoresSafeArea()
-                .background(.ultraThinMaterial)
+            Color.white.ignoresSafeArea()
 
             VStack(spacing: 0) {
-                Spacer()
+                // ── Player + hole header ─────────────────────────────────
+                VStack(spacing: 8) {
+                    HStack(spacing: 10) {
+                        PlayerAvatar(player: player, size: 36)
+                        Text(player.shortName)
+                            .font(.carry.sectionTitle)
+                            .foregroundColor(Color.textPrimary)
+                            .lineLimit(1)
+                    }
+                    .padding(.top, 36)
 
-                // Player indicator
-                HStack(spacing: 8) {
-                    PlayerAvatar(player: player, size: 28)
-                    Text(player.name)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(Color(hex: "#1A1A1A"))
+                    Text("HOLE \(holeNum)  ·  PAR \(par)")
+                        .font(.carry.captionLGSemibold)
+                        .tracking(CarryTracking.wide)
+                        .foregroundColor(Color.dividerMuted)
+
+                    if strokesGiven > 0 {
+                        Text("+\(strokesGiven) stroke\(strokesGiven != 1 ? "s" : "")")
+                            .font(.carry.caption)
+                            .foregroundColor(Color.successGreen)
+                    }
                 }
-                .padding(.bottom, 12)
+                .padding(.bottom, 28)
 
-                // Hole info
-                Text("HOLE \(holeNum)")
-                    .font(.system(size: 11, weight: .semibold))
-                    .tracking(1.5)
-                    .foregroundColor(Color(hex: "#999999"))
-                    .padding(.bottom, 4)
-
-                Text("Par \(par)")
-                    .font(.system(size: 13))
-                    .foregroundColor(Color(hex: "#BBBBBB"))
-                    .padding(.bottom, 6)
-
-                // Strokes info
-                Text("\(player.id == 1 ? "You get" : "\(player.name) gets") \(strokesGiven) stroke\(strokesGiven != 1 ? "s" : "")")
-                    .font(.system(size: 10))
-                    .foregroundColor(Color(hex: "#CCCCCC"))
-                    .padding(.bottom, 28)
-
-                // Score grid
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 10) {
+                // ── Score grid ───────────────────────────────────────────
+                LazyVGrid(
+                    columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 3),
+                    spacing: 12
+                ) {
                     ForEach(Array(scoreOptions.enumerated()), id: \.offset) { _, option in
+                        let isSelected = currentScore == option.val
+
                         Button {
                             onSelect(option.val)
                         } label: {
-                            VStack(spacing: 4) {
+                            VStack(spacing: 6) {
                                 Text("\(option.val)")
-                                    .font(.system(size: 28, weight: .bold))
+                                    .font(.carry.displayMD)
                                     .monospacedDigit()
-                                    .foregroundColor(option.color)
+                                    .foregroundColor(isSelected ? .white : option.color)
+
                                 Text(option.label.uppercased())
-                                    .font(.system(size: 10, weight: .medium))
-                                    .tracking(0.5)
-                                    .foregroundColor(Color(hex: "#BBBBBB"))
+                                    .font(.carry.microSM)
+                                    .tracking(CarryTracking.wide)
+                                    .foregroundColor(
+                                        isSelected
+                                            ? Color.white.opacity(0.65)
+                                            : Color.dividerMuted
+                                    )
                             }
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 20)
+                            .padding(.vertical, 22)
                             .background(
-                                RoundedRectangle(cornerRadius: 14)
-                                    .fill(option.val == par ? Color(hex: "#FAFAFA") : .white)
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 14)
-                                    .strokeBorder(option.val == par ? Color(hex: "#DDDDDD") : Color(hex: "#EFEFEF"), lineWidth: option.val == par ? 1.5 : 1)
+                                RoundedRectangle(cornerRadius: 16)
+                                    .fill(isSelected
+                                          ? Color.textPrimary
+                                          : Color(hexString: "#F2F2F2"))
                             )
                         }
                         .buttonStyle(.plain)
                     }
                 }
-                .frame(maxWidth: 280)
-                .padding(.horizontal, 40)
+                .padding(.horizontal, 24)
 
-                // Cancel
-                Button {
-                    onCancel()
-                } label: {
-                    Text("Cancel")
-                        .font(.system(size: 14))
-                        .foregroundColor(Color(hex: "#BBBBBB"))
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 10)
+                // ── Actions ──────────────────────────────────────────────
+                VStack(spacing: 2) {
+                    // Clear — only visible when editing an existing score
+                    if let onClear {
+                        Button {
+                            onClear()
+                        } label: {
+                            Text("Clear Score")
+                                .font(.carry.bodySM)
+                                .foregroundColor(Color.bogeyRed)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
+                        }
+                    }
+
+                    Button {
+                        onCancel()
+                    } label: {
+                        Text("Cancel")
+                            .font(.carry.bodySM)
+                            .foregroundColor(Color.borderSoft)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                    }
                 }
-                .padding(.top, 28)
+                .padding(.top, 12)
 
                 Spacer()
             }

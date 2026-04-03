@@ -25,6 +25,30 @@ final class RoundService {
         return course
     }
 
+    func createTeeBox(courseId: UUID, teeBox: TeeBox) async throws -> TeeBoxDTO {
+        // Encode per-hole data as JSON string for storage
+        var holesJson: String? = nil
+        if let holes = teeBox.holes {
+            if let data = try? JSONEncoder().encode(holes) {
+                holesJson = String(data: data, encoding: .utf8)
+            }
+        }
+        return try await client.from("tee_boxes")
+            .insert(TeeBoxInsert(
+                courseId: courseId,
+                name: teeBox.name,
+                color: teeBox.color,
+                courseRating: teeBox.courseRating,
+                slopeRating: teeBox.slopeRating,
+                par: teeBox.par,
+                holesJson: holesJson
+            ))
+            .select()
+            .single()
+            .execute()
+            .value
+    }
+
     func fetchCourseHoles(courseId: UUID) async throws -> [HoleDTO] {
         try await client.from("holes")
             .select()
@@ -36,20 +60,33 @@ final class RoundService {
 
     // MARK: - Rounds
 
-    func createRound(courseId: UUID, createdBy: UUID, teeBoxId: UUID? = nil, buyIn: Int, net: Bool, carries: Bool, outright: Bool, handicapPercentage: Double = 1.0, players: [(userId: UUID, group: Int)]) async throws -> RoundDTO {
+    func createRound(courseId: UUID, createdBy: UUID, teeBoxId: UUID? = nil, buyIn: Int, net: Bool, carries: Bool, outright: Bool, handicapPercentage: Double = 1.0, groupId: UUID? = nil, scorerId: UUID? = nil, scoringMode: String = "single", players: [(userId: UUID, group: Int)]) async throws -> RoundDTO {
+        let insertPayload = RoundInsert(
+            courseId: courseId,
+            createdBy: createdBy,
+            teeBoxId: teeBoxId,
+            buyIn: buyIn,
+            gameType: "skins",
+            net: net,
+            carries: carries,
+            outright: outright,
+            handicapPercentage: handicapPercentage,
+            groupId: groupId,
+            scorerId: scorerId,
+            scoringMode: scoringMode
+        )
+
+        // Insert round, then fetch it back (bare insert avoids trigger conflicts)
+        try await client.from("rounds")
+            .insert(insertPayload)
+            .execute()
+
         let round: RoundDTO = try await client.from("rounds")
-            .insert(RoundInsert(
-                courseId: courseId,
-                createdBy: createdBy,
-                teeBoxId: teeBoxId,
-                buyIn: buyIn,
-                gameType: "skins",
-                net: net,
-                carries: carries,
-                outright: outright,
-                handicapPercentage: handicapPercentage
-            ))
             .select()
+            .eq("course_id", value: courseId.uuidString)
+            .eq("created_by", value: createdBy.uuidString)
+            .order("created_at", ascending: false)
+            .limit(1)
             .single()
             .execute()
             .value
@@ -69,11 +106,54 @@ final class RoundService {
         let rounds: [RoundDTO] = try await client.from("rounds")
             .select()
             .eq("status", value: "active")
+            .eq("created_by", value: userId.uuidString)
             .order("created_at", ascending: false)
             .limit(1)
             .execute()
             .value
         return rounds.first
+    }
+
+    /// Fetch all rounds for a group, newest first.
+    func fetchRoundsForGroup(groupId: UUID) async throws -> [RoundDTO] {
+        try await client.from("rounds")
+            .select()
+            .eq("group_id", value: groupId.uuidString)
+            .order("created_at", ascending: false)
+            .execute()
+            .value
+    }
+
+    /// Update the designated scorer for a round.
+    func updateScorer(roundId: UUID, scorerId: UUID) async throws {
+        try await client.from("rounds")
+            .update(["scorer_id": scorerId.uuidString])
+            .eq("id", value: roundId.uuidString)
+            .execute()
+    }
+
+    /// Update round status (e.g. "active" → "concluded" → "completed").
+    func updateRoundStatus(roundId: UUID, status: String) async throws {
+        try await client.from("rounds")
+            .update(["status": status])
+            .eq("id", value: roundId.uuidString)
+            .execute()
+    }
+
+    /// Delete all scores for a round (used by Restart Round).
+    func deleteScores(roundId: UUID) async throws {
+        try await client.from("scores")
+            .delete()
+            .eq("round_id", value: roundId.uuidString)
+            .execute()
+    }
+
+    /// Delete a round and all associated data (scores + round_players cascade via FK).
+    func deleteRound(roundId: UUID) async throws {
+        try await client.from("rounds")
+            .delete()
+            .eq("id", value: roundId.uuidString)
+            .execute()
     }
 
     func fetchRoundPlayers(roundId: UUID) async throws -> [RoundPlayerDTO] {
@@ -91,6 +171,137 @@ final class RoundService {
             .in("id", values: ids)
             .execute()
             .value
+    }
+
+    // MARK: - Invites
+
+    /// Fetch all pending invites for a user, with joined round + course data.
+    func fetchInvites(userId: UUID) async throws -> [InviteDTO] {
+        try await client.from("round_players")
+            .select("*, rounds!inner(*, courses!inner(*))")
+            .eq("player_id", value: userId.uuidString)
+            .eq("status", value: "invited")
+            .execute()
+            .value
+    }
+
+    /// Invite a player to a round.
+    func invitePlayer(roundId: UUID, playerId: UUID, invitedBy: UUID, groupNum: Int = 0) async throws {
+        try await client.from("round_players")
+            .insert(RoundPlayerInsert(
+                roundId: roundId,
+                playerId: playerId,
+                groupNum: groupNum,
+                status: "invited",
+                invitedBy: invitedBy
+            ))
+            .execute()
+    }
+
+    /// Accept an invite — updates status to "accepted".
+    func acceptInvite(roundPlayerId: UUID) async throws {
+        try await client.from("round_players")
+            .update(["status": "accepted"])
+            .eq("id", value: roundPlayerId.uuidString)
+            .execute()
+    }
+
+    /// Decline an invite — updates status to "declined".
+    func declineInvite(roundPlayerId: UUID) async throws {
+        try await client.from("round_players")
+            .update(["status": "declined"])
+            .eq("id", value: roundPlayerId.uuidString)
+            .execute()
+    }
+
+    /// Fetch all players in a round with their profiles (for building invite card player pills).
+    func fetchRoundPlayersWithProfiles(roundId: UUID) async throws -> [(player: RoundPlayerDTO, profile: ProfileDTO)] {
+        let roundPlayers: [RoundPlayerDTO] = try await client.from("round_players")
+            .select()
+            .eq("round_id", value: roundId.uuidString)
+            .eq("status", value: "accepted")
+            .execute()
+            .value
+
+        guard !roundPlayers.isEmpty else { return [] }
+
+        let playerIds = roundPlayers.map { $0.playerId.uuidString }
+        let profiles: [ProfileDTO] = try await client.from("profiles")
+            .select()
+            .in("id", values: playerIds)
+            .execute()
+            .value
+
+        let profileMap = Dictionary(uniqueKeysWithValues: profiles.map { ($0.id, $0) })
+
+        return roundPlayers.compactMap { rp in
+            guard let profile = profileMap[rp.playerId] else { return nil }
+            return (player: rp, profile: profile)
+        }
+    }
+
+    /// Fetch pending invites and convert to HomeRound models for display.
+    /// Reusable from both HomeView and CarryApp (invite overlay).
+    func loadPendingInviteRounds(userId: UUID) async throws -> (rounds: [HomeRound], invites: [InviteDTO]) {
+        let invites = try await fetchInvites(userId: userId)
+
+        var rounds: [HomeRound] = []
+        for invite in invites {
+            let r = invite.round
+            let playersWithProfiles = try await fetchRoundPlayersWithProfiles(roundId: r.id)
+            let players = playersWithProfiles.map { Player(from: $0.profile) }
+
+            let inviterName: String?
+            if let inviterId = invite.invitedBy {
+                inviterName = playersWithProfiles.first(where: { $0.profile.id == inviterId })?.profile.displayName
+            } else {
+                inviterName = nil
+            }
+
+            let totalHoles = 18
+            let homeRound = HomeRound(
+                id: invite.id,
+                groupName: r.course.clubName ?? r.course.name,
+                courseName: r.course.name,
+                players: players,
+                status: .invited,
+                currentHole: 0,
+                totalHoles: totalHoles,
+                buyIn: r.buyIn,
+                skinsWon: 0,
+                totalSkins: totalHoles,
+                yourSkins: 0,
+                invitedBy: inviterName,
+                creatorId: Player.stableId(from: r.createdBy),
+                startedAt: nil,
+                completedAt: nil,
+                scheduledDate: r.createdAt
+            )
+            rounds.append(homeRound)
+        }
+
+        return (rounds, invites)
+    }
+
+    /// Subscribe to invite changes for a user (new invites arriving in real-time).
+    func subscribeToInvites(userId: UUID, onChange: @escaping () -> Void) -> RealtimeChannelV2 {
+        let channel = client.realtimeV2.channel("invites-\(userId.uuidString)")
+
+        let inserts = channel.postgresChange(
+            InsertAction.self,
+            schema: "public",
+            table: "round_players",
+            filter: .eq("player_id", value: userId.uuidString)
+        )
+
+        Task {
+            try? await channel.subscribeWithError()
+            for await _ in inserts {
+                await MainActor.run { onChange() }
+            }
+        }
+
+        return channel
     }
 
     // MARK: - Scores
@@ -112,6 +323,69 @@ final class RoundService {
             .execute()
     }
 
+    // MARK: - Score Proposals (Everyone Scores mode)
+
+    /// Propose a score change (sets proposed_score and proposed_by on existing score row).
+    func proposeScoreChange(roundId: UUID, playerId: UUID, holeNum: Int, proposedScore: Int, proposedBy: UUID) async throws {
+        let payload = ScoreProposalUpdate(proposedScore: proposedScore, proposedBy: proposedBy)
+        try await client.from("scores")
+            .update(payload)
+            .eq("round_id", value: roundId.uuidString)
+            .eq("player_id", value: playerId.uuidString)
+            .eq("hole_num", value: holeNum)
+            .execute()
+    }
+
+    /// Resolve a score proposal — accept (apply proposed score) or reject (discard proposal).
+    func resolveProposal(roundId: UUID, playerId: UUID, holeNum: Int, accept: Bool) async throws {
+        if accept {
+            // Fetch the proposed score first
+            let scores: [ScoreDTO] = try await client.from("scores")
+                .select()
+                .eq("round_id", value: roundId.uuidString)
+                .eq("player_id", value: playerId.uuidString)
+                .eq("hole_num", value: holeNum)
+                .execute()
+                .value
+            guard let scoreRow = scores.first, let proposed = scoreRow.proposedScore else {
+                #if DEBUG
+                print("[RoundService] resolveProposal: no proposed score found")
+                #endif
+                return
+            }
+            // Accept: set score to proposed, clear proposal fields
+            let updates: [String: AnyJSON] = [
+                "score": .integer(proposed),
+                "proposed_score": .null,
+                "proposed_by": .null
+            ]
+            try await client.from("scores")
+                .update(updates)
+                .eq("round_id", value: roundId.uuidString)
+                .eq("player_id", value: playerId.uuidString)
+                .eq("hole_num", value: holeNum)
+                .execute()
+            #if DEBUG
+            print("[RoundService] resolveProposal: accepted, score set to \(proposed)")
+            #endif
+        } else {
+            // Reject: just clear the proposal fields
+            let updates: [String: AnyJSON] = [
+                "proposed_score": .null,
+                "proposed_by": .null
+            ]
+            try await client.from("scores")
+                .update(updates)
+                .eq("round_id", value: roundId.uuidString)
+                .eq("player_id", value: playerId.uuidString)
+                .eq("hole_num", value: holeNum)
+                .execute()
+            #if DEBUG
+            print("[RoundService] resolveProposal: rejected, proposal cleared")
+            #endif
+        }
+    }
+
     // MARK: - Realtime
 
     func subscribeToScores(roundId: UUID, onChange: @escaping (ScoreDTO) -> Void) -> RealtimeChannelV2 {
@@ -121,11 +395,11 @@ final class RoundService {
             InsertAction.self,
             schema: "public",
             table: "scores",
-            filter: "round_id=eq.\(roundId.uuidString)"
+            filter: .eq("round_id", value: roundId.uuidString)
         )
 
         Task {
-            await channel.subscribe()
+            try? await channel.subscribeWithError()
             for await change in changes {
                 if let score = try? change.decodeRecord(as: ScoreDTO.self, decoder: JSONDecoder()) {
                     await MainActor.run { onChange(score) }
@@ -138,13 +412,34 @@ final class RoundService {
             UpdateAction.self,
             schema: "public",
             table: "scores",
-            filter: "round_id=eq.\(roundId.uuidString)"
+            filter: .eq("round_id", value: roundId.uuidString)
         )
 
         Task {
             for await change in updates {
-                if let score = try? change.decodeRecord(as: ScoreDTO.self, decoder: JSONDecoder()) {
+                do {
+                    let decoder = JSONDecoder()
+                    decoder.dateDecodingStrategy = .custom { decoder in
+                        let container = try decoder.singleValueContainer()
+                        let str = try container.decode(String.self)
+                        let formats = ["yyyy-MM-dd'T'HH:mm:ss.SSSSSSZZZZZ", "yyyy-MM-dd'T'HH:mm:ssZZZZZ", "yyyy-MM-dd'T'HH:mm:ss"]
+                        for fmt in formats {
+                            let f = DateFormatter()
+                            f.locale = Locale(identifier: "en_US_POSIX")
+                            f.dateFormat = fmt
+                            if let d = f.date(from: str) { return d }
+                        }
+                        return Date()
+                    }
+                    let score = try change.decodeRecord(as: ScoreDTO.self, decoder: decoder)
+                    #if DEBUG
+                    print("[RoundService] realtime UPDATE decoded: hole=\(score.holeNum) proposed=\(String(describing: score.proposedScore))")
+                    #endif
                     await MainActor.run { onChange(score) }
+                } catch {
+                    #if DEBUG
+                    print("[RoundService] realtime UPDATE decode FAILED: \(error)")
+                    #endif
                 }
             }
         }

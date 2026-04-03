@@ -1,8 +1,14 @@
 import Foundation
 
+enum ScoringMode: String {
+    case single = "single"
+    case everyone = "everyone"
+}
+
 enum UserRole {
     case creator
     case participant
+    case viewer
 }
 
 struct SkinRules {
@@ -31,15 +37,25 @@ struct RoundConfig {
     let teeBox: TeeBox?  // selected tee box (nil = use simple handicap)
     let groups: [GroupConfig]
     let creatorId: Int?  // player ID of round creator (nil for legacy/demo)
+    let groupName: String
+    let players: [Player]  // all players in this round
+    var holes: [Hole]? = nil  // per-hole par/handicap from API (nil = use Hole.allHoles defaults)
+
+    // Supabase IDs — nil in devMode, populated when round is created in Supabase
+    var supabaseRoundId: UUID? = nil
+    var supabaseGroupId: UUID? = nil
+    var scorerProfileId: UUID? = nil  // UUID of the designated scorer
+    var scoringMode: ScoringMode = .single
 
     func role(for userId: Int) -> UserRole {
         creatorId == userId ? .creator : .participant
     }
 
+    #if DEBUG
     static let `default` = RoundConfig(
         id: "r2",
         number: 2,
-        course: "Blackhawk CC",
+        course: "Torrey Pines South",
         date: "2026-02-23",
         buyIn: 50,
         gameType: "skins",
@@ -50,6 +66,9 @@ struct RoundConfig {
             GroupConfig(id: 2, startingSide: "front", playerIDs: [5, 6, 7, 8]),
             GroupConfig(id: 3, startingSide: "back", playerIDs: [9, 10, 11, 12]),
         ],
-        creatorId: 1
+        creatorId: 1,
+        groupName: "The Friday Skins",
+        players: Array(Player.allPlayers.prefix(12))  // Only players 1-12 (groups 1-3)
     )
+    #endif
 }

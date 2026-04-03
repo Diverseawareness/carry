@@ -32,41 +32,48 @@ struct SplashShape: Shape {
     }
 }
 
-// Convenience view for splashed/squashed skins
+// Convenience view for splashed/squashed skins — simple diagonal line
 struct SplashIcon: View {
     var size: CGFloat = 16
-    var color: Color = Color(hex: "#CCCCCC")
+    var color: Color = Color.borderMedium
 
     var body: some View {
-        Image("squash")
-            .renderingMode(.template)
-            .resizable()
-            .aspectRatio(contentMode: .fit)
-            .foregroundColor(color)
+        DiagonalLine()
+            .stroke(color, style: StrokeStyle(lineWidth: max(1.5, size * 0.08), lineCap: .round))
             .frame(width: size, height: size)
+    }
+}
+
+private struct DiagonalLine: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let inset: CGFloat = rect.width * 0.15
+        path.move(to: CGPoint(x: rect.maxX - inset, y: rect.minY + inset))
+        path.addLine(to: CGPoint(x: rect.minX + inset, y: rect.maxY - inset))
+        return path
     }
 }
 
 #Preview {
     VStack(spacing: 20) {
         HStack(spacing: 20) {
-            SplashIcon(size: 24, color: Color(hex: "#FF5733"))
-            SplashIcon(size: 32, color: Color(hex: "#3366FF"))
-            SplashIcon(size: 40, color: Color(hex: "#33FF66"))
+            SplashIcon(size: 24, color: Color(hexString: "#FF5733"))
+            SplashIcon(size: 32, color: Color(hexString: "#3366FF"))
+            SplashIcon(size: 40, color: Color(hexString: "#33FF66"))
         }
 
         // Show the shape with different colors
         HStack(spacing: 20) {
             SplashShape()
-                .fill(Color(hex: "#FFD700"))
+                .fill(Color.goldStandard)
                 .frame(width: 50, height: 50)
 
             SplashShape()
-                .fill(Color(hex: "#FF1493"))
+                .fill(Color(hexString: "#FF1493"))
                 .frame(width: 50, height: 50)
 
             SplashShape()
-                .stroke(Color(hex: "#00CED1"), lineWidth: 2)
+                .stroke(Color(hexString: "#00CED1"), lineWidth: 2)
                 .frame(width: 50, height: 50)
         }
     }

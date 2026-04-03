@@ -15,22 +15,22 @@ struct BottomBar: View {
             Button(action: onTap) {
                 HStack(spacing: 6) {
                     Text("Hole \(hole.num)")
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.carry.bodySemibold)
                     Text("·")
-                        .foregroundColor(Color(hex: "#CCCCCC"))
+                        .foregroundColor(Color.borderMedium)
                     Text("Par \(hole.par)")
-                        .font(.system(size: 15, weight: .regular))
-                        .foregroundColor(Color(hex: "#888888"))
+                        .font(.carry.body)
+                        .foregroundColor(Color.textMid)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
                 .background(
                     RoundedRectangle(cornerRadius: 14)
-                        .fill(Color(hex: "#FAFAFA"))
+                        .fill(Color.bgCard)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 14)
-                        .strokeBorder(Color(hex: "#EEEEEE"), lineWidth: 1)
+                        .strokeBorder(Color(hexString: "#EEEEEE"), lineWidth: 1)
                 )
             }
             .buttonStyle(.plain)

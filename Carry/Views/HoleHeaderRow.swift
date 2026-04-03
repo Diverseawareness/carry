@@ -18,17 +18,20 @@ struct HoleHeaderRow: View {
                     Text("\(hole.num)")
                         .font(.system(size: numFont, weight: .medium))
                         .monospacedDigit()
-                        .foregroundColor(isActive ? Color(hex: "#1A1A1A") : Color(hex: "#888888"))
+                        .foregroundColor(isActive ? Color.textPrimary : Color.textMid)
                     Text("\(hole.par)")
                         .font(.system(size: max(8, numFont * 0.6), weight: .regular))
-                        .foregroundColor(isActive ? Color(hex: "#999999") : Color(hex: "#CCCCCC"))
+                        .foregroundColor(isActive ? Color.textSecondary : Color.borderMedium)
                 }
                 .frame(width: cellWidth, height: rowHeight)
                 .id("hole_\(hole.num)")
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Hole \(hole.num), par \(hole.par)\(isActive ? ", active" : "")")
                 .overlay(alignment: .trailing) {
                     Rectangle()
-                        .fill(isNineBoundary ? Color(hex: "#E0E0E0") : Color(hex: "#F0F0F0"))
+                        .fill(Color.gridLine)
                         .frame(width: isNineBoundary ? 2 : 1)
+                        .accessibilityHidden(true)
                 }
             }
 
@@ -36,13 +39,14 @@ struct HoleHeaderRow: View {
             ForEach(["Out", "In", "Tot"], id: \.self) { label in
                 Text(label)
                     .font(.system(size: numFont, weight: .semibold))
-                    .foregroundColor(Color(hex: "#1A1A1A"))
+                    .foregroundColor(Color.textPrimary)
                     .frame(width: sumWidth, height: rowHeight)
                     .overlay(alignment: .leading) {
-                        if label == "Out" {
+                        if label != "Out" {
                             Rectangle()
-                                .fill(Color(hex: "#E0E0E0"))
-                                .frame(width: 2)
+                                .fill(Color.gridLine)
+                                .frame(width: 1)
+                                .accessibilityHidden(true)
                         }
                     }
             }

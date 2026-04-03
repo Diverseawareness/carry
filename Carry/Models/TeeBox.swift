@@ -14,19 +14,25 @@ struct TeeBox: Identifiable, Hashable {
     let courseRating: Double  // e.g. 72.1
     let slopeRating: Int  // e.g. 131 (range: 55-155)
     let par: Int  // total par from these tees (may differ by tee)
+    var holes: [Hole]?  // per-hole par, handicap from API (nil = use Hole.allHoles defaults)
 
-    /// Compute the Course Handicap for a player from these tees.
+    /// Unrounded Course Handicap for USGA-correct percentage calculations.
     /// Formula: Handicap Index x (Slope Rating / 113) + (Course Rating - Par)
-    func courseHandicap(forIndex handicapIndex: Double) -> Int {
-        let raw = handicapIndex * (Double(slopeRating) / 113.0) + (courseRating - Double(par))
-        return Int(raw.rounded())
+    func courseHandicapRaw(forIndex handicapIndex: Double) -> Double {
+        handicapIndex * (Double(slopeRating) / 113.0) + (courseRating - Double(par))
     }
 
-    /// Compute the Playing Handicap (Course Handicap adjusted by percentage).
-    /// Common percentages: 100% (full), 80%, 70%
+    /// Compute the Course Handicap for a player from these tees (rounded).
+    func courseHandicap(forIndex handicapIndex: Double) -> Int {
+        Int(courseHandicapRaw(forIndex: handicapIndex).rounded())
+    }
+
+    /// Compute the Playing Handicap per USGA rules.
+    /// Percentage is applied to the UNROUNDED course handicap, then rounded once.
+    /// This avoids double-rounding errors.
     func playingHandicap(forIndex handicapIndex: Double, percentage: Double = 1.0) -> Int {
-        let courseHcp = courseHandicap(forIndex: handicapIndex)
-        return Int((Double(courseHcp) * percentage).rounded())
+        let raw = courseHandicapRaw(forIndex: handicapIndex)
+        return Int((raw * percentage).rounded())
     }
 
     /// USGA stroke allocation for a specific hole.
@@ -39,6 +45,40 @@ struct TeeBox: Identifiable, Hashable {
         let remainder = playingHandicap % 18
         let bonus = holeHcp <= remainder ? 1 : 0
         return fullRounds + bonus
+    }
+
+    // MARK: - Memberwise init (explicit because custom init below removes auto-generated one)
+
+    init(id: String, courseId: String, name: String, color: String, courseRating: Double, slopeRating: Int, par: Int, holes: [Hole]? = nil) {
+        self.id = id
+        self.courseId = courseId
+        self.name = name
+        self.color = color
+        self.courseRating = courseRating
+        self.slopeRating = slopeRating
+        self.par = par
+        self.holes = holes
+    }
+
+    // MARK: - Init from Golf Course API
+
+    /// Create a TeeBox from an API tee box response.
+    /// Maps course rating, slope rating, and par from the API data.
+    init(from apiTee: GolfCourseTeeBox, courseId: String) {
+        let name = apiTee.teeName ?? "Tees"
+        self.id = "\(courseId)-\(name)"
+        self.courseId = courseId
+        self.name = name
+        self.color = apiTee.colorHex
+        self.courseRating = apiTee.courseRating ?? 72.0
+        self.slopeRating = apiTee.slopeRating ?? 113
+        self.par = apiTee.parTotal ?? 72
+        // Convert API per-hole data to Hole objects
+        if let apiHoles = apiTee.holes, !apiHoles.isEmpty {
+            self.holes = Hole.fromAPI(apiHoles)
+        } else {
+            self.holes = nil
+        }
     }
 
     // Demo tee boxes for Blackhawk CC

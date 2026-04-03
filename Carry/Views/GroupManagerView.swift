@@ -6,7 +6,12 @@ private struct SheetItem: Identifiable {
 }
 
 struct GroupManagerView: View {
-    let allMembers: [Player]
+    @EnvironmentObject var storeService: StoreService
+    @State private var allMembers: [Player]
+    var onCourseChanged: ((SelectedCourse) -> Void)?
+    var onTeeTimeChanged: ((Date?) -> Void)?
+    @State private var currentCourse: SelectedCourse?
+    @State private var showCourseChange = false
     @State private var selectedIDs: Set<Int>
     @State private var groups: [[Player]]
     @State private var startingSides: [String]  // "front" or "back" per group
@@ -14,17 +19,23 @@ struct GroupManagerView: View {
     @State private var dragSourceGroup: Int?
     @State private var dropTargetGroup: Int?
     @State private var dropTargetIndex: Int?  // target row index for within-group reorder
+    @State private var orderSyncTask: Task<Void, Never>?
     @State private var showAddSheet = false
     @State private var showGuestEntry = false
+    @State private var showInviteEntry = false
     @State private var guestName = ""
     @State private var guestHandicap = ""
+    @State private var invitePhone = ""
+    @State private var inviteSent = false
     @State private var guests: [Player] = []
     @State private var nextGuestID = 100  // IDs above real players
     @State private var showTeeTimes = true  // off by default, toggled in settings
     @State private var teeTimes: [Date?] = []  // one per group, nil = not set
     @State private var showSettings = false
     @State private var showLeaderboard = false
-    @State private var groupName = "Friday Meetings"  // editable group/event name
+    @State private var showPaywall = false
+    @State private var leaderboardTab: Int = 0  // 0 = Round, 1 = All Time
+    @State private var groupName = "The Friday Skins"  // editable group/event name
     @State private var showSwapPicker = false
     @State private var pendingSwapPlayer: Player?   // player being moved
     @State private var pendingSwapFrom: Int?         // source group index
@@ -39,26 +50,127 @@ struct GroupManagerView: View {
     @State private var teeTimesLinked = false  // true when times are set at consecutive intervals
     @State private var selectedTees: [String]  // tee color per group (e.g. "Combos", "Blues")
     @State private var carriesEnabled = false  // carries toggle (off by default for multi-group)
+    @State private var scoringMode: ScoringMode = .everyone  // .single or .everyone (on by default)
+    @State private var handicapPercentage: Double = 1.0  // 1.0 = 100%, 0.7 = 70%
+    @State private var buyInText: String = ""  // per-player buy-in amount
+    @State private var showManageMembers = false
+    @State private var showTipBanner = true  // green tip banner, dismissible
+    @State private var roundDate: Date = Date()  // mandatory round date (defaults to today)
+    @State private var showDatePicker = false  // date picker sheet
+    @State private var showLeaveDeleteAlert = false
+    @State private var showCloseQuickGameAlert = false
+    @State private var countdownText = ""  // updated every second by timer
+    @State private var refreshTimer: Timer? = nil  // 30s auto-refresh polling
+    @State private var isJoiningRound = false  // loading state for "Join Round" button
+
+    // Recurrence state for date picker
+    @State private var scheduleMode: Int = 0       // 0 = Single Game, 1 = Recurring
+    @State private var repeatMode: Int = 0         // 0=Never, 1=Weekly, 2=Biweekly, 3=Monthly
+    @State private var selectedDayPill: Int? = nil  // 0=Mon…6=Sun (pill index)
+    var onRecurrenceChanged: ((GameRecurrence?) -> Void)?
 
     private let teeTimeInterval: TimeInterval = 8 * 60  // 8 minutes between groups
-    private let teeOptions = ["Combos", "Blues", "White", "Gold", "Red"]
 
     var onBack: (() -> Void)?
     let onConfirm: (RoundConfig) -> Void
+    var onLeaveGroup: (() -> Void)?
+    var onDeleteGroup: (() -> Void)?
+    let currentUserId: Int
+    let creatorId: Int
+    let isLiveRound: Bool
+    @State private var roundStarted: Bool
+    let roundHistory: [HomeRound]
+    var supabaseGroupId: UUID? = nil
+    var scheduledLabel: String? = nil
+    var isQuickGame: Bool = false
+    var showInviteCrewOnAppear: Bool = false
+    var onGroupRefreshed: ((SavedGroup) -> Void)?
 
-    init(allMembers: [Player], preselected: Set<Int>? = nil, onBack: (() -> Void)? = nil, onConfirm: @escaping (RoundConfig) -> Void) {
-        self.allMembers = allMembers
+    @State private var showShareCardSheet: Bool = false
+    @State private var showInviteShareSheet: Bool = false
+    @State private var inviteShareLink: String = ""
+    @State private var cachedHoles: [Hole]? = nil  // preserves API holes across Supabase refreshes
+    @State private var invitePhones: [Int: String] = [:]  // playerId → phone number
+
+    /// Only the group creator can manage settings, players and tee times.
+    private var isCreator: Bool { currentUserId == creatorId }
+
+    init(allMembers: [Player], selectedCourse: SelectedCourse? = nil, onCourseChanged: ((SelectedCourse) -> Void)? = nil, onTeeTimeChanged: ((Date?) -> Void)? = nil, onRecurrenceChanged: ((GameRecurrence?) -> Void)? = nil, initialTeeTime: Date? = nil, initialTeeTimes: [Date?]? = nil, initialBuyIn: Double = 0, initialDate: Date? = nil, initialRecurrence: GameRecurrence? = nil, preselected: Set<Int>? = nil, groupName: String = "The Friday Skins", currentUserId: Int = 1, creatorId: Int = 1, isLiveRound: Bool = false, roundStarted: Bool = false, roundHistory: [HomeRound] = [], onLeaveGroup: (() -> Void)? = nil, onDeleteGroup: (() -> Void)? = nil, scheduledLabel: String? = nil, onBack: (() -> Void)? = nil, supabaseGroupId: UUID? = nil, isQuickGame: Bool = false, showInviteCrewOnAppear: Bool = false, onGroupRefreshed: ((SavedGroup) -> Void)? = nil, onConfirm: @escaping (RoundConfig) -> Void) {
+        self._allMembers = State(initialValue: allMembers)
+        self._currentCourse = State(initialValue: selectedCourse)
+        // Cache API holes so they survive Supabase refreshes that lose hole data
+        if let holes = selectedCourse?.teeBox?.holes, !holes.isEmpty {
+            self._cachedHoles = State(initialValue: holes)
+        }
+        #if DEBUG
+        print("[GroupManagerView.init] course=\(selectedCourse?.courseName ?? "nil") teeBox=\(selectedCourse?.teeBox?.name ?? "nil") holes=\(selectedCourse?.teeBox?.holes?.count ?? 0)")
+        #endif
+        self.onCourseChanged = onCourseChanged
+        self.onTeeTimeChanged = onTeeTimeChanged
+        self.onRecurrenceChanged = onRecurrenceChanged
         self.onBack = onBack
         self.onConfirm = onConfirm
+        self.onLeaveGroup = onLeaveGroup
+        self.onDeleteGroup = onDeleteGroup
+        self.currentUserId = currentUserId
+        self.creatorId = creatorId
+        self.isLiveRound = isLiveRound
+        self._roundStarted = State(initialValue: roundStarted)
+        self.roundHistory = roundHistory
+        self.supabaseGroupId = supabaseGroupId
+        self.isQuickGame = isQuickGame
+        self.showInviteCrewOnAppear = showInviteCrewOnAppear
+        self.scheduledLabel = scheduledLabel
+        self.onGroupRefreshed = onGroupRefreshed
+        self._groupName = State(initialValue: groupName)
         let sel = preselected ?? Set(allMembers.map(\.id))
         _selectedIDs = State(initialValue: sel)
         let playing = allMembers.filter { sel.contains($0.id) }
         let grouped = Self.autoGroup(playing)
-        _groups = State(initialValue: grouped)
-        _startingSides = State(initialValue: Self.defaultSides(count: grouped.count))
-        _teeTimes = State(initialValue: Array(repeating: nil, count: grouped.count))
-        _scorerIDs = State(initialValue: grouped.map { $0.first?.id ?? 0 })
-        _selectedTees = State(initialValue: Array(repeating: "Combos", count: grouped.count))
+        let safeGrouped: [[Player]]
+        if grouped.isEmpty || grouped.allSatisfy({ $0.isEmpty }) {
+            safeGrouped = allMembers.isEmpty ? [[]] : [allMembers]
+        } else {
+            safeGrouped = grouped
+        }
+        let groupCount = max(safeGrouped.count, 1)
+        _groups = State(initialValue: safeGrouped)
+        _startingSides = State(initialValue: Self.defaultSides(count: groupCount))
+        var computedTeeTimes: [Date?]
+        if let savedTeeTimes = initialTeeTimes, !savedTeeTimes.isEmpty {
+            // Use per-group tee times (from Quick Game with consecutive intervals)
+            computedTeeTimes = savedTeeTimes
+            while computedTeeTimes.count < groupCount { computedTeeTimes.append(nil) }
+        } else {
+            computedTeeTimes = Array<Date?>(repeating: nil, count: groupCount)
+            if let teeTime = initialTeeTime, groupCount > 0 {
+                computedTeeTimes[0] = teeTime
+            }
+        }
+        _teeTimes = State(initialValue: computedTeeTimes)
+        _scorerIDs = State(initialValue: safeGrouped.map { $0.first?.id ?? 0 })
+        _selectedTees = State(initialValue: Array(repeating: "Combos", count: groupCount))
+        _buyInText = State(initialValue: initialBuyIn > 0 ? "\(Int(initialBuyIn))" : "")
+        // Round date: use initialDate, or extract date from tee time, or default to today
+        _roundDate = State(initialValue: initialDate ?? initialTeeTime ?? Date())
+
+        // Pre-fill recurrence state from group data
+        if let recurrence = initialRecurrence {
+            switch recurrence {
+            case .weekly(let day):
+                _scheduleMode = State(initialValue: 1)
+                _repeatMode = State(initialValue: 1)
+                _selectedDayPill = State(initialValue: GameRecurrence.pillIndex(fromWeekday: day))
+            case .biweekly(let day):
+                _scheduleMode = State(initialValue: 1)
+                _repeatMode = State(initialValue: 2)
+                _selectedDayPill = State(initialValue: GameRecurrence.pillIndex(fromWeekday: day))
+            case .monthly:
+                _scheduleMode = State(initialValue: 1)
+                _repeatMode = State(initialValue: 3)
+                _selectedDayPill = State(initialValue: nil)
+            }
+        }
     }
 
     // MARK: - Auto-grouping
@@ -68,6 +180,21 @@ struct GroupManagerView: View {
     static func autoGroup(_ players: [Player]) -> [[Player]] {
         let n = players.count
         guard n > 0 else { return [] }
+
+        // If players have explicit group assignments (e.g. from Quick Game), respect them
+        let maxAssigned = players.map(\.group).max() ?? 1
+        if maxAssigned > 1 {
+            var result: [[Player]] = Array(repeating: [], count: maxAssigned)
+            for player in players {
+                let idx = max(0, min(player.group - 1, maxAssigned - 1))
+                result[idx].append(player)
+            }
+            // Remove trailing empty groups
+            while result.last?.isEmpty == true { result.removeLast() }
+            return result.isEmpty ? [players] : result
+        }
+
+        // Fallback: auto-split by count (no explicit assignments)
         if n <= 4 { return [players] }
 
         let numGroups = (n + 3) / 4  // ceil(n/4)
@@ -85,16 +212,63 @@ struct GroupManagerView: View {
     }
 
     static func defaultSides(count: Int) -> [String] {
-        // Alternate front/back, first group always front
-        (0..<count).map { $0 % 2 == 0 ? "front" : "back" }
+        // All groups start on front 9 (hole 1)
+        Array(repeating: "front", count: count)
     }
 
     private var allAvailable: [Player] {
         allMembers + guests
     }
 
+    /// Extracted to reduce body complexity for Swift type checker.
+    @ViewBuilder
+    private var manageMembersSheet: some View {
+        ManageMembersSheet(
+            allAvailable: allAvailable,
+            selectedIDs: selectedIDs,
+            nextGuestID: nextGuestID,
+            supabaseGroupId: supabaseGroupId,
+            onCancel: { showManageMembers = false },
+            onDone: { result in
+                selectedIDs = result.selectedIDs
+                guests.append(contentsOf: result.newGuests)
+                nextGuestID = result.nextGuestID
+                regroup()
+                showManageMembers = false
+
+                // Sync new members to Supabase as invites
+                if let groupId = supabaseGroupId {
+                    let newMembers = result.newGuests.filter { $0.profileId != nil }
+                    if !newMembers.isEmpty {
+                        Task {
+                            let groupService = GroupService()
+                            for member in newMembers {
+                                guard let profileId = member.profileId else { continue }
+                                do {
+                                    try await groupService.inviteMember(groupId: groupId, playerId: profileId)
+                                    #if DEBUG
+                                    print("[GroupManager] Invited \(member.name) to group")
+                                    #endif
+                                } catch {
+                                    #if DEBUG
+                                    print("[GroupManager] Failed to invite \(member.name): \(error)")
+                                    #endif
+                                }
+                            }
+                            await MainActor.run {
+                                ToastManager.shared.success("Invite\(newMembers.count == 1 ? "" : "s") sent!")
+                            }
+                        }
+                    }
+                }
+            }
+        )
+    }
+
     private func regroup() {
-        let playing = allAvailable.filter { selectedIDs.contains($0.id) }
+        let playing = allAvailable.filter {
+            selectedIDs.contains($0.id)
+        }
         groups = Self.autoGroup(playing)
         startingSides = Self.defaultSides(count: groups.count)
         syncTeeTimes()
@@ -111,19 +285,24 @@ struct GroupManagerView: View {
         }
     }
 
-    /// Ensure each group has a valid scorer; default to first player if missing or invalid
+    /// Ensure each group has a valid scorer; default to first confirmed (non-pending) player
     private func syncScorerIDs() {
         while scorerIDs.count < groups.count {
-            scorerIDs.append(groups[scorerIDs.count].first?.id ?? 0)
+            let firstConfirmed = groups[scorerIDs.count].first(where: { !$0.isPendingInvite && !$0.isPendingAccept })
+            scorerIDs.append(firstConfirmed?.id ?? groups[scorerIDs.count].first?.id ?? 0)
         }
         while scorerIDs.count > groups.count {
             scorerIDs.removeLast()
         }
-        // Validate: if scorer was moved out of group, reassign to first player
+        // Validate: if scorer was moved out of group or is pending, reassign to first confirmed player
+        // Quick Games: allow pending scorers — they'll become active when they accept
         for i in 0..<groups.count {
             let groupPlayerIDs = Set(groups[i].map(\.id))
-            if !groupPlayerIDs.contains(scorerIDs[i]) {
-                scorerIDs[i] = groups[i].first?.id ?? 0
+            let currentScorer = groups[i].first(where: { $0.id == scorerIDs[i] })
+            let isPendingScorer = currentScorer?.isPendingInvite == true || currentScorer?.isPendingAccept == true
+            if !groupPlayerIDs.contains(scorerIDs[i]) || (!isQuickGame && isPendingScorer) {
+                let firstConfirmed = groups[i].first(where: { !$0.isPendingInvite && !$0.isPendingAccept })
+                scorerIDs[i] = firstConfirmed?.id ?? groups[i].first?.id ?? 0
             }
         }
     }
@@ -153,122 +332,613 @@ struct GroupManagerView: View {
         return f
     }()
 
+    private static let memberDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "EEEE, MMMM d"
+        return f
+    }()
+
+    private static let headerDateTimeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "EEEE, MMMM d, h:mm a"
+        return f
+    }()
+
+    private static let headerDateOnlyFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "EEE, MMM d"
+        return f
+    }()
+
+    private static let teeTimeOnlyFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "h:mm a"
+        return f
+    }()
+
     private var selectedCount: Int { selectedIDs.count }
+
+    /// Start Round requires: 2+ active (non-pending) members AND a course selected
+    private var activePlayerCount: Int {
+        allAvailable.filter {
+            selectedIDs.contains($0.id) && !$0.isPendingInvite && !$0.isPendingAccept
+        }.count
+    }
+
+    private var allTeeTimesSet: Bool {
+        guard showTeeTimes, !groups.isEmpty else { return true }
+        return groups.indices.allSatisfy { i in
+            i < teeTimes.count && teeTimes[i] != nil
+        }
+    }
+
+    private var needsTeeTimesSet: Bool {
+        showTeeTimes && activePlayerCount >= 2 && currentCourse != nil && !allTeeTimesSet
+    }
+
+    private var isWithinTeeTimeWindow: Bool {
+        if isQuickGame { return true }  // Quick games can start immediately
+        guard let firstTee = teeTimes.first, let teeTime = firstTee else { return true }
+        return Date() >= teeTime.addingTimeInterval(-30 * 60)  // 30 min before tee time
+    }
+
+    private var canStartRound: Bool {
+        if isQuickGame {
+            // Quick Games: only need creator's group (group 1) ready — other groups start when their scorer accepts
+            let group1Active = groups.first?.filter { !$0.isPendingInvite && !$0.isPendingAccept }.count ?? 0
+            return group1Active >= 2 && currentCourse != nil
+        }
+        return activePlayerCount >= 2 && currentCourse != nil && allTeeTimesSet && isWithinTeeTimeWindow
+    }
+
+    private var buttonEnabled: Bool {
+        canStartRound || needsNextSchedule
+    }
+
+    /// True when creator needs to schedule next round (non-recurring group with past tee time and completed rounds)
+    private var needsNextSchedule: Bool {
+        if !isCreator { return false }
+        if isLiveRound { return false }
+        if roundHistory.isEmpty { return false }
+        if buildRecurrence() != nil { return false }
+        if let firstTee = teeTimes.first, let t = firstTee {
+            return t < Date()
+        }
+        return true
+    }
+
+    private var startButtonLabel: String {
+        if isLiveRound { return "Back to Scorecard" }
+        if needsNextSchedule { return "Schedule Next Round" }
+        if activePlayerCount < 2 && hasPendingPlayers { return "Awaiting Invited Players..." }
+        if activePlayerCount < 2 { return "Need 2+ Players" }
+        if currentCourse == nil { return "Select a Course" }
+        if needsTeeTimesSet { return "Set Tee Times to Start" }
+        if !countdownText.isEmpty { return countdownText }
+        return "Start Round"
+    }
+
+    // MARK: - Leaderboard Stats
+
+    private var leaderboardRounds: [HomeRound] {
+        leaderboardTab == 1 ? roundHistory : Array(roundHistory.suffix(1))
+    }
+
+    private var cumulativeStats: [Int: (skins: Int, won: Int)] {
+        var result: [Int: (skins: Int, won: Int)] = [:]
+        for round in leaderboardRounds {
+            for player in round.players {
+                let holesWon = round.playerWonHoles[player.id]?.count ?? 0
+                let winnings = round.playerWinnings[player.id] ?? 0
+                let existing = result[player.id] ?? (skins: 0, won: 0)
+                result[player.id] = (skins: existing.skins + holesWon, won: existing.won + winnings)
+            }
+        }
+        return result
+    }
+
+    private var leaderboardPlayers: [Player] {
+        // Only show players who actually participated (exclude pending)
+        let activePlayers = allAvailable.filter { !$0.isPendingAccept }
+        return activePlayers.sorted { a, b in
+            let aStats = cumulativeStats[a.id] ?? (skins: 0, won: 0)
+            let bStats = cumulativeStats[b.id] ?? (skins: 0, won: 0)
+            if aStats.won != bStats.won { return aStats.won > bStats.won }
+            if aStats.skins != bStats.skins { return aStats.skins > bStats.skins }
+            return a.name < b.name
+        }
+    }
+
+    private var hasPendingPlayers: Bool {
+        allAvailable.contains { selectedIDs.contains($0.id) && ($0.isPendingInvite || $0.isPendingAccept) }
+    }
+
+    private var isAwaitingInvites: Bool {
+        activePlayerCount < 2 && hasPendingPlayers && !isLiveRound
+    }
+
+    /// Seconds until the tee time window opens (10 min before first tee)
+    private var secondsUntilTeeWindow: TimeInterval? {
+        if isQuickGame { return nil }  // Quick games can start immediately
+        guard let firstTee = teeTimes.first, let teeTime = firstTee else { return nil }
+        let opens = teeTime.addingTimeInterval(-30 * 60)
+        let remaining = opens.timeIntervalSince(Date())
+        return remaining > 0 ? remaining : nil
+    }
+
+    private func countdownLabel(seconds: TimeInterval) -> String {
+        let total = Int(seconds)
+        let d = total / 86400
+        let h = (total % 86400) / 3600
+        let m = (total % 3600) / 60
+        let s = total % 60
+        if d > 0 {
+            return "Starts in \(d)d \(h)h \(m)m"
+        } else if h > 0 {
+            return "Starts in \(h)h \(m)m \(s)s"
+        } else {
+            return "Starts in \(m)m \(s)s"
+        }
+    }
+
+    private var screenTopInset: CGFloat {
+        guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let window = scene.windows.first
+        else { return 59 }
+        return window.safeAreaInsets.top
+    }
+
+    // MARK: - Group Data Refresh
+
+    /// Fetches fresh group data from Supabase and updates local state.
+    private func refreshGroupData() async {
+        guard let groupId = supabaseGroupId else { return }
+        guard let userId = try? await SupabaseManager.shared.client.auth.session.user.id else { return }
+
+        do {
+            guard let freshGroup = try await GroupService().loadSingleGroup(groupId: groupId, userId: userId) else {
+                #if DEBUG
+                print("[GroupManagerView] refreshGroupData: group not found")
+                #endif
+                return
+            }
+
+            await MainActor.run {
+                // Update members list and regroup
+                allMembers = freshGroup.members
+                let sel = Set(freshGroup.members.map(\.id))
+                selectedIDs = sel
+                let playing = freshGroup.members.filter { sel.contains($0.id) }
+                let regrouped = Self.autoGroup(playing)
+                let safeGrouped: [[Player]]
+                if regrouped.isEmpty || regrouped.allSatisfy({ $0.isEmpty }) {
+                    safeGrouped = freshGroup.members.isEmpty ? [[]] : [freshGroup.members]
+                } else {
+                    safeGrouped = regrouped
+                }
+                groups = safeGrouped
+                let groupCount = max(safeGrouped.count, 1)
+                startingSides = Self.defaultSides(count: groupCount)
+                // Use saved scorer IDs from Supabase if available, otherwise default to first player
+                if let saved = freshGroup.scorerIds, !saved.isEmpty {
+                    scorerIDs = saved
+                    // Pad if fewer scorer IDs than groups
+                    while scorerIDs.count < safeGrouped.count {
+                        scorerIDs.append(safeGrouped[scorerIDs.count].first?.id ?? 0)
+                    }
+                } else {
+                    scorerIDs = safeGrouped.map { $0.first?.id ?? 0 }
+                }
+
+                // Update tee time / schedule
+                if let date = freshGroup.scheduledDate {
+                    roundDate = date
+                    if teeTimes.isEmpty || teeTimes.allSatisfy({ $0 == nil }) {
+                        if let interval = freshGroup.teeTimeInterval, interval > 0, groupCount > 1 {
+                            // Compute consecutive tee times from interval
+                            teeTimes = (0..<groupCount).map { i in
+                                date.addingTimeInterval(Double(i) * Double(interval) * 60)
+                            }
+                        } else {
+                            teeTimes = [date] + Array(repeating: nil, count: max(groupCount - 1, 0))
+                        }
+                    }
+                }
+
+                // Update recurrence
+                if let rec = freshGroup.recurrence {
+                    switch rec {
+                    case .weekly(let day):
+                        scheduleMode = 1
+                        repeatMode = 1
+                        selectedDayPill = GameRecurrence.pillIndex(fromWeekday: day)
+                    case .biweekly(let day):
+                        scheduleMode = 1
+                        repeatMode = 2
+                        selectedDayPill = GameRecurrence.pillIndex(fromWeekday: day)
+                    case .monthly:
+                        scheduleMode = 1
+                        repeatMode = 3
+                        selectedDayPill = nil
+                    }
+                }
+
+                // Update course if changed
+                if let course = freshGroup.lastCourse {
+                    currentCourse = course
+                }
+
+                // Update buy-in
+                if freshGroup.buyInPerPlayer > 0 {
+                    buyInText = "\(Int(freshGroup.buyInPerPlayer))"
+                }
+
+                // Update group name
+                groupName = freshGroup.name
+
+                // Update round status
+                roundStarted = freshGroup.activeRound != nil || freshGroup.concludedRound != nil
+
+                // Notify parent so it can update its groups array
+                onGroupRefreshed?(freshGroup)
+
+                #if DEBUG
+                let activeCount = freshGroup.members.filter { !$0.isPendingAccept }.count
+                let pendingCount = freshGroup.members.filter { $0.isPendingAccept }.count
+                print("[GroupManagerView] refreshGroupData: \(activeCount) active, \(pendingCount) pending, roundStarted=\(roundStarted)")
+                #endif
+            }
+        } catch {
+            #if DEBUG
+            print("[GroupManagerView] refreshGroupData failed: \(error)")
+            #endif
+        }
+    }
+
+    private func startDetailAutoRefresh() {
+        refreshTimer?.invalidate()
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in
+            Task {
+                await refreshGroupData()
+            }
+        }
+    }
+
+    private func saveScorerIds() {
+        guard let groupId = supabaseGroupId else { return }
+        Task {
+            try? await GroupService().updateGroup(
+                groupId: groupId,
+                update: SkinsGroupUpdate(scorerIds: scorerIDs)
+            )
+        }
+    }
+
+    private func stopDetailAutoRefresh() {
+        refreshTimer?.invalidate()
+        refreshTimer = nil
+    }
 
     var body: some View {
         ZStack {
-            Color(hex: "#F0F0F0").ignoresSafeArea()
+            Color.bgPrimary.ignoresSafeArea()
 
             VStack(spacing: 0) {
-                // Floating header: Back + Group name + settings button
-                HStack(spacing: 12) {
+                // Row 1: Back button + action buttons
+                HStack(spacing: 16) {
                     if let onBack {
                         Button {
                             onBack()
                         } label: {
                             Image(systemName: "chevron.left")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(Color(hex: "#1A1A1A"))
-                                .frame(width: 34, height: 34)
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(Color.textPrimary)
+                                .frame(width: 40, height: 40)
                                 .background(Circle().fill(.white))
                                 .clipShape(Circle())
                         }
+                        .accessibilityLabel("Back")
+                        .accessibilityHint("Returns to the previous screen")
                     }
 
+                    Spacer()
+
+                    // Leaderboard button (hidden for quick games — no history yet)
+                    if !isQuickGame {
+                    Button {
+                        showLeaderboard = true
+                    } label: {
+                        ZStack {
+                            Circle()
+                                .strokeBorder(Color.goldMuted, lineWidth: 1.5)
+                            Image(systemName: "chart.bar.fill")
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundColor(Color.goldMuted)
+                        }
+                        .frame(width: 40, height: 40)
+                    }
+                    .accessibilityLabel("Leaderboard")
+                    .accessibilityHint("Shows round and all-time leaderboard")
+                    }
+
+                    // Group options button — creator only
+                    if isCreator {
+                        Button {
+                            showSettings = true
+                        } label: {
+                            Image(systemName: "ellipsis")
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundColor(Color.textPrimary)
+                                .frame(width: 40, height: 40)
+                                .background(Circle().fill(.white))
+                        }
+                        .accessibilityLabel("Group settings")
+                        .accessibilityHint("Opens game settings")
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, screenTopInset - 7)
+                .padding(.bottom, 20)
+                .background(Color.bgPrimary)
+
+                // Row 2: Unified header — group name (or compact date for quick games)
+                if isQuickGame {
+                    // Quick Game: show compact date as title (not editable)
+                    Text(Self.headerDateOnlyFormatter.string(from: roundDate))
+                        .font(.carry.sheetTitle)
+                        .foregroundColor(Color.deepNavy)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 6)
+                        .background(Color.bgPrimary)
+                } else if isCreator {
                     Button {
                         editingName = groupName
                         showNameEditor = true
                     } label: {
                         Text(groupName)
-                            .font(.system(size: 20, weight: .bold))
-                            .foregroundColor(Color(hex: "#1A1A1A"))
+                            .font(.system(size: 26, weight: .bold))
+                            .foregroundColor(Color.deepNavy)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .buttonStyle(.plain)
-
-                    Spacer()
-
-                    HStack(spacing: 10) {
-                        // Leaderboard button
-                        Button {
-                            showLeaderboard = true
-                        } label: {
-                            ZStack {
-                                Circle()
-                                    .strokeBorder(Color(hex: "#1A1A1A"), lineWidth: 1.5)
-                                Image(systemName: "chart.bar.fill")
-                                    .font(.system(size: 14))
-                                    .foregroundColor(Color(hex: "#1A1A1A"))
-                            }
-                            .frame(width: 36, height: 36)
-                        }
-
-                        // Settings button
-                        Button {
-                            showSettings = true
-                        } label: {
-                            ZStack {
-                                Circle()
-                                    .strokeBorder(Color(hex: "#1A1A1A"), lineWidth: 1.5)
-                                Image(systemName: "gearshape")
-                                    .font(.system(size: 15))
-                                    .foregroundColor(Color(hex: "#1A1A1A"))
-                            }
-                            .frame(width: 36, height: 36)
-                        }
-                    }
+                    .accessibilityLabel("Game name: \(groupName)")
+                    .accessibilityHint("Double tap to edit the game name")
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 6)
+                    .background(Color.bgPrimary)
+                } else {
+                    Text(groupName)
+                        .font(.system(size: 26, weight: .bold))
+                        .foregroundColor(Color.deepNavy)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 6)
+                        .background(Color.bgPrimary)
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 24)
-                .padding(.bottom, 8)
-                .background(Color(hex: "#F0F0F0"))
 
-                ScrollView {
-                VStack(spacing: 0) {
-                    // Who's playing header
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Who's playing?")
-                            .font(.system(size: 18, weight: .bold))
-                            .foregroundColor(Color(hex: "#1A1A1A"))
-                        Text("\(selectedCount) player\(selectedCount == 1 ? "" : "s") selected")
-                            .font(.system(size: 12))
-                            .foregroundColor(Color(hex: "#BBBBBB"))
+                // Meta info rows (both roles) — always visible
+                Group {
+                    VStack(alignment: .leading, spacing: 0) {
+                        // Date + tee time row (hidden for quick games — date is the title)
+                        if !isQuickGame {
+                        HStack(spacing: 16) {
+                            HStack(spacing: 10) {
+                                Image(systemName: "calendar")
+                                    .font(.system(size: 14))
+                                    .foregroundColor(Color.textDark)
+                                Text(Self.headerDateOnlyFormatter.string(from: roundDate))
+                                    .font(.system(size: 16, weight: .regular))
+                                    .foregroundColor(Color.textDark)
+                            }
+
+                            if let date = teeTimes.first ?? nil {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "clock.fill")
+                                        .font(.system(size: 14))
+                                        .foregroundColor(Color.textDark)
+                                    Text(Self.teeTimeOnlyFormatter.string(from: date))
+                                        .font(.system(size: 16, weight: .regular))
+                                        .foregroundColor(Color.textDark)
+                                }
+                            }
+
+                            if let recurrence = buildRecurrence() {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "repeat")
+                                        .font(.system(size: 14))
+                                        .foregroundColor(Color.textDark)
+                                    Text(recurrence.shortLabel)
+                                        .font(.system(size: 16, weight: .regular))
+                                        .foregroundColor(Color.textDark)
+                                        .lineLimit(1)
+                                        .truncationMode(.tail)
+                                }
+                            }
+                        }
+                        .lineLimit(1)
+                        .frame(minHeight: 32, alignment: .leading)
+                        }
+
+                        // Course row — always shown (mandatory field)
+                        HStack(spacing: 10) {
+                            Image(systemName: "flag.fill")
+                                .font(.system(size: 14))
+                                .foregroundColor(Color.textDark)
+                            if let course = currentCourse {
+                                Text(course.courseName)
+                                    .font(.system(size: 16, weight: .regular))
+                                    .foregroundColor(Color.textDark)
+                                    .lineLimit(1)
+                                if let tee = course.teeBox {
+                                    Circle()
+                                        .fill(Color(hexString: tee.color))
+                                        .frame(width: 5.5, height: 5.5)
+                                    let pct = Int(handicapPercentage * 100)
+                                    Text("\(tee.name) at \(pct)%")
+                                        .font(.system(size: 16, weight: .regular))
+                                        .foregroundColor(Color.textDark)
+                                        .lineLimit(1)
+                                        .layoutPriority(1)
+                                }
+                            } else {
+                                Text("Select a course")
+                                    .font(.system(size: 16, weight: .regular))
+                                    .foregroundColor(Color.dividerMuted)
+                            }
+                        }
+                        .frame(height: 32, alignment: .leading)
+                        .onTapGesture {
+                            if isCreator && currentCourse == nil {
+                                showCourseChange = true
+                            }
+                        }
+
+                        // Buy-in badge row
+                        if let buyIn = Int(buyInText), buyIn > 0 {
+                            HStack(spacing: 14) {
+                                HStack(spacing: 4) {
+                                    ZStack {
+                                        Circle()
+                                            .fill(.white.opacity(0.35))
+                                            .frame(width: 18, height: 18)
+                                        Text("$")
+                                            .font(.carry.microSM)
+                                            .foregroundColor(.white)
+                                    }
+                                    Text("\(buyIn) Buy-In")
+                                        .font(.carry.bodySMSemibold)
+                                        .foregroundColor(.white)
+                                }
+                                .padding(.leading, 4)
+                                .padding(.trailing, 8)
+                                .padding(.vertical, 3)
+                                .background(Color.goldAccent)
+                                .clipShape(Capsule())
+                            }
+                            .frame(height: 32, alignment: .leading)
+                        }
+
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 20)
-                    .padding(.bottom, 16)
+                    .padding(.bottom, 20)
+                    .background(Color.bgPrimary)
+                }
 
-                    // Player grid — add button first, then player chips
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4), spacing: 12) {
-                        // Add button as first item
-                        addPlayerChip
-
-                        ForEach(allAvailable) { player in
-                            playerChip(player)
+                ScrollView {
+                VStack(spacing: 0) {
+                    if !isQuickGame {
+                    // "Playing" section header + "Invite & Manage" (admin only)
+                    HStack {
+                        Text("Playing")
+                            .font(.system(size: 18, weight: .heavy))
+                            .foregroundColor(Color.deepNavy)
+                        Spacer()
+                        if isCreator && activePlayerCount > 0 {
+                            Button {
+                                showManageMembers = true
+                            } label: {
+                                Text("Invite & Manage")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(Color.textPrimary)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 4)
+                                    .background(Capsule().strokeBorder(Color.textPrimary, lineWidth: 1))
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
                     .padding(.horizontal, 20)
+                    .padding(.bottom, 16)
 
-                    // Divider
-                    Rectangle()
-                        .fill(Color(hex: "#E0E0E0"))
-                        .frame(height: 1)
-                        .padding(.vertical, 24)
+                    // Horizontal scrolling player pills — only confirmed (non-pending) players
+                    if activePlayerCount == 0 {
+                        Button {
+                            showManageMembers = true
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "plus")
+                                    .font(.system(size: 14, weight: .bold))
+                                Text("Add Players")
+                                    .font(.carry.bodySMBold)
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 24)
+                            .padding(.vertical, 12)
+                            .background(Capsule().fill(Color.textPrimary))
+                        }
+                        .buttonStyle(.plain)
                         .padding(.horizontal, 20)
+                        .padding(.bottom, 16)
+                    } else {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 10) {
+                                ForEach(allAvailable.filter { selectedIDs.contains($0.id) && !$0.isPendingInvite && !$0.isPendingAccept }) { player in
+                                    HStack(spacing: 6) {
+                                        PlayerAvatar(player: player, size: 32)
+                                        Text(player.shortName)
+                                            .font(.carry.bodySMSemibold)
+                                            .foregroundColor(Color.deepNavy)
+                                            .lineLimit(1)
+                                    }
+                                    .padding(.leading, 6)
+                                    .padding(.trailing, 15)
+                                    .padding(.vertical, 6)
+                                    .background(.white)
+                                    .clipShape(Capsule())
+                                    .shadow(color: .black.opacity(0.06), radius: 6, y: 2)
+                                }
+                            }
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 3)
+                        }
+                        .padding(.bottom, 16)
+                    }
+                    } // end if !isQuickGame (Playing section)
+
+                    // "Tee Times" section header
+                    HStack {
+                        Text("Tee Times")
+                            .font(.system(size: 18, weight: .heavy))
+                            .foregroundColor(Color.deepNavy)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 16)
+
+                    // Green tip banner (admin only, dismissible)
+                    if isCreator && showTipBanner && selectedCount > 0 {
+                        VStack(spacing: 0) {
+                            HStack(alignment: .top, spacing: 8) {
+                                Text("Press a player to change the player order, or move players between groups")
+                                    .font(.carry.bodySM)
+                                    .foregroundColor(Color.successGreen)
+                                    .lineSpacing(2)
+                                Spacer()
+                                Button {
+                                    withAnimation { showTipBanner = false }
+                                } label: {
+                                    Image(systemName: "xmark")
+                                        .font(.system(size: 10.5, weight: .semibold))
+                                        .foregroundColor(Color.successGreen)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                        }
+                        .padding(.vertical, 7)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(Color.concludedGreen)
+                        )
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 12)
+                    }
 
                     // Groups section
                     if selectedCount > 0 {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Groups")
-                                .font(.system(size: 18, weight: .bold))
-                                .foregroundColor(Color(hex: "#1A1A1A"))
-                            Text("Tap or press to move the group order, or move players between groups.")
-                                .font(.system(size: 12))
-                                .foregroundColor(Color(hex: "#BBBBBB"))
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, 16)
-
                         ForEach(Array(groups.enumerated()), id: \.offset) { groupIdx, group in
                             groupCard(index: groupIdx, players: group)
                                 .id(group.map(\.id))  // force re-render when players change
@@ -276,9 +946,9 @@ struct GroupManagerView: View {
                                 .padding(.bottom, 12)
                         }
                     } else {
-                        Text("Select players above to create groups.")
-                            .font(.system(size: 14))
-                            .foregroundColor(Color(hex: "#CCCCCC"))
+                        Text("Add players above to create groups & tee times")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(Color.textSecondary)
                             .padding(.top, 20)
                     }
 
@@ -287,85 +957,414 @@ struct GroupManagerView: View {
             }
             } // end floating header VStack
 
-            // Confirm button pinned to bottom
+            // CTA button pinned to bottom — all roles
             VStack {
                 Spacer()
-                Button {
-                    let groupConfigs = groups.enumerated().map { idx, players in
-                        GroupConfig(id: idx + 1, startingSide: startingSides[idx], playerIDs: players.map(\.id))
+                if isCreator {
+                    // Admin: "Start Round" or "Back to Scorecard"
+                    Button {
+                        if isLiveRound {
+                            onBack?()
+                        } else if needsNextSchedule {
+                            showSettings = true
+                        } else {
+                            let config = buildRoundConfig()
+                            onConfirm(config)
+                        }
+                    } label: {
+                        HStack(spacing: 10) {
+                            if canStartRound || isLiveRound {
+                                Image(systemName: "flag.fill")
+                                    .font(.carry.bodySMSemibold)
+                            }
+                            Text(startButtonLabel)
+                                .font(.carry.bodyLGSemibold)
+                        }
+                        .foregroundColor(buttonEnabled ? .white : Color.textSecondary)
+                        .frame(width: 322, height: 51)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(buttonEnabled ? Color.textPrimary : Color.borderMedium)
+                        )
                     }
-                    let config = RoundConfig(
-                        id: UUID().uuidString,
-                        number: 1,
-                        course: "Blackhawk CC",
-                        date: ISO8601DateFormatter().string(from: Date()),
-                        buyIn: 50,
-                        gameType: "skins",
-                        skinRules: SkinRules(net: true, carries: carriesEnabled, outright: true, handicapPercentage: 1.0),
-                        teeBox: TeeBox.demo[1],
-                        groups: groupConfigs,
-                        creatorId: 1  // TODO: derive from AuthService when auth is live
-                    )
-                    onConfirm(config)
-                } label: {
-                    HStack(spacing: 8) {
+                    .disabled(!buttonEnabled)
+                    .accessibilityLabel(startButtonLabel)
+                    .accessibilityHint(isLiveRound ? "Returns to the live scorecard" : "Starts a new round")
+                    .padding(.bottom, 40)
+                    .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
+                        if let secs = secondsUntilTeeWindow {
+                            countdownText = countdownLabel(seconds: secs)
+                        } else {
+                            countdownText = ""
+                        }
+                        // Poll every 30s for member status + round start
+                        let now = Date().timeIntervalSince1970
+                        if now.truncatingRemainder(dividingBy: 30) < 1, let groupId = supabaseGroupId {
+                            Task {
+                                // Check round start (member view)
+                                if !isCreator && !roundStarted {
+                                    if let round = try? await SupabaseManager.shared.client
+                                        .from("rounds")
+                                        .select("id")
+                                        .eq("group_id", value: groupId.uuidString)
+                                        .eq("status", value: "active")
+                                        .limit(1)
+                                        .execute(),
+                                       round.data.count > 2 {
+                                        await MainActor.run { roundStarted = true }
+                                    }
+                                }
+                                // Refresh member statuses
+                                if let members: [GroupMemberDTO] = try? await SupabaseManager.shared.client
+                                    .from("group_members")
+                                    .select()
+                                    .eq("group_id", value: groupId.uuidString)
+                                    .execute()
+                                    .value {
+                                    let activeIds = Set(members.filter { $0.status == "active" }.map { $0.playerId })
+                                    // Check if any phone invites were claimed (invited_phone cleared + status active)
+                                    let claimedPhones = Set(members.filter { $0.status == "active" && ($0.invitedPhone == nil || ($0.invitedPhone ?? "").isEmpty) }.map { $0.playerId })
+                                    let hasClaimedInvite = allMembers.contains { $0.isPendingInvite } && !claimedPhones.isEmpty
+                                    await MainActor.run {
+                                        for i in allMembers.indices {
+                                            if activeIds.contains(allMembers[i].profileId ?? UUID()) {
+                                                allMembers[i].isPendingAccept = false
+                                            }
+                                        }
+                                        // Full refresh if a phone invite was claimed — need to load the new profile
+                                        if hasClaimedInvite {
+                                            Task { await refreshGroupData() }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else if roundStarted {
+                    // Member, round started: "Join Round"
+                    Button {
+                        guard !isJoiningRound else { return }
+                        isJoiningRound = true
+                        Task {
+                            var config = buildRoundConfig()
+                            if let groupId = supabaseGroupId {
+                                do {
+                                    let client = SupabaseManager.shared.client
+                                    let rounds: [RoundDTO] = try await client
+                                        .from("rounds")
+                                        .select()
+                                        .eq("group_id", value: groupId.uuidString)
+                                        .eq("status", value: "active")
+                                        .limit(1)
+                                        .execute()
+                                        .value
+                                    if let activeRound = rounds.first {
+                                        config.supabaseRoundId = activeRound.id
+                                        config.supabaseGroupId = groupId
+                                        // Fetch tee box holes if missing
+                                        if let teeBoxId = activeRound.teeBoxId,
+                                           config.holes == nil || config.teeBox?.holes == nil {
+                                            config = await Self.fetchAndAttachHoles(config: config, teeBoxId: teeBoxId)
+                                        }
+                                    }
+                                } catch {
+                                    await MainActor.run {
+                                        isJoiningRound = false
+                                        ToastManager.shared.error("Couldn't connect — check your internet")
+                                    }
+                                    return
+                                }
+                            }
+                            await MainActor.run {
+                                isJoiningRound = false
+                                onConfirm(config)
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 10) {
+                            if isJoiningRound {
+                                ProgressView()
+                                    .tint(.white)
+                            } else {
+                                Image(systemName: "flag.fill")
+                                    .font(.carry.bodySMSemibold)
+                            }
+                            Text("Join Round")
+                                .font(.carry.bodyLGSemibold)
+                        }
+                        .foregroundColor(.white)
+                        .frame(width: 322, height: 51)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(Color.textPrimary)
+                        )
+                    }
+                    .disabled(isJoiningRound)
+                    .padding(.bottom, 40)
+                } else {
+                    // Member, round not started: show countdown or "Round Not Started..."
+                    HStack(spacing: 10) {
                         Image(systemName: "flag.fill")
-                            .font(.system(size: 14, weight: .semibold))
-                        Text("Start Round")
-                            .font(.system(size: 17, weight: .semibold))
+                            .font(.carry.bodySMSemibold)
+                        Text(!countdownText.isEmpty ? countdownText : "Round Not Started...")
+                            .font(.carry.bodyLGSemibold)
                     }
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 52)
+                    .foregroundColor(Color.textSecondary)
+                    .frame(width: 322, height: 51)
                     .background(
                         RoundedRectangle(cornerRadius: 12)
-                            .fill(selectedCount >= 2
-                                  ? Color(hex: "#1A1A1A")
-                                  : Color(hex: "#CCCCCC"))
+                            .fill(Color.borderMedium)
                     )
+                    .padding(.bottom, 40)
                 }
-                .disabled(selectedCount < 2)
-                .padding(.horizontal, 40)
-                .padding(.bottom, 8)
             }
         }
+        .refreshable {
+            #if DEBUG
+            print("[GroupManagerView] Pull-to-refresh triggered")
+            #endif
+            await refreshGroupData()
+        }
+        .ignoresSafeArea(.container, edges: .top)
         .sheet(isPresented: $showAddSheet) {
             addPlayerSheet
                 .presentationDetents([.height(220)])
                 .presentationDragIndicator(.visible)
+                .presentationBackground(.white)
         }
         .sheet(isPresented: $showGuestEntry) {
             guestEntrySheet
                 .presentationDetents([.height(340)])
                 .presentationDragIndicator(.visible)
+                .presentationBackground(.white)
         }
-        .sheet(isPresented: $showSettings) {
-            settingsSheet
+        .sheet(isPresented: $showInviteEntry) {
+            inviteEntrySheet
                 .presentationDetents([.height(320)])
                 .presentationDragIndicator(.visible)
+                .presentationBackground(.white)
+        }
+        .sheet(isPresented: $showSettings) {
+            GroupOptionsSheet(
+                isCreator: isCreator,
+                isLiveRound: isLiveRound,
+                isQuickGame: isQuickGame,
+                groupName: groupName,
+                carriesEnabled: carriesEnabled,
+                scoringMode: scoringMode,
+                handicapPercentage: handicapPercentage,
+                buyInText: buyInText,
+                teeTime: teeTimes.first.flatMap { $0 },
+                currentCourse: currentCourse,
+                recurrence: buildRecurrence(),
+                onCancel: { showSettings = false },
+                onSave: { result in
+                    groupName = result.groupName
+                    carriesEnabled = result.carriesEnabled
+                    scoringMode = result.scoringMode
+                    handicapPercentage = result.handicapPercentage
+                    buyInText = result.buyInText
+                    if let t = result.teeTime {
+                        roundDate = t
+                        if teeTimes.isEmpty { syncTeeTimes() }
+                        if !teeTimes.isEmpty { teeTimes[0] = t }
+                        autoFillTeeTimes(from: 0)
+                        onTeeTimeChanged?(t)
+                    }
+                    if let course = result.changedCourse {
+                        currentCourse = course
+                        onCourseChanged?(course)
+                    }
+                    // Update recurrence
+                    if let rec = result.recurrence {
+                        scheduleMode = 1
+                        switch rec {
+                        case .weekly(let d):
+                            repeatMode = 1
+                            selectedDayPill = GameRecurrence.pillIndex(fromWeekday: d)
+                        case .biweekly(let d):
+                            repeatMode = 2
+                            selectedDayPill = GameRecurrence.pillIndex(fromWeekday: d)
+                        case .monthly:
+                            repeatMode = 3
+                            selectedDayPill = nil
+                        }
+                        onRecurrenceChanged?(rec)
+                    } else if result.clearRecurrence {
+                        scheduleMode = 0
+                        repeatMode = 0
+                        selectedDayPill = nil
+                        onRecurrenceChanged?(nil)
+                    }
+                    showSettings = false
+                    ToastManager.shared.success("Game options saved")
+                },
+                onLeaveGroup: onLeaveGroup.map { leave in {
+                    showSettings = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                        withAnimation(.easeOut(duration: 0.25)) {
+                            showLeaveDeleteAlert = true
+                        }
+                    }
+                }},
+                onDeleteGroup: onDeleteGroup.map { delete in {
+                    showSettings = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                        withAnimation(.easeOut(duration: 0.25)) {
+                            showLeaveDeleteAlert = true
+                        }
+                    }
+                }}
+            )
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(.white)
+        }
+        .sheet(isPresented: $showCourseChange) {
+            CourseSelectionView { course in
+                currentCourse = course
+                onCourseChanged?(course)
+                showCourseChange = false
+            }
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+            .presentationBackground(.white)
         }
         .sheet(isPresented: $showLeaderboard) {
             leaderboardSheet
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
+                .presentationBackground(.white)
         }
         .sheet(isPresented: $showSwapPicker) {
             swapPickerSheet
                 .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
+                .presentationBackground(.white)
         }
         .sheet(isPresented: $showTeeTimePicker) {
             teeTimePickerSheet
-                .presentationDetents([.height(340)])
+                .presentationDetents([.height(580)])
                 .presentationDragIndicator(.visible)
+                .presentationBackground(.white)
+        }
+        .onChange(of: teeTimes) {
+            // Persist first group's tee time back to SavedGroup
+            onTeeTimeChanged?(teeTimes.first.flatMap { $0 })
         }
         .sheet(item: $scorerPickerItem) { item in
             scorerPickerSheet(groupIndex: item.id)
                 .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
+                .presentationBackground(.white)
+        }
+        .sheet(isPresented: $showManageMembers) {
+            manageMembersSheet
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(.white)
+        }
+        .sheet(isPresented: $showShareCardSheet) {
+            VStack(spacing: 0) {
+                // Scrollable results card
+                ScrollView {
+                    ResultsShareCard(data: shareCardData, theme: .light, showAppStoreBadge: false)
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                        .shadow(color: Color(red: 0.06, green: 0.09, blue: 0.16).opacity(0.08), radius: 16, x: 0, y: 12)
+                        .shadow(color: Color(red: 0.06, green: 0.09, blue: 0.16).opacity(0.03), radius: 6, x: 0, y: 4)
+                        .padding(.horizontal, 6)
+                        .padding(.top, 8)
+                }
+
+                // Pinned bottom: invite CTA
+                VStack(spacing: 8) {
+                    Text("Join our skins group on Carry")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundColor(Color.textPrimary)
+
+                    Text("Track your scores, see who won,\nand settle up — all in one place.")
+                        .font(.system(size: 15))
+                        .foregroundColor(Color.textTertiary)
+                        .multilineTextAlignment(.center)
+                        .lineSpacing(3)
+                }
+                .padding(.top, 20)
+                .padding(.bottom, 16)
+
+                Button {
+                    if let groupId = supabaseGroupId {
+                        let link = "https://carryapp.site/invite?group=\(groupId.uuidString)"
+                        UIPasteboard.general.string = link
+                    }
+                    showShareCardSheet = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                        ToastManager.shared.success("Invite link copied!")
+                    }
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "link")
+                            .font(.system(size: 16, weight: .semibold))
+                        Text("Copy Invite Link")
+                            .font(.carry.bodyLGSemibold)
+                    }
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 51)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.textPrimary)
+                    )
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 20)
+            }
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+            .presentationBackground(.white)
+        }
+        .sheet(isPresented: $showInviteShareSheet) {
+            ShareSheetView(items: [inviteShareLink])
+                .presentationDetents([.medium])
+        }
+        .sheet(isPresented: $showDatePicker) {
+            TeeTimePickerSheet(
+                scheduleMode: $scheduleMode,
+                selectedDate: $roundDate,
+                repeatMode: Binding(
+                    get: { max(repeatMode - 1, 0) },
+                    set: { repeatMode = $0 + 1 }
+                ),
+                selectedDayPill: $selectedDayPill,
+                onSet: {
+                    if teeTimes.isEmpty { syncTeeTimes() }
+                    if !teeTimes.isEmpty { teeTimes[0] = roundDate }
+                    autoFillTeeTimes(from: 0)
+                    onTeeTimeChanged?(teeTimes.first.flatMap { $0 })
+                    onRecurrenceChanged?(buildRecurrence())
+                    showDatePicker = false
+                    ToastManager.shared.success(scheduleMode == 1 ? "Schedule updated" : "Tee time updated")
+                },
+                onCancel: {
+                    roundDate = initialRoundDate
+                    scheduleMode = initialScheduleMode
+                    repeatMode = initialRepeatMode
+                    selectedDayPill = initialSelectedDayPill
+                    showDatePicker = false
+                }
+            )
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+            .presentationBackground(.white)
+            .onAppear {
+                initialRoundDate = roundDate
+                initialScheduleMode = scheduleMode
+                initialRepeatMode = repeatMode
+                initialSelectedDayPill = selectedDayPill
+            }
         }
         .alert("Edit Name", isPresented: $showNameEditor) {
-            TextField("Group name", text: $editingName)
+            TextField("Friday Skins", text: $editingName)
             Button("Save") {
                 let trimmed = editingName.trimmingCharacters(in: .whitespaces)
                 if !trimmed.isEmpty {
@@ -374,55 +1373,229 @@ struct GroupManagerView: View {
             }
             Button("Cancel", role: .cancel) { }
         }
+        .alert(
+            isCreator ? "Delete Group?" : "Leave Group?",
+            isPresented: $showLeaveDeleteAlert
+        ) {
+            Button("Cancel", role: .cancel) { }
+            Button(isCreator ? "Delete" : "Leave", role: .destructive) {
+                if isCreator {
+                    onDeleteGroup?()
+                } else {
+                    onLeaveGroup?()
+                }
+            }
+        } message: {
+            Text(isCreator
+                ? "This will remove \(groupName) for all members. This can't be undone."
+                : "You'll be removed from \(groupName) and future games.")
+        }
+        .alert("Leave game?", isPresented: $showCloseQuickGameAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Leave", role: .destructive) {
+                onBack?()
+            }
+        } message: {
+            Text("Your game setup will be lost.")
+        }
+        .onAppear {
+            // Fresh load on appear and start 30s polling
+            if supabaseGroupId != nil {
+                // Quick Games: delay first refresh to let Supabase writes settle
+                let delay: Double = isQuickGame ? 3.0 : 0
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                    Task { await refreshGroupData() }
+                }
+                startDetailAutoRefresh()
+            }
+            // Show share card sheet after quick game → group conversion
+            // Delayed to after first refreshGroupData so round history + winnings are loaded
+            if showInviteCrewOnAppear && allMembers.filter({ !$0.name.isEmpty }).count > 1 {
+                let refreshDelay: Double = isQuickGame ? 3.0 : 0
+                DispatchQueue.main.asyncAfter(deadline: .now() + refreshDelay + 1.5) {
+                    showShareCardSheet = true
+                }
+            }
+        }
+        .onDisappear {
+            stopDetailAutoRefresh()
+        }
+        .onChange(of: groups) { _, _ in
+            // Debounce: only sync after user stops reordering
+            orderSyncTask?.cancel()
+            orderSyncTask = Task {
+                try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+                guard !Task.isCancelled else { return }
+                syncPlayerOrderToSupabase()
+            }
+        }
     }
+
+    // MARK: - Build Round Config (shared helper)
+
+    /// Fetch tee box holes from Supabase and attach to config.
+    private static func fetchAndAttachHoles(config: RoundConfig, teeBoxId: UUID) async -> RoundConfig {
+        var updated = config
+        do {
+            let dto: TeeBoxDTO = try await SupabaseManager.shared.client
+                .from("tee_boxes")
+                .select()
+                .eq("id", value: teeBoxId.uuidString)
+                .single()
+                .execute()
+                .value
+            let holes = dto.decodeHoles()
+            updated.holes = holes
+            #if DEBUG
+            print("[JoinRound] Loaded tee box holes: \(holes?.count ?? 0)")
+            #endif
+        } catch {
+            #if DEBUG
+            print("[JoinRound] Failed to fetch tee box holes: \(error)")
+            #endif
+        }
+        return updated
+    }
+
+    private func buildRoundConfig() -> RoundConfig {
+        // Quick Games: include ALL players (even pending) so their groups exist in the round
+        // Regular groups: only include confirmed (non-pending) players
+        let roundGroups: [[Player]]
+        if isQuickGame {
+            roundGroups = groups
+        } else {
+            roundGroups = groups.map { $0.filter { !$0.isPendingInvite && !$0.isPendingAccept } }
+        }
+        let groupConfigs = roundGroups.enumerated().map { idx, players in
+            GroupConfig(id: idx + 1, startingSide: startingSides[idx], playerIDs: players.map(\.id))
+        }
+        let allRoundPlayers = roundGroups.flatMap { $0 }
+
+        // Map first group's scorer Int ID → Supabase UUID
+        let scorerProfileId: UUID? = {
+            guard let firstScorerId = scorerIDs.first else { return nil }
+            return allRoundPlayers.first(where: { $0.id == firstScorerId })?.profileId
+        }()
+
+        #if DEBUG
+        print("[buildRoundConfig] buyInText='\(buyInText)' → Int=\(Int(buyInText) ?? 0), players=\(roundGroups.flatMap { $0 }.count)")
+        #endif
+        var resolvedTeeBox = currentCourse?.teeBox ?? TeeBox(id: "default", courseId: "0", name: "Default", color: "white", courseRating: 72.0, slopeRating: 113, par: 72)
+        // Restore holes from multiple fallback sources
+        if resolvedTeeBox.holes == nil || resolvedTeeBox.holes?.isEmpty == true {
+            // 1. Cached holes from initial load (survives Supabase refresh on same session)
+            if let cached = cachedHoles, !cached.isEmpty {
+                resolvedTeeBox.holes = cached
+            }
+            // 2. API tee data from course selection
+            else if let apiTee = currentCourse?.apiTee,
+                    let apiHoles = apiTee.holes, !apiHoles.isEmpty {
+                resolvedTeeBox.holes = Hole.fromAPI(apiHoles)
+            }
+        }
+        // Cache holes for future use (e.g. if view is re-created)
+        if cachedHoles == nil, let holes = resolvedTeeBox.holes, !holes.isEmpty {
+            cachedHoles = holes
+        }
+        #if DEBUG
+        print("[buildRoundConfig] teeBox.name=\(resolvedTeeBox.name) holes=\(resolvedTeeBox.holes?.count ?? 0) course=\(currentCourse?.courseName ?? "nil")")
+        #endif
+        var config = RoundConfig(
+            id: UUID().uuidString,
+            number: 1,
+            course: currentCourse?.courseName ?? "Unknown Course",
+            date: ISO8601DateFormatter().string(from: roundDate),
+            buyIn: Int(buyInText) ?? 0,
+            gameType: "skins",
+            skinRules: SkinRules(
+                net: isQuickGame && !storeService.isPremium ? false : true,
+                carries: isQuickGame && !storeService.isPremium ? false : carriesEnabled,
+                outright: true,
+                handicapPercentage: handicapPercentage
+            ),
+            teeBox: resolvedTeeBox,
+            groups: groupConfigs,
+            creatorId: creatorId,
+            groupName: groupName,
+            players: allRoundPlayers,
+            holes: resolvedTeeBox.holes
+        )
+        config.scorerProfileId = scorerProfileId
+        config.scoringMode = scoringMode
+        return config
+    }
+
+    // MARK: - Focus State (for guest entry / invite entry sheets)
+
+    enum GMField: Hashable { case buyIn, guestName, guestHandicap, invitePhone2 }
+    @FocusState private var gmFocused: GMField?
 
     // MARK: - Swap Picker Sheet
 
     private var swapPickerSheet: some View {
         VStack(spacing: 0) {
             Text("Swap Player")
-                .font(.system(size: 18, weight: .bold))
-                .foregroundColor(Color(hex: "#1A1A1A"))
-                .padding(.top, 24)
+                .font(.carry.labelBold)
+                .foregroundColor(Color.textPrimary)
+                .padding(.top, 40)
                 .padding(.bottom, 6)
 
             if let player = pendingSwapPlayer, let destIdx = pendingSwapTo {
-                Text("Group \(destIdx + 1) is full. Pick a player to swap with \(player.name).")
-                    .font(.system(size: 13))
-                    .foregroundColor(Color(hex: "#999999"))
+                Text("Group \(destIdx + 1) is full. Pick a player to swap with \(player.shortName).")
+                    .font(.carry.captionLG)
+                    .foregroundColor(Color.textSecondary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 24)
                     .padding(.bottom, 20)
 
                 ForEach(groups[destIdx]) { destPlayer in
+                    let destPending = destPlayer.isPendingInvite || destPlayer.isPendingAccept
                     Button {
+                        guard !destPending else { return }
                         performSwap(incoming: player, outgoing: destPlayer)
                     } label: {
                         HStack(spacing: 12) {
-                            ZStack {
-                                Circle()
-                                    .fill(Color(hex: destPlayer.color).opacity(0.09))
-                                Circle()
-                                    .strokeBorder(Color(hex: destPlayer.color).opacity(0.25), lineWidth: 1.5)
-                                Text(destPlayer.avatar)
-                                    .font(.system(size: 16))
-                            }
-                            .frame(width: 36, height: 36)
+                            PlayerAvatar(player: destPlayer, size: 36)
+                                .opacity(destPending ? 0.5 : 1)
 
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(destPlayer.name)
-                                    .font(.system(size: 15, weight: .medium))
-                                    .foregroundColor(Color(hex: "#1A1A1A"))
-                                Text("HCP \(String(format: "%.1f", destPlayer.handicap))")
-                                    .font(.system(size: 12))
-                                    .foregroundColor(Color(hex: "#BBBBBB"))
+                                Text(destPlayer.isPendingInvite ? formatPhoneDisplay(destPlayer.phoneNumber) : destPlayer.name)
+                                    .font(.system(size: 17, weight: .semibold))
+                                    .foregroundColor(destPending ? Color.textPrimary.opacity(0.5) : Color.textPrimary)
+                                if destPending {
+                                    Text("Pending")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(Color.pendingFill)
+                                } else {
+                                    let pops: Int = {
+                                        if let tee = currentCourse?.teeBox {
+                                            return tee.playingHandicap(forIndex: destPlayer.handicap, percentage: handicapPercentage)
+                                        }
+                                        return Int(destPlayer.handicap.rounded())
+                                    }()
+                                    Text(pops > 0 ? "\(formatHandicap(destPlayer.handicap)) · \(pops) pop\(pops == 1 ? "" : "s")" : formatHandicap(destPlayer.handicap))
+                                        .font(.carry.caption)
+                                        .foregroundColor(Color.textSecondary)
+                                }
                             }
 
                             Spacer()
 
-                            Image(systemName: "arrow.triangle.swap")
-                                .font(.system(size: 14))
-                                .foregroundColor(Color(hex: "#CCCCCC"))
+                            if destPending {
+                                Text("Pending")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundColor(Color.pendingFill)
+                                    .padding(.horizontal, 7)
+                                    .padding(.vertical, 4)
+                                    .background(
+                                        Capsule().fill(Color.pendingBg)
+                                            .overlay(Capsule().strokeBorder(Color.pendingBorder, lineWidth: 1))
+                                    )
+                            } else {
+                                Image(systemName: "arrow.triangle.swap")
+                                    .font(.carry.bodySM)
+                                    .foregroundColor(Color.borderMedium)
+                            }
                         }
                         .padding(.horizontal, 24)
                         .padding(.vertical, 10)
@@ -431,7 +1604,7 @@ struct GroupManagerView: View {
 
                     if destPlayer.id != groups[destIdx].last?.id {
                         Rectangle()
-                            .fill(Color(hex: "#F0F0F0"))
+                            .fill(Color.bgPrimary)
                             .frame(height: 1)
                             .padding(.leading, 72)
                     }
@@ -462,18 +1635,56 @@ struct GroupManagerView: View {
 
     // MARK: - Tee Time Picker Sheet
 
+    // MARK: - Date Picker Sheet
+
+    @State private var initialRoundDate = Date()
+
+    @State private var initialScheduleMode: Int = 0
+    @State private var initialRepeatMode: Int = 0
+    @State private var initialSelectedDayPill: Int? = nil
+
+    private var datePickerHasChanged: Bool {
+        roundDate != initialRoundDate
+        || scheduleMode != initialScheduleMode
+        || repeatMode != initialRepeatMode
+        || selectedDayPill != initialSelectedDayPill
+    }
+
+    /// Build a GameRecurrence from the current picker state
+    private func buildRecurrence() -> GameRecurrence? {
+        switch repeatMode {
+        case 1:
+            guard let pill = selectedDayPill else { return nil }
+            return .weekly(dayOfWeek: GameRecurrence.weekday(fromPillIndex: pill))
+        case 2:
+            guard let pill = selectedDayPill else { return nil }
+            return .biweekly(dayOfWeek: GameRecurrence.weekday(fromPillIndex: pill))
+        case 3:
+            let day = Calendar.current.component(.day, from: roundDate)
+            return .monthly(dayOfMonth: day)
+        default:
+            return nil
+        }
+    }
+
+
+    @State private var consecutiveInterval: Int = 0  // 0 = off, 8/10/12 minutes
+    @State private var initialTeeTimePickerDate = Date()
+    @State private var initialConsecutiveInterval: Int = 0
+
+    private var teeTimeHasChanged: Bool {
+        teeTimePickerDate != initialTeeTimePickerDate || consecutiveInterval != initialConsecutiveInterval
+    }
+
     private var teeTimePickerSheet: some View {
         VStack(spacing: 0) {
             Text("Set Tee Time")
-                .font(.system(size: 18, weight: .bold))
-                .foregroundColor(Color(hex: "#1A1A1A"))
-                .padding(.top, 24)
-                .padding(.bottom, 4)
+                .font(.carry.labelBold)
+                .foregroundColor(Color.textPrimary)
+                .padding(.top, 40)
+                .padding(.bottom, 24)
 
-            Text("Group \(teeTimePickerGroupIndex + 1)")
-                .font(.system(size: 13))
-                .foregroundColor(Color(hex: "#999999"))
-                .padding(.bottom, 20)
+            Spacer()
 
             DatePicker(
                 "",
@@ -482,102 +1693,93 @@ struct GroupManagerView: View {
             )
             .datePickerStyle(.wheel)
             .labelsHidden()
-            .frame(height: 120)
+            .frame(height: 160)
             .clipped()
             .padding(.horizontal, 40)
 
-            Spacer().frame(height: 24)
+            // Consecutive Tee Times
+            Text("Consecutive Tee Times")
+                .font(.system(size: 15, weight: .bold))
+                .foregroundColor(Color.textPrimary)
+                .padding(.top, 32)
+                .padding(.bottom, 16)
 
-            if teeTimesLinked {
-                // Linked mode — update all groups maintaining intervals
-                Button {
-                    teeTimes[teeTimePickerGroupIndex] = teeTimePickerDate
-                    for i in 0..<teeTimes.count {
-                        if i != teeTimePickerGroupIndex {
-                            let offset = Double(i - teeTimePickerGroupIndex) * teeTimeInterval
-                            teeTimes[i] = teeTimePickerDate.addingTimeInterval(offset)
-                        }
+            HStack(spacing: 10) {
+                ForEach([0, 8, 10, 12], id: \.self) { minutes in
+                    Button {
+                        consecutiveInterval = minutes
+                    } label: {
+                        Text(minutes == 0 ? "Off" : "+\(minutes) min")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(consecutiveInterval == minutes ? .white : Color.textPrimary)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(
+                                Capsule()
+                                    .fill(consecutiveInterval == minutes ? Color.textPrimary : Color.bgPrimary)
+                            )
                     }
-                    showTeeTimePicker = false
-                } label: {
-                    Text("Update All Groups")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 48)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(Color(hex: "#1A1A1A"))
-                        )
+                    .buttonStyle(.plain)
                 }
-                .padding(.horizontal, 24)
-                .padding(.bottom, 10)
+            }
 
-                Button {
-                    teeTimes[teeTimePickerGroupIndex] = teeTimePickerDate
-                    teeTimesLinked = false
-                    showTeeTimePicker = false
-                } label: {
-                    Text("Set This Group Only")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(Color(hex: "#1A1A1A"))
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 48)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12)
-                                .strokeBorder(Color(hex: "#E0E0E0"), lineWidth: 1)
-                        )
-                }
-                .padding(.horizontal, 24)
+            Spacer()
 
-                Text("Groups are linked at 8-min intervals")
-                    .font(.system(size: 11))
-                    .foregroundColor(Color(hex: "#BBBBBB"))
-                    .padding(.top, 10)
-            } else {
-                // Unlinked mode — choose one or all
-                Button {
-                    teeTimes[teeTimePickerGroupIndex] = teeTimePickerDate
-                    showTeeTimePicker = false
-                } label: {
-                    Text("Set This Group Only")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 48)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(Color(hex: "#1A1A1A"))
-                        )
-                }
-                .padding(.horizontal, 24)
-                .padding(.bottom, 10)
-
-                Button {
-                    teeTimes[teeTimePickerGroupIndex] = teeTimePickerDate
+            // Done button
+            Button {
+                teeTimes[teeTimePickerGroupIndex] = teeTimePickerDate
+                // Apply consecutive intervals if enabled
+                if consecutiveInterval > 0 {
+                    let interval = Double(consecutiveInterval) * 60
                     for i in 0..<teeTimes.count {
                         if i != teeTimePickerGroupIndex {
-                            let offset = Double(i - teeTimePickerGroupIndex) * teeTimeInterval
+                            let offset = Double(i - teeTimePickerGroupIndex) * interval
                             teeTimes[i] = teeTimePickerDate.addingTimeInterval(offset)
                         }
                     }
                     teeTimesLinked = true
-                    showTeeTimePicker = false
-                } label: {
-                    Text("Set All Groups (8-min intervals)")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(Color(hex: "#1A1A1A"))
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 48)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12)
-                                .strokeBorder(Color(hex: "#E0E0E0"), lineWidth: 1)
-                        )
+                } else {
+                    teeTimesLinked = false
                 }
-                .padding(.horizontal, 24)
+                let cal = Calendar.current
+                if cal.isDate(teeTimePickerDate, inSameDayAs: roundDate) {
+                    roundDate = teeTimePickerDate
+                }
+                // Explicitly notify parent of tee time change
+                onTeeTimeChanged?(teeTimes.first.flatMap { $0 })
+                showTeeTimePicker = false
+                ToastManager.shared.success("Tee time updated")
+            } label: {
+                Text("Done")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundColor(teeTimeHasChanged ? .white : Color.textDisabled)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 18)
+                    .background(
+                        RoundedRectangle(cornerRadius: 19)
+                            .fill(teeTimeHasChanged ? Color.textPrimary : Color.borderSubtle)
+                    )
             }
+            .disabled(!teeTimeHasChanged)
+            .padding(.horizontal, 24)
 
-            Spacer()
+            Button {
+                teeTimes = Array(repeating: nil, count: teeTimes.count)
+                teeTimesLinked = false
+                consecutiveInterval = 0
+                showTeeTimePicker = false
+            } label: {
+                Text("Remove All Tee Times")
+                    .font(.carry.bodySM)
+                    .foregroundColor(Color.dividerMuted)
+                    .frame(maxWidth: .infinity)
+            }
+            .padding(.top, 16)
+            .padding(.bottom, 24)
+        }
+        .onAppear {
+            initialTeeTimePickerDate = teeTimePickerDate
+            initialConsecutiveInterval = consecutiveInterval
         }
     }
 
@@ -586,14 +1788,14 @@ struct GroupManagerView: View {
     private func scorerPickerSheet(groupIndex: Int) -> some View {
         VStack(spacing: 0) {
             Text("Assign Scorer")
-                .font(.system(size: 18, weight: .bold))
-                .foregroundColor(Color(hex: "#1A1A1A"))
-                .padding(.top, 24)
+                .font(.carry.labelBold)
+                .foregroundColor(Color.textPrimary)
+                .padding(.top, 40)
                 .padding(.bottom, 6)
 
             Text("Pick who keeps score for Group \(groupIndex + 1).")
-                .font(.system(size: 13))
-                .foregroundColor(Color(hex: "#999999"))
+                .font(.carry.captionLG)
+                .foregroundColor(Color.textSecondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 24)
                 .padding(.bottom, 20)
@@ -601,53 +1803,71 @@ struct GroupManagerView: View {
             if groupIndex < groups.count {
                 ForEach(groups[groupIndex]) { player in
                     let isCurrentScorer = groupIndex < scorerIDs.count && scorerIDs[groupIndex] == player.id
+                    let isPending = player.isPendingInvite || player.isPendingAccept
 
                     Button {
+                        guard !isPending else { return }
                         scorerIDs[groupIndex] = player.id
                         scorerPickerItem = nil
+                        saveScorerIds()
                     } label: {
-                        HStack(spacing: 12) {
-                            ZStack {
-                                Circle()
-                                    .fill(Color(hex: player.color).opacity(0.09))
-                                Circle()
-                                    .strokeBorder(Color(hex: player.color).opacity(0.25), lineWidth: 1.5)
-                                Text(player.avatar)
-                                    .font(.system(size: 16))
-                            }
-                            .frame(width: 36, height: 36)
+                        HStack(spacing: 14) {
+                            PlayerAvatar(player: player, size: 43)
 
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(player.name)
-                                    .font(.system(size: 15, weight: .medium))
-                                    .foregroundColor(Color(hex: "#1A1A1A"))
-                                Text("HCP \(String(format: "%.1f", player.handicap))")
-                                    .font(.system(size: 12))
-                                    .foregroundColor(Color(hex: "#BBBBBB"))
+                                Text(player.isPendingInvite ? formatPhoneDisplay(player.phoneNumber) : player.shortName)
+                                    .font(.system(size: 19, weight: .semibold))
+                                    .foregroundColor(isPending ? Color.textPrimary.opacity(0.5) : Color.textPrimary)
+                                    .lineLimit(1)
+                                if isPending {
+                                    Text("Pending")
+                                        .font(.system(size: 14))
+                                        .foregroundColor(Color.pendingFill)
+                                } else {
+                                    let pops: Int = {
+                                        if let tee = currentCourse?.teeBox {
+                                            return tee.playingHandicap(forIndex: player.handicap, percentage: handicapPercentage)
+                                        }
+                                        return Int(player.handicap.rounded())
+                                    }()
+                                    Text(pops > 0 ? "\(formatHandicap(player.handicap)) · \(pops) pop\(pops == 1 ? "" : "s")" : formatHandicap(player.handicap))
+                                        .font(.system(size: 14))
+                                        .foregroundColor(Color.textSecondary)
+                                }
                             }
 
                             Spacer()
 
-                            if isCurrentScorer {
+                            if isPending {
+                                Text("Pending")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(Color.pendingFill)
+                                    .padding(.horizontal, 7)
+                                    .padding(.vertical, 4)
+                                    .background(
+                                        Capsule().fill(Color.pendingBg)
+                                            .overlay(Capsule().strokeBorder(Color.pendingBorder, lineWidth: 1))
+                                    )
+                            } else if isCurrentScorer {
                                 Image(systemName: "checkmark.circle.fill")
-                                    .font(.system(size: 18))
-                                    .foregroundColor(Color(hex: "#1A1A1A"))
+                                    .font(.system(size: 22))
+                                    .foregroundColor(Color.textPrimary)
                             } else {
                                 Circle()
-                                    .strokeBorder(Color(hex: "#DDDDDD"), lineWidth: 1.5)
-                                    .frame(width: 18, height: 18)
+                                    .strokeBorder(Color(hexString: "#DDDDDD"), lineWidth: 1.5)
+                                    .frame(width: 22, height: 22)
                             }
                         }
                         .padding(.horizontal, 24)
-                        .padding(.vertical, 10)
+                        .padding(.vertical, 12)
                     }
                     .buttonStyle(.plain)
 
                     if player.id != groups[groupIndex].last?.id {
                         Rectangle()
-                            .fill(Color(hex: "#F0F0F0"))
+                            .fill(Color.bgPrimary)
                             .frame(height: 1)
-                            .padding(.leading, 72)
+                            .padding(.leading, 86)
                     }
                 }
             }
@@ -665,18 +1885,16 @@ struct GroupManagerView: View {
             VStack(spacing: 6) {
                 ZStack {
                     Circle()
-                        .fill(Color(hex: "#1A1A1A").opacity(0.06))
-                    Circle()
-                        .strokeBorder(Color(hex: "#1A1A1A").opacity(0.2), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+                        .strokeBorder(Color.textPrimary, style: StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
                     Image(systemName: "plus")
-                        .font(.system(size: 20, weight: .medium))
-                        .foregroundColor(Color(hex: "#1A1A1A"))
+                        .font(.carry.sectionTitle)
+                        .foregroundColor(Color.textPrimary)
                 }
                 .frame(width: 52, height: 52)
 
                 Text("Add")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(Color(hex: "#999999"))
+                    .font(.carry.micro)
+                    .foregroundColor(Color.textPrimary)
                     .lineLimit(1)
             }
         }
@@ -689,6 +1907,7 @@ struct GroupManagerView: View {
         let isSelected = selectedIDs.contains(player.id)
 
         return Button {
+            guard isCreator else { return }
             withAnimation(.easeOut(duration: 0.15)) {
                 if isSelected {
                     selectedIDs.remove(player.id)
@@ -700,40 +1919,33 @@ struct GroupManagerView: View {
         } label: {
             VStack(spacing: 6) {
                 ZStack {
-                    Circle()
-                        .fill(Color(hex: player.color).opacity(isSelected ? 0.09 : 0.03))
-                    Circle()
-                        .strokeBorder(
-                            Color(hex: player.color).opacity(isSelected ? 0.3 : 0.1),
-                            lineWidth: 1.5
-                        )
-                    Text(player.avatar)
-                        .font(.system(size: 22))
+                    PlayerAvatar(player: player, size: 52)
                         .opacity(isSelected ? 1 : 0.3)
 
-                    // Checkmark
+                    // Checkmark — bottom-right
                     if isSelected {
                         VStack {
+                            Spacer()
                             HStack {
                                 Spacer()
                                 ZStack {
                                     Circle()
-                                        .fill(Color(hex: "#1A1A1A"))
+                                        .fill(Color(hexString: "#D4F5DC"))
                                     Image(systemName: "checkmark")
                                         .font(.system(size: 8, weight: .bold))
-                                        .foregroundColor(.white)
+                                        .foregroundColor(Color.textPrimary)
                                 }
                                 .frame(width: 16, height: 16)
+                                .offset(x: 6)
                             }
-                            Spacer()
                         }
                     }
                 }
                 .frame(width: 52, height: 52)
 
-                Text(player.truncatedName)
+                Text(player.shortName)
                     .font(.system(size: 11, weight: isSelected ? .semibold : .regular))
-                    .foregroundColor(isSelected ? Color(hex: "#1A1A1A") : Color(hex: "#CCCCCC"))
+                    .foregroundColor(isSelected ? Color.textPrimary : Color.borderMedium)
                     .lineLimit(1)
             }
         }
@@ -749,10 +1961,10 @@ struct GroupManagerView: View {
         if isDragOver && dragSourceGroup != index {
             let isFull = playerCount >= maxGroupSize
             return isFull
-                ? Color(hex: "#E8A820").opacity(0.5)   // amber = swap
-                : Color(hex: "#1A1A1A").opacity(0.5)    // dark = move
+                ? Color(hexString: "#E8A820").opacity(0.5)   // amber = swap
+                : Color.textPrimary.opacity(0.5)    // dark = move
         }
-        return Color(hex: "#EFEFEF")
+        return Color(hexString: "#EFEFEF")
     }
 
     private func groupCard(index: Int, players: [Player]) -> some View {
@@ -762,11 +1974,15 @@ struct GroupManagerView: View {
         return VStack(spacing: 0) {
             groupCardHeader(index: index)
 
+            Rectangle()
+                .fill(Color(hexString: "#EBEBEB"))
+                .frame(height: 1)
+
             ForEach(players) { player in
                 groupPlayerRow(player: player, groupIndex: index, isLast: player.id == players.last?.id)
             }
 
-            Spacer().frame(height: 8)
+            Spacer().frame(height: 10)
         }
         .background(
             RoundedRectangle(cornerRadius: 14)
@@ -781,12 +1997,12 @@ struct GroupManagerView: View {
                 if dropTargetGroup == index,
                    let targetIdx = dropTargetIndex,
                    dragSourceGroup == index {
-                    let headerHeight: CGFloat = 41
-                    let rowHeight: CGFloat = 49
+                    let headerHeight: CGFloat = 50
+                    let rowHeight: CGFloat = 63
                     let y = headerHeight + CGFloat(targetIdx) * rowHeight
                     Capsule()
-                        .fill(Color(hex: "#4A90D9"))
-                        .frame(width: geo.size.width - 32, height: 2.5)
+                        .fill(Color(hexString: "#4A90D9"))
+                        .frame(width: geo.size.width - 38, height: 2.5)
                         .position(x: geo.size.width / 2, y: y)
                 }
             }
@@ -815,22 +2031,40 @@ struct GroupManagerView: View {
     }
 
     private func groupCardHeader(index: Int) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             // Left: group label / tee time
             if showTeeTimes, index < teeTimes.count, let time = teeTimes[index] {
-                Text(Self.teeTimeFormatter.string(from: time))
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(Color(hex: "#1A1A1A"))
+                if isCreator && !isLiveRound {
+                    Button {
+                        teeTimePickerGroupIndex = index
+                        teeTimePickerDate = time
+                        showTeeTimePicker = true
+                    } label: {
+                        HStack(spacing: 5) {
+                            Text(Self.teeTimeFormatter.string(from: time))
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundColor(Color.textPrimary)
+                            Image(systemName: "pencil")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(Color.dividerMuted)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    Text(Self.teeTimeFormatter.string(from: time))
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundColor(Color.textPrimary)
+                }
             } else {
                 Text("Group \(index + 1)")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(Color(hex: "#1A1A1A"))
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundColor(Color.textPrimary)
             }
 
             Spacer()
 
-            // Edit / Add time button
-            if showTeeTimes {
+            // Edit / Add time button — creator only, not during live round
+            if isCreator && showTeeTimes && !isLiveRound {
                 Button {
                     teeTimePickerGroupIndex = index
                     teeTimePickerDate = teeTimes[index] ?? defaultFirstTeeTime()
@@ -838,22 +2072,22 @@ struct GroupManagerView: View {
                 } label: {
                     if index < teeTimes.count, teeTimes[index] != nil {
                         Text("edit")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(Color(hex: "#BBBBBB"))
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(Color.textSecondary)
                     } else {
-                        HStack(spacing: 3) {
+                        HStack(spacing: 4) {
                             Image(systemName: "plus")
-                                .font(.system(size: 9, weight: .semibold))
+                                .font(.system(size: 11, weight: .semibold))
                             Text("Tee time")
-                                .font(.system(size: 11, weight: .medium))
+                                .font(.system(size: 13, weight: .medium))
                         }
-                        .foregroundColor(Color(hex: "#BBBBBB"))
+                        .foregroundColor(Color.textSecondary)
                     }
                 }
             }
 
-            // Move group icon
-            if groups.count > 1 {
+            // Move group icon — creator only
+            if isCreator && groups.count > 1 {
                 Menu {
                     ForEach(0..<groups.count, id: \.self) { pos in
                         if pos != index {
@@ -866,219 +2100,235 @@ struct GroupManagerView: View {
                     }
                 } label: {
                     Image(systemName: "line.3.horizontal")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(Color(hex: "#CCCCCC"))
-                        .frame(width: 24, height: 24)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(Color.borderMedium)
+                        .frame(width: 29, height: 29)
                 }
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 19)
+        .padding(.vertical, 14)
     }
 
     @ViewBuilder
     private func groupPlayerRow(player: Player, groupIndex: Int, isLast: Bool) -> some View {
-        let isDragging = dragPlayer?.id == player.id
+        // In Quick Games, guests are physically present — treat them as active
+        let showAsPending = isQuickGame
+            ? (player.isPendingInvite || player.isPendingAccept)
+            : (player.isPendingInvite || player.isPendingAccept || player.isGuest)
+        let isPendingPlayer = showAsPending
 
-        HStack(spacing: 10) {
-            ZStack {
-                Circle()
-                    .fill(Color(hex: player.color).opacity(0.09))
-                Circle()
-                    .strokeBorder(Color(hex: player.color).opacity(0.25), lineWidth: 1.5)
-                Text(player.avatar)
-                    .font(.system(size: 16))
+        let pops: Int = {
+            if let tee = currentCourse?.teeBox {
+                return tee.playingHandicap(forIndex: player.handicap, percentage: handicapPercentage)
             }
-            .frame(width: 32, height: 32)
+            return Int(player.handicap.rounded())
+        }()
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(player.name)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(Color(hex: "#1A1A1A"))
-                Text("HCP \(String(format: "%.1f", player.handicap))")
-                    .font(.system(size: 11))
-                    .foregroundColor(Color(hex: "#BBBBBB"))
+        HStack(spacing: 12) {
+            PlayerAvatar(player: player, size: 38)
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(player.isPendingInvite ? formatPhoneDisplay(player.phoneNumber) : player.shortName)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(Color.textPrimary)
+                    .opacity(isPendingPlayer ? 0.7 : 1)
+                    .lineLimit(1)
+
+                Text(pops > 0 ? "\(formatHandicap(player.handicap)) · \(pops) pop\(pops == 1 ? "" : "s")" : formatHandicap(player.handicap))
+                    .font(.system(size: 14))
+                    .foregroundColor(Color(hexString: "#BFC0C2"))
+                    .opacity(isPendingPlayer ? 0.7 : 1)
             }
 
             Spacer()
 
-            if groupIndex < scorerIDs.count && scorerIDs[groupIndex] == player.id {
-                Button {
-                    scorerPickerItem = SheetItem(id: groupIndex)
-                } label: {
-                    HStack(spacing: 3) {
-                        Image(systemName: "pencil")
-                            .font(.system(size: 8, weight: .semibold))
-                        Text("Scorer")
-                            .font(.system(size: 9, weight: .semibold))
+            // Invite button for guests / Pending pill for Carry users
+            if isPendingPlayer {
+                if player.isGuest && isCreator {
+                    // Guest — show "Invite" button with link icon (Scorer pill style)
+                    Button {
+                        if let groupId = supabaseGroupId {
+                            let link = "https://carryapp.site/invite?group=\(groupId.uuidString)"
+                            inviteShareLink = "Join our skins group on Carry!\n\(link)"
+                            UIPasteboard.general.string = link
+                            showInviteShareSheet = true
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "link")
+                                .font(.system(size: 11, weight: .semibold))
+                            Text("Invite")
+                                .font(.system(size: 14, weight: .semibold))
+                        }
+                        .foregroundColor(Color.textPrimary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(Capsule().strokeBorder(Color.textPrimary, lineWidth: 1))
                     }
-                    .foregroundColor(Color(hex: "#999999"))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(Capsule().fill(Color(hex: "#F0F0F0")))
+                    .buttonStyle(.plain)
+                } else if player.isPendingAccept {
+                    // Carry user who hasn't accepted yet
+                    Text("Pending")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(Color(hexString: "#E38049"))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(
+                            Capsule()
+                                .fill(Color(hexString: "#FFE7CA"))
+                        )
+                        .overlay(
+                            Capsule()
+                                .strokeBorder(Color(hexString: "#FFD4BE"), lineWidth: 0.88)
+                        )
                 }
-                .buttonStyle(.plain)
-                .padding(.trailing, 6)
             }
 
-            Menu {
-                // Make Scorer option (only if not already scorer)
-                if groupIndex < scorerIDs.count && scorerIDs[groupIndex] != player.id {
+
+
+            if groupIndex < scorerIDs.count && scorerIDs[groupIndex] == player.id && !isPendingPlayer {
+                if isCreator && !isQuickGame {
                     Button {
-                        scorerIDs[groupIndex] = player.id
+                        scorerPickerItem = SheetItem(id: groupIndex)
                     } label: {
-                        Label("Make Scorer", systemImage: "pencil.line")
+                        Text("Scorer")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(Color.textPrimary)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(Capsule().strokeBorder(Color.textPrimary, lineWidth: 1))
                     }
-
-                    Divider()
+                    .buttonStyle(.plain)
+                } else {
+                    Text("Scorer")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(Color.textPrimary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(Capsule().strokeBorder(Color.textPrimary, lineWidth: 1))
                 }
+            }
 
-                ForEach(Array(groups.enumerated()), id: \.offset) { idx, _ in
-                    if idx != groupIndex {
-                        let isFull = groups[idx].count >= maxGroupSize
-                        Button {
-                            if isFull {
-                                // Full group — trigger swap picker
-                                pendingSwapPlayer = player
-                                pendingSwapFrom = groupIndex
-                                pendingSwapTo = idx
-                                showSwapPicker = true
-                            } else {
-                                movePlayer(player, from: groupIndex, to: idx)
-                            }
-                        } label: {
-                            Label(
-                                isFull ? "Swap with Group \(idx + 1)" : "Move to Group \(idx + 1)",
-                                systemImage: isFull ? "arrow.triangle.swap" : "arrow.right"
-                            )
-                        }
-                    }
-                }
-            } label: {
+            if isCreator {
                 Image(systemName: "line.3.horizontal")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(Color(hex: "#CCCCCC"))
-                    .frame(width: 28, height: 28)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(Color.borderMedium)
+                    .frame(width: 34, height: 34)
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 19)
+        .padding(.vertical, 12)
+        .contentShape(Rectangle())
         .opacity(1.0)
-        .onDrag {
+        .onDrag(isCreator ? {
             dragPlayer = player
             dragSourceGroup = groupIndex
             return NSItemProvider(object: String(player.id) as NSString)
-        }
+        } : { NSItemProvider() })
 
         if !isLast {
             Rectangle()
-                .fill(Color(hex: "#F5F5F5"))
+                .fill(Color.borderFaint)
                 .frame(height: 1)
-                .padding(.leading, 58)
+                .frame(height: 1)
+                .padding(.leading, 69)
         }
+    }
+
+    // MARK: - Invite Share Card Sheet
+
+    private var shareCardData: ShareCardData {
+        let lastRound = roundHistory.last
+        // Use ALL members (across all groups) for the share card
+        let players = allMembers.filter { !$0.name.isEmpty }
+
+        // Sort by winnings descending
+        let sorted = players.sorted {
+            (lastRound?.playerWinnings[$0.id] ?? 0) > (lastRound?.playerWinnings[$1.id] ?? 0)
+        }
+
+        let entries = sorted.map { player in
+            ShareCardEntry(
+                name: player.shortName,
+                initials: player.initials,
+                color: player.color,
+                skinsWon: lastRound?.playerWonHoles[player.id]?.count ?? 0,
+                moneyAmount: lastRound?.playerWinnings[player.id] ?? 0
+            )
+        }
+
+        let buyIn = lastRound?.buyIn ?? (Int(buyInText) ?? 0)
+
+        return ShareCardData(
+            courseName: lastRound?.courseName ?? currentCourse?.courseName ?? groupName,
+            date: lastRound?.completedAt ?? Date(),
+            teeName: lastRound?.teeBox?.name,
+            handicapPct: Int(handicapPercentage * 100),
+            entries: entries,
+            potTotal: buyIn * players.count,
+            buyIn: buyIn
+        )
+    }
+
+    private var inviteShareCardSheet: some View {
+        VStack(spacing: 0) {
+            ResultsShareCard(data: shareCardData, theme: .light, showAppStoreBadge: false)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .shadow(color: Color(red: 0.06, green: 0.09, blue: 0.16).opacity(0.08), radius: 16, x: 0, y: 12)
+                .shadow(color: Color(red: 0.06, green: 0.09, blue: 0.16).opacity(0.03), radius: 6, x: 0, y: 4)
+                .padding(.horizontal, 6)
+
+            // Invite copy
+            VStack(spacing: 8) {
+                Text("Join our skins group on Carry")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundColor(Color.textPrimary)
+
+                Text("Track your scores, see who won,\nand settle up — all in one place.")
+                    .font(.system(size: 15))
+                    .foregroundColor(Color.textTertiary)
+                    .multilineTextAlignment(.center)
+                    .lineSpacing(3)
+            }
+            .padding(.top, 24)
+            .padding(.bottom, 28)
+
+            // Copy Invite Link button
+            Button {
+                if let groupId = supabaseGroupId {
+                    let link = "https://carryapp.site/invite?group=\(groupId.uuidString)"
+                    UIPasteboard.general.string = link
+                }
+                showShareCardSheet = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    ToastManager.shared.success("Invite link copied!")
+                }
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "link")
+                        .font(.system(size: 16, weight: .semibold))
+                    Text("Copy Invite Link")
+                        .font(.carry.bodyLGSemibold)
+                }
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .frame(height: 51)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.textPrimary)
+                )
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 20)
+        }
+        .padding(.top, 8)
     }
 
     // MARK: - Drop Delegate (defined below)
 
-    // MARK: - Tee Time Binding
-
-    private func teeTimeBinding(for index: Int) -> Binding<Date>? {
-        guard index < teeTimes.count, teeTimes[index] != nil else { return nil }
-        return Binding<Date>(
-            get: { teeTimes[index] ?? Date() },
-            set: { teeTimes[index] = $0 }
-        )
-    }
-
-    // MARK: - Settings Sheet
-
-    private var settingsSheet: some View {
-        VStack(spacing: 0) {
-            Text("Settings")
-                .font(.system(size: 18, weight: .bold))
-                .foregroundColor(Color(hex: "#1A1A1A"))
-                .padding(.top, 24)
-                .padding(.bottom, 20)
-
-            // Tee times toggle
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Tee Times")
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundColor(Color(hex: "#1A1A1A"))
-                    Text("Assign a tee time per group")
-                        .font(.system(size: 12))
-                        .foregroundColor(Color(hex: "#999999"))
-                }
-                Spacer()
-                Toggle("", isOn: $showTeeTimes)
-                    .labelsHidden()
-                    .tint(Color(hex: "#1A1A1A"))
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 12)
-
-            Rectangle()
-                .fill(Color(hex: "#F0F0F0"))
-                .frame(height: 1)
-                .padding(.horizontal, 20)
-
-            // Carries toggle
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Carries")
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundColor(Color(hex: "#1A1A1A"))
-                    Text("Squashed skins carry to the next hole")
-                        .font(.system(size: 12))
-                        .foregroundColor(Color(hex: "#999999"))
-                }
-                Spacer()
-                Toggle("", isOn: $carriesEnabled)
-                    .labelsHidden()
-                    .tint(Color(hex: "#1A1A1A"))
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 12)
-
-            // First tee time picker (when enabled)
-            if showTeeTimes {
-                Rectangle()
-                    .fill(Color(hex: "#F0F0F0"))
-                    .frame(height: 1)
-                    .padding(.horizontal, 20)
-
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("First Tee Time")
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundColor(Color(hex: "#1A1A1A"))
-                        Text("Groups auto-fill at 8-min intervals")
-                            .font(.system(size: 12))
-                            .foregroundColor(Color(hex: "#999999"))
-                    }
-                    Spacer()
-                    DatePicker(
-                        "",
-                        selection: Binding<Date>(
-                            get: { teeTimes.first.flatMap { $0 } ?? defaultFirstTeeTime() },
-                            set: { newTime in
-                                if teeTimes.isEmpty { syncTeeTimes() }
-                                teeTimes[0] = newTime
-                                autoFillTeeTimes(from: 0)
-                            }
-                        ),
-                        displayedComponents: .hourAndMinute
-                    )
-                    .labelsHidden()
-                }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 12)
-            }
-
-            Spacer()
-        }
-    }
+    // Settings sheet is extracted to GroupOptionsSheet struct for performance
 
     // MARK: - Leaderboard Sheet
 
@@ -1088,143 +2338,165 @@ struct GroupManagerView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Leaderboard")
-                        .font(.system(size: 20, weight: .bold))
-                        .foregroundColor(Color(hex: "#1A1A1A"))
+                        .font(Font.system(size: 24, weight: .bold))
+                        .foregroundColor(Color.textPrimary)
                     Text(groupName)
-                        .font(.system(size: 13))
-                        .foregroundColor(Color(hex: "#999999"))
+                        .font(Font.system(size: 16, weight: .medium))
+                        .foregroundColor(Color.textSecondary)
                 }
                 Spacer()
                 Image(systemName: "chart.bar.fill")
-                    .font(.system(size: 18))
-                    .foregroundColor(Color(hex: "#C4A450"))
+                    .font(Font.system(size: 22, weight: .medium))
+                    .foregroundColor(Color.goldMuted)
             }
             .padding(.horizontal, 24)
-            .padding(.top, 28)
-            .padding(.bottom, 20)
+            .padding(.top, 34)
+            .padding(.bottom, 24)
 
-            // Season stats header
-            HStack {
-                Text("ALL TIME")
-                    .font(.system(size: 11, weight: .semibold))
-                    .tracking(1.5)
-                    .foregroundColor(Color(hex: "#BBBBBB"))
+            // Last Round | All Time tabs
+            HStack(spacing: 16) {
+                ForEach(Array(["Last Round", "All Time"].enumerated()), id: \.offset) { idx, label in
+                    Button {
+                        if idx == 1 && !storeService.isPremium {
+                            showPaywall = true
+                        } else {
+                            withAnimation(.easeOut(duration: 0.2)) {
+                                leaderboardTab = idx
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(label)
+                                .font(.system(size: 14, weight: .semibold))
+                            if idx == 1 && !storeService.isPremium {
+                                Image(systemName: "lock.fill")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(Color.goldMuted)
+                            }
+                        }
+                        .foregroundColor(leaderboardTab == idx ? .white : Color.textPrimary)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 36)
+                        .background(
+                            Capsule().fill(leaderboardTab == idx ? Color.textPrimary : Color.bgPrimary)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 14)
+
+            if roundHistory.isEmpty {
+                // Empty state — no rounds played yet
                 Spacer()
-            }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 12)
-
-            // Column headers
-            HStack(spacing: 0) {
-                Text("")
-                    .frame(width: 28) // rank column
-                Text("Player")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(Color(hex: "#999999"))
+                VStack(spacing: 8) {
+                    Text("No rounds played yet")
+                        .font(Font.system(size: 17, weight: .medium))
+                        .foregroundColor(Color.textSecondary)
+                    Text("Stats will appear here after your first round.")
+                        .font(Font.system(size: 14, weight: .medium))
+                        .foregroundColor(Color.borderMedium)
+                }
                 Spacer()
-                Text("Skins")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(Color(hex: "#999999"))
-                    .frame(width: 50, alignment: .center)
-                Text("Net")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(Color(hex: "#999999"))
-                    .frame(width: 60, alignment: .trailing)
-            }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 8)
-
-            Rectangle()
-                .fill(Color(hex: "#F0F0F0"))
-                .frame(height: 1)
+            } else {
+                // Column headers
+                HStack(spacing: 0) {
+                    Text("Player")
+                        .font(Font.system(size: 13, weight: .semibold))
+                        .foregroundColor(Color.textSecondary)
+                    Spacer()
+                    Text("Skins")
+                        .font(Font.system(size: 13, weight: .semibold))
+                        .foregroundColor(Color.textSecondary)
+                        .frame(width: 60, alignment: .center)
+                    Text("Won")
+                        .font(Font.system(size: 13, weight: .semibold))
+                        .foregroundColor(Color.textSecondary)
+                        .frame(width: 72, alignment: .trailing)
+                }
                 .padding(.horizontal, 24)
+                .padding(.bottom, 10)
 
-            // Player rows — show all members sorted by skins (placeholder: all zeros for first-time group)
-            ScrollView {
-                VStack(spacing: 0) {
-                    ForEach(Array(allAvailable.enumerated()), id: \.element.id) { rank, player in
-                        leaderboardRow(rank: rank + 1, player: player)
+                Rectangle()
+                    .fill(Color.bgPrimary)
+                    .frame(height: 1)
+                    .padding(.horizontal, 24)
 
-                        if rank < allAvailable.count - 1 {
-                            Rectangle()
-                                .fill(Color(hex: "#F5F5F5"))
-                                .frame(height: 1)
-                                .padding(.leading, 68)
-                                .padding(.trailing, 24)
+                // Player rows — sorted by net winnings
+                ScrollView {
+                    VStack(spacing: 0) {
+                        ForEach(Array(leaderboardPlayers.enumerated()), id: \.element.id) { idx, player in
+                            leaderboardRow(player: player)
+
+                            if idx < leaderboardPlayers.count - 1 {
+                                Rectangle()
+                                    .fill(Color.borderFaint)
+                                    .frame(height: 1)
+                                    .padding(.leading, 82)
+                                    .padding(.trailing, 24)
+                            }
                         }
                     }
+                }
+
+                Spacer()
+            }
+
+        }
+        .sheet(isPresented: $showPaywall) {
+            PaywallView()
+        }
+    }
+
+    private func leaderboardRow(player: Player) -> some View {
+        HStack(spacing: 12) {
+            // Avatar
+            PlayerAvatar(player: player, size: 38)
+
+            // Name + HCP
+            VStack(alignment: .leading, spacing: 1) {
+                Text(player.isPendingInvite ? formatPhoneDisplay(player.phoneNumber) : player.shortName)
+                    .font(Font.system(size: 17, weight: .semibold))
+                    .foregroundColor(Color.textPrimary)
+                    .lineLimit(1)
+                if !isQuickGame && (player.isPendingInvite || player.isGuest) {
+                    Text("Invited")
+                        .font(Font.system(size: 12, weight: .semibold))
+                        .foregroundColor(Color.debugOrange)
+                } else if player.isPendingAccept {
+                    Text("Pending")
+                        .font(Font.system(size: 12, weight: .semibold))
+                        .foregroundColor(Color.debugOrange)
+                } else {
+                    Text(formatHandicap(player.handicap))
+                        .font(Font.system(size: 12, weight: .semibold))
+                        .foregroundColor(Color.borderMedium)
                 }
             }
 
             Spacer()
 
-            // Empty state message for first-time groups
-            VStack(spacing: 8) {
-                Text("No rounds played yet")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(Color(hex: "#999999"))
-                Text("Stats will appear here after your first round.")
-                    .font(.system(size: 12))
-                    .foregroundColor(Color(hex: "#CCCCCC"))
-            }
-            .padding(.bottom, 32)
-        }
-    }
+            let stats = cumulativeStats[player.id] ?? (skins: 0, won: 0)
 
-    private func leaderboardRow(rank: Int, player: Player) -> some View {
-        HStack(spacing: 10) {
-            // Rank
-            Text("\(rank)")
-                .font(.system(size: 13, weight: rank <= 3 ? .bold : .regular))
-                .foregroundColor(rank <= 3 ? Color(hex: "#C4A450") : Color(hex: "#BBBBBB"))
-                .frame(width: 22, alignment: .center)
+            // Skins won
+            Text("\(stats.skins)")
+                .font(Font.system(size: 17, weight: .medium))
+                .foregroundColor(stats.skins > 0 ? Color.textPrimary : Color.textSecondary)
+                .frame(width: 60, alignment: .center)
 
-            // Avatar
-            ZStack {
-                Circle()
-                    .fill(Color(hex: player.color).opacity(0.09))
-                Circle()
-                    .strokeBorder(Color(hex: player.color).opacity(0.25), lineWidth: 1.5)
-                Text(player.avatar)
-                    .font(.system(size: 14))
-            }
-            .frame(width: 32, height: 32)
-
-            // Name + HCP
-            VStack(alignment: .leading, spacing: 1) {
-                Text(player.name)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(Color(hex: "#1A1A1A"))
-                Text("HCP \(String(format: "%.1f", player.handicap))")
-                    .font(.system(size: 10))
-                    .foregroundColor(Color(hex: "#CCCCCC"))
-            }
-
-            Spacer()
-
-            // Skins won (placeholder: 0)
-            Text("0")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundColor(Color(hex: "#BBBBBB"))
-                .frame(width: 50, alignment: .center)
-
-            // Net winnings (placeholder: $0)
-            Text("$0")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundColor(Color(hex: "#BBBBBB"))
-                .frame(width: 60, alignment: .trailing)
+            // Winnings
+            Text("$\(stats.won)")
+                .font(Font.system(size: 17, weight: .medium))
+                .foregroundColor(stats.won > 0 ? Color.goldMuted : Color.textSecondary)
+                .frame(width: 72, alignment: .trailing)
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 10)
     }
 
     private func defaultFirstTeeTime() -> Date {
-        var cal = Calendar.current
-        cal.timeZone = .current
-        var comps = cal.dateComponents([.year, .month, .day], from: Date())
-        comps.hour = 8
-        comps.minute = 0
-        return cal.date(from: comps) ?? Date()
+        Date()
     }
 
     // MARK: - Add Player Sheet
@@ -1232,9 +2504,9 @@ struct GroupManagerView: View {
     private var addPlayerSheet: some View {
         VStack(spacing: 0) {
             Text("Add Player")
-                .font(.system(size: 18, weight: .bold))
-                .foregroundColor(Color(hex: "#1A1A1A"))
-                .padding(.top, 24)
+                .font(.carry.labelBold)
+                .foregroundColor(Color.textPrimary)
+                .padding(.top, 40)
                 .padding(.bottom, 20)
 
             // Guest option
@@ -1247,27 +2519,27 @@ struct GroupManagerView: View {
                 HStack(spacing: 14) {
                     ZStack {
                         Circle()
-                            .fill(Color(hex: "#F0F0F0"))
+                            .fill(Color.bgPrimary)
                         Image(systemName: "person.badge.plus")
-                            .font(.system(size: 16))
-                            .foregroundColor(Color(hex: "#1A1A1A"))
+                            .font(.carry.bodyLG)
+                            .foregroundColor(Color.textPrimary)
                     }
                     .frame(width: 40, height: 40)
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Add Guest")
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundColor(Color(hex: "#1A1A1A"))
+                            .font(.carry.body)
+                            .foregroundColor(Color.textPrimary)
                         Text("Temporary player for this round")
-                            .font(.system(size: 12))
-                            .foregroundColor(Color(hex: "#999999"))
+                            .font(.carry.caption)
+                            .foregroundColor(Color.textSecondary)
                     }
 
                     Spacer()
 
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 13))
-                        .foregroundColor(Color(hex: "#CCCCCC"))
+                        .font(.carry.captionLG)
+                        .foregroundColor(Color.borderMedium)
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 12)
@@ -1275,39 +2547,41 @@ struct GroupManagerView: View {
             .buttonStyle(.plain)
 
             Rectangle()
-                .fill(Color(hex: "#F0F0F0"))
+                .fill(Color.bgPrimary)
                 .frame(height: 1)
                 .padding(.leading, 74)
 
-            // Add to group option
+            // Invite by phone option
             Button {
                 showAddSheet = false
-                // TODO: Invite existing Carry user flow
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    showInviteEntry = true
+                }
             } label: {
                 HStack(spacing: 14) {
                     ZStack {
                         Circle()
-                            .fill(Color(hex: "#F0F0F0"))
-                        Image(systemName: "person.2.badge.plus")
-                            .font(.system(size: 14))
-                            .foregroundColor(Color(hex: "#1A1A1A"))
+                            .fill(Color.bgPrimary)
+                        Image(systemName: "phone.fill")
+                            .font(.carry.bodyLG)
+                            .foregroundColor(Color.textPrimary)
                     }
                     .frame(width: 40, height: 40)
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Add to Group")
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundColor(Color(hex: "#1A1A1A"))
-                        Text("Invite an existing Carry member")
-                            .font(.system(size: 12))
-                            .foregroundColor(Color(hex: "#999999"))
+                        Text("Invite via SMS")
+                            .font(.carry.body)
+                            .foregroundColor(Color.textPrimary)
+                        Text("Send a link to download the app")
+                            .font(.carry.caption)
+                            .foregroundColor(Color.textSecondary)
                     }
 
                     Spacer()
 
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 13))
-                        .foregroundColor(Color(hex: "#CCCCCC"))
+                        .font(.carry.captionLG)
+                        .foregroundColor(Color.borderMedium)
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 12)
@@ -1323,55 +2597,43 @@ struct GroupManagerView: View {
     private var guestEntrySheet: some View {
         VStack(spacing: 0) {
             Text("Add Guest")
-                .font(.system(size: 18, weight: .bold))
-                .foregroundColor(Color(hex: "#1A1A1A"))
-                .padding(.top, 24)
+                .font(.carry.labelBold)
+                .foregroundColor(Color.textPrimary)
+                .padding(.top, 40)
                 .padding(.bottom, 24)
 
             VStack(spacing: 16) {
                 // Name field
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("NAME")
-                        .font(.system(size: 11, weight: .semibold))
-                        .tracking(1.5)
-                        .foregroundColor(Color(hex: "#BBBBBB"))
+                    Text("Name")
+                        .font(.carry.bodySMBold)
+                        .foregroundColor(Color.textPrimary)
                         .padding(.leading, 4)
 
                     TextField("Guest name", text: $guestName)
-                        .font(.system(size: 16))
-                        .padding(.vertical, 14)
-                        .padding(.horizontal, 16)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(.white)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .strokeBorder(Color(hex: "#E0E0E0"), lineWidth: 1)
-                        )
+                        .font(.carry.bodyLG)
+                        .focused($gmFocused, equals: .guestName)
+                        .carryInput(focused: gmFocused == .guestName)
                 }
 
-                // Handicap field
+                // Index field
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("HANDICAP")
-                        .font(.system(size: 11, weight: .semibold))
-                        .tracking(1.5)
-                        .foregroundColor(Color(hex: "#BBBBBB"))
+                    Text("Index")
+                        .font(.carry.bodySMBold)
+                        .foregroundColor(Color.textPrimary)
                         .padding(.leading, 4)
 
-                    TextField("e.g. 12.4", text: $guestHandicap)
-                        .font(.system(size: 16))
-                        .keyboardType(.decimalPad)
-                        .padding(.vertical, 14)
-                        .padding(.horizontal, 16)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(.white)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .strokeBorder(Color(hex: "#E0E0E0"), lineWidth: 1)
-                        )
+                    TextField("e.g. 12.4 or +1.2", text: $guestHandicap)
+                        .font(.carry.bodyLG)
+                        .focused($gmFocused, equals: .guestHandicap)
+                        .keyboardType(.numbersAndPunctuation)
+                        .onChange(of: guestHandicap) {
+                            let filtered = filterHandicapInput(guestHandicap)
+                            if filtered != guestHandicap {
+                                DispatchQueue.main.async { guestHandicap = filtered }
+                            }
+                        }
+                        .carryInput(focused: gmFocused == .guestHandicap)
                 }
             }
             .padding(.horizontal, 24)
@@ -1383,22 +2645,237 @@ struct GroupManagerView: View {
                 addGuest()
             } label: {
                 Text("Add Guest")
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.carry.headline)
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
                     .frame(height: 52)
                     .background(
-                        RoundedRectangle(cornerRadius: 12)
+                        RoundedRectangle(cornerRadius: 14)
                             .fill(!guestName.trimmingCharacters(in: .whitespaces).isEmpty
-                                  ? Color(hex: "#1A1A1A")
-                                  : Color(hex: "#CCCCCC"))
+                                  ? Color.textPrimary
+                                  : Color.borderSubtle)
                     )
             }
             .disabled(guestName.trimmingCharacters(in: .whitespaces).isEmpty)
             .padding(.horizontal, 24)
             .padding(.bottom, 30)
         }
-        .background(Color(hex: "#F0F0F0"))
+        .background(Color.bgPrimary)
+    }
+
+    // MARK: - Invite Entry Sheet
+
+    private var inviteEntrySheet: some View {
+        VStack(spacing: 0) {
+            Text("Invite via SMS")
+                .font(.carry.labelBold)
+                .foregroundColor(Color.textPrimary)
+                .padding(.top, 40)
+                .padding(.bottom, 6)
+
+            Text("They'll appear as pending until they sign up.")
+                .font(.carry.captionLG)
+                .foregroundColor(Color.textSecondary)
+                .padding(.bottom, 24)
+
+            if inviteSent {
+                // Success state
+                Spacer()
+
+                VStack(spacing: 16) {
+                    ZStack {
+                        Circle()
+                            .fill(Color(hexString: "#34C759").opacity(0.2))
+                            .frame(width: 72, height: 72)
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 30, weight: .bold))
+                            .foregroundColor(Color.textPrimary.opacity(0.7))
+                    }
+
+                    Text("Invite Sent!")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(Color.textPrimary)
+                }
+                .padding(.horizontal, 24)
+
+                Spacer()
+
+                Button {
+                    inviteSent = false
+                    invitePhone = ""
+                    showInviteEntry = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                        showManageMembers = true
+                    }
+                } label: {
+                    Text("Done")
+                        .font(.carry.headline)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 52)
+                        .background(RoundedRectangle(cornerRadius: 14).fill(Color.textPrimary))
+                }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 30)
+            } else {
+                // Phone input
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Phone Number")
+                        .font(.carry.bodySMBold)
+                        .foregroundColor(Color.textPrimary)
+                        .padding(.leading, 4)
+
+                    TextField("(555) 123-4567", text: $invitePhone)
+                        .font(.carry.bodyLG)
+                        .focused($gmFocused, equals: .invitePhone2)
+                        .keyboardType(.phonePad)
+                        .onChange(of: invitePhone) {
+                            invitePhone = invitePhone.filter { $0.isNumber || $0 == "+" }
+                        }
+                        .carryInput(focused: gmFocused == .invitePhone2)
+                }
+                .padding(.horizontal, 24)
+
+                Spacer()
+
+                Button {
+                    sendInvite()
+                } label: {
+                    Text("Send Invite")
+                        .font(.carry.headline)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 52)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14)
+                                .fill(invitePhone.filter({ $0.isNumber }).count >= 10
+                                      ? Color.textPrimary
+                                      : Color.borderSubtle)
+                        )
+                }
+                .disabled(invitePhone.filter({ $0.isNumber }).count < 10)
+                .padding(.horizontal, 24)
+                .padding(.bottom, 30)
+            }
+        }
+        .background(Color.bgPrimary)
+        .animation(.spring(response: 0.4, dampingFraction: 0.9), value: inviteSent)
+    }
+
+    private func sendInvite() {
+        let digits = invitePhone.filter { $0.isNumber }
+        guard digits.count >= 10 else { return }
+
+        let guestColors = ["#E67E22", "#9B59B6", "#1ABC9C", "#C0392B", "#2980B9", "#27AE60"]
+        let colorIdx = (nextGuestID - 100) % guestColors.count
+
+        let invited = Player(
+            id: nextGuestID,
+            name: "Invited",
+            initials: "✉️",
+            color: guestColors[colorIdx],
+            handicap: 0,
+            avatar: "✉️",
+            group: 1,
+            ghinNumber: nil,
+            venmoUsername: nil,
+            phoneNumber: digits,
+            isPendingInvite: true
+        )
+
+        guests.append(invited)
+        selectedIDs.insert(invited.id)
+        nextGuestID += 1
+
+        withAnimation {
+            inviteSent = true
+        }
+
+        // Create Supabase invite record + send SMS with deep link
+        if let groupId = supabaseGroupId {
+            Task {
+                guard let userId = try? await SupabaseManager.shared.client.auth.session.user.id else { return }
+                let groupService = GroupService()
+                do {
+                    try await groupService.inviteMemberByPhone(groupId: groupId, phone: digits, invitedBy: userId)
+                    // Open native SMS with deep link
+                    let encodedLink = "https://carryapp.site/invite?group=\(groupId.uuidString)"
+                    if let smsURL = URL(string: "sms:\(digits)&body=Join%20my%20skins%20game%20on%20Carry!%20\(encodedLink)") {
+                        await MainActor.run { UIApplication.shared.open(smsURL) }
+                    }
+                } catch {
+                    #if DEBUG
+                    print("[Carry] Failed to create SMS invite record: \(error)")
+                    #endif
+                    // Still open SMS even if Supabase fails
+                    let encodedLink = "https://carryapp.site/invite?group=\(groupId.uuidString)"
+                    if let smsURL = URL(string: "sms:\(digits)&body=Join%20my%20skins%20game%20on%20Carry!%20\(encodedLink)") {
+                        await MainActor.run { UIApplication.shared.open(smsURL) }
+                    }
+                }
+            }
+        } else {
+            // No Supabase group yet — send basic SMS
+            if let smsURL = URL(string: "sms:\(digits)&body=Join%20my%20skins%20game%20on%20Carry!%20Download%20here%3A%20https%3A%2F%2Fcarryapp.site") {
+                UIApplication.shared.open(smsURL)
+            }
+        }
+        #if DEBUG
+        print("[Carry] Invite SMS sent to \(formatPhoneDisplay(digits))")
+        #endif
+
+        regroup()
+        ToastManager.shared.success("Invite sent to \(formatPhoneDisplay(digits))")
+    }
+
+    /// Filter handicap/index input: digits + one decimal, max 1 decimal place, capped at 54.0
+    /// Allows 0…54.0 or +0.1…+10.0 (plus handicap) with one decimal place.
+    private func filterHandicapInput(_ input: String) -> String {
+        var filtered = ""
+        var hasDecimal = false
+        var hasPlus = false
+        var decimalDigits = 0
+        for ch in input {
+            if ch == "+" && filtered.isEmpty && !hasPlus {
+                hasPlus = true
+                filtered.append(ch)
+            } else if (ch == "." || ch == ",") && !hasDecimal {
+                hasDecimal = true
+                filtered.append(ch)
+            } else if ch.isNumber {
+                if hasDecimal {
+                    guard decimalDigits < 1 else { continue }
+                    filtered.append(ch)
+                    decimalDigits += 1
+                } else {
+                    filtered.append(ch)
+                }
+            }
+        }
+        let numericStr = filtered.hasPrefix("+") ? String(filtered.dropFirst()) : filtered
+        if let value = Double(numericStr) {
+            if hasPlus && value > 10.0 { filtered = "+10.0" }
+            else if !hasPlus && value > 54.0 { filtered = "54.0" }
+        }
+        return filtered
+    }
+
+    /// Formats a phone number for display: (555) 123-4567
+    private func formatPhoneDisplay(_ phone: String?) -> String {
+        guard let phone = phone else { return "Invited" }
+        let digits = phone.filter { $0.isNumber }
+        if digits.count == 10 {
+            let area = digits.prefix(3)
+            let mid = digits.dropFirst(3).prefix(3)
+            let last = digits.suffix(4)
+            return "(\(area)) \(mid)-\(last)"
+        } else if digits.count == 11 && digits.first == "1" {
+            let area = digits.dropFirst(1).prefix(3)
+            let mid = digits.dropFirst(4).prefix(3)
+            let last = digits.suffix(4)
+            return "(\(area)) \(mid)-\(last)"
+        }
+        return phone
     }
 
     // MARK: - Add Guest
@@ -1407,7 +2884,9 @@ struct GroupManagerView: View {
         let trimmedName = guestName.trimmingCharacters(in: .whitespaces)
         guard !trimmedName.isEmpty else { return }
 
-        let hcp = Double(guestHandicap) ?? 0.0
+        let hcp = guestHandicap.hasPrefix("+")
+            ? -(Double(String(guestHandicap.dropFirst())) ?? 0.0)
+            : Double(guestHandicap) ?? 0.0
         let guestColors = ["#E67E22", "#9B59B6", "#1ABC9C", "#C0392B", "#2980B9", "#27AE60"]
         let guestAvatars = ["👤", "🎩", "🧢", "🕶️", "⛳", "🏌️"]
         let colorIdx = (nextGuestID - 100) % guestColors.count
@@ -1421,7 +2900,8 @@ struct GroupManagerView: View {
             handicap: hcp,
             avatar: guestAvatars[avatarIdx],
             group: 1,
-            ghinNumber: nil
+            ghinNumber: nil,
+            venmoUsername: nil
         )
 
         guests.append(guest)
@@ -1434,6 +2914,7 @@ struct GroupManagerView: View {
         showGuestEntry = false
 
         regroup()
+        ToastManager.shared.success("\(guest.name) added to \(groupName)")
     }
 
     // MARK: - Move Player
@@ -1479,6 +2960,617 @@ struct GroupManagerView: View {
             selectedTees.insert(tee, at: target)
         }
     }
+
+    // MARK: - Sync Player Order to Supabase
+
+    private func syncPlayerOrderToSupabase() {
+        guard let groupId = supabaseGroupId else { return }
+        var order: [(playerId: UUID, sortOrder: Int)] = []
+        var index = 0
+        for group in groups {
+            for player in group {
+                if let profileId = player.profileId {
+                    order.append((playerId: profileId, sortOrder: index))
+                }
+                index += 1
+            }
+        }
+        Task {
+            do {
+                try await GroupService().savePlayerOrder(groupId: groupId, order: order)
+            } catch {
+                #if DEBUG
+                print("[GroupManager] Failed to sync player order: \(error)")
+                #endif
+            }
+        }
+    }
+}
+
+// MARK: - Group Options Sheet (extracted for performance)
+
+struct GroupOptionsSheet: View {
+    @EnvironmentObject var storeService: StoreService
+    // All plain values — no @Binding to parent
+    let isCreator: Bool
+    let isLiveRound: Bool
+    let isQuickGame: Bool
+    let onCancel: () -> Void
+    let onSave: (GroupOptionsResult) -> Void
+    let onLeaveGroup: (() -> Void)?
+    let onDeleteGroup: (() -> Void)?
+
+    struct GroupOptionsResult {
+        let groupName: String
+        let carriesEnabled: Bool
+        let scoringMode: ScoringMode
+        let handicapPercentage: Double
+        let buyInText: String
+        let teeTime: Date?
+        let changedCourse: SelectedCourse?
+        let recurrence: GameRecurrence?
+        let clearRecurrence: Bool
+    }
+
+    // All local state
+    @State private var localGroupName: String
+    @State private var localTeeTime: Date?
+    @State private var localCarries: Bool
+    @State private var localScoringMode: ScoringMode
+    @State private var localHandicap: Double
+    @State private var localBuyIn: String
+    @State private var showCarriesInfo = false
+    @State private var showLeaveDeleteConfirm = false
+    @State private var localCourse: SelectedCourse?
+    @State private var showCourseSelector = false
+    @State private var showOptTeeTimePicker = false
+    @State private var optScheduleMode: Int = 0  // 0=Single, 1=Recurring
+    @State private var optRepeatMode: Int = 0    // 0=Weekly, 1=Biweekly, 2=Monthly
+    @State private var optSelectedDay: Int? = nil // pill index 0=Mon..6=Sun
+    @State private var optScheduleDate: Date = Date()
+    @FocusState private var sheetFocused: Bool
+    private static let optDayLabels = ["M", "T", "W", "T", "F", "S", "S"]
+
+    init(
+        isCreator: Bool,
+        isLiveRound: Bool = false,
+        isQuickGame: Bool = false,
+        groupName: String,
+        carriesEnabled: Bool,
+        scoringMode: ScoringMode = .single,
+        handicapPercentage: Double,
+        buyInText: String,
+        teeTime: Date?,
+        currentCourse: SelectedCourse?,
+        recurrence: GameRecurrence? = nil,
+        onCancel: @escaping () -> Void,
+        onSave: @escaping (GroupOptionsResult) -> Void,
+        onLeaveGroup: (() -> Void)?,
+        onDeleteGroup: (() -> Void)?
+    ) {
+        self.isCreator = isCreator
+        self.isLiveRound = isLiveRound
+        self.isQuickGame = isQuickGame
+        self.onCancel = onCancel
+        self.onSave = onSave
+        self.onLeaveGroup = onLeaveGroup
+        self.onDeleteGroup = onDeleteGroup
+        _localGroupName = State(initialValue: groupName)
+        _localCarries = State(initialValue: carriesEnabled)
+        _localScoringMode = State(initialValue: scoringMode)
+        _localHandicap = State(initialValue: handicapPercentage)
+        _localBuyIn = State(initialValue: buyInText)
+        _localTeeTime = State(initialValue: teeTime)
+        _localCourse = State(initialValue: currentCourse)
+        _optScheduleDate = State(initialValue: teeTime ?? Date())
+        // Pre-fill schedule from recurrence
+        if let rec = recurrence {
+            _optScheduleMode = State(initialValue: 1)
+            switch rec {
+            case .weekly(let d):
+                _optRepeatMode = State(initialValue: 0)
+                _optSelectedDay = State(initialValue: GameRecurrence.pillIndex(fromWeekday: d))
+            case .biweekly(let d):
+                _optRepeatMode = State(initialValue: 1)
+                _optSelectedDay = State(initialValue: GameRecurrence.pillIndex(fromWeekday: d))
+            case .monthly:
+                _optRepeatMode = State(initialValue: 2)
+            }
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                // Header with Cancel + Title + Save
+                ZStack {
+                    Text("Game Options")
+                        .font(.carry.headline)
+                        .foregroundColor(Color.textPrimary)
+
+                    HStack {
+                        Button {
+                            onCancel()
+                        } label: {
+                            Text("Cancel")
+                                .font(.carry.body)
+                                .foregroundColor(Color.textTertiary)
+                        }
+                        Spacer()
+                        Button {
+                            let rec: GameRecurrence? = {
+                                guard optScheduleMode == 1 else { return nil }
+                                switch optRepeatMode {
+                                case 0:
+                                    guard let pill = optSelectedDay else { return nil }
+                                    return .weekly(dayOfWeek: GameRecurrence.weekday(fromPillIndex: pill))
+                                case 1:
+                                    guard let pill = optSelectedDay else { return nil }
+                                    return .biweekly(dayOfWeek: GameRecurrence.weekday(fromPillIndex: pill))
+                                case 2:
+                                    let day = Calendar.current.component(.day, from: optScheduleDate)
+                                    return .monthly(dayOfMonth: day)
+                                default: return nil
+                                }
+                            }()
+                            onSave(GroupOptionsResult(
+                                groupName: localGroupName,
+                                carriesEnabled: localCarries,
+                                scoringMode: localScoringMode,
+                                handicapPercentage: localHandicap,
+                                buyInText: localBuyIn,
+                                teeTime: optScheduleDate,
+                                changedCourse: localCourse,
+                                recurrence: rec,
+                                clearRecurrence: optScheduleMode == 0
+                            ))
+                        } label: {
+                            Text("Save")
+                                .font(.carry.bodySemibold)
+                                .foregroundColor(Color.textPrimary)
+                        }
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 24)
+                .padding(.bottom, 20)
+
+                if isCreator {
+                    creatorContent
+                } else {
+                    memberContent
+                }
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .onTapGesture { sheetFocused = false }
+            .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") { sheetFocused = false }
+                        .font(.system(size: 16, weight: .semibold))
+                }
+            }
+            .navigationBarHidden(true)
+        }
+    }
+
+    // MARK: - Member
+
+    private var memberContent: some View {
+        VStack(spacing: 0) {
+            // Leave Group (hidden for quick games)
+            if !isQuickGame, let leave = onLeaveGroup {
+                Button {
+                    leave()
+                } label: {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Leave Group")
+                                .font(.carry.bodyLG)
+                                .foregroundColor(Color.textPrimary)
+                            Text("You'll be removed from this game")
+                                .font(.carry.captionLG)
+                                .foregroundColor(Color.textSecondary)
+                        }
+                        Spacer()
+                    }
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 14)
+            }
+
+            Spacer()
+        }
+    }
+
+    // MARK: - Creator
+
+    private var creatorContent: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                // Group Name (hidden for quick games)
+                if !isQuickGame {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Group Name")
+                        .font(.carry.bodySMBold)
+                        .foregroundColor(Color.textPrimary)
+                        .padding(.leading, 4)
+                    TextField("Friday Skins", text: $localGroupName)
+                        .font(.carry.bodyLG)
+                        .focused($sheetFocused)
+                        .carryInput(focused: sheetFocused)
+                }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 20)
+                }
+
+                // Tee Time / Schedule
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text("Tee Time")
+                            .font(.carry.bodySMBold)
+                            .foregroundColor(Color.textPrimary)
+                        Text("Tee times can be updated")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(Color.textSecondary)
+                    }
+                    .padding(.leading, 4)
+
+                    Button {
+                        showOptTeeTimePicker = true
+                    } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                let df = DateFormatter()
+                                Text({
+                                    df.dateFormat = "EEE, MMM d · h:mm a"
+                                    return df.string(from: optScheduleDate)
+                                }())
+                                    .font(.carry.bodyLG)
+                                    .foregroundColor(Color.textPrimary)
+
+                                if optScheduleMode == 1 {
+                                    let freqLabel = optRepeatMode == 0 ? "Weekly" : optRepeatMode == 1 ? "Every 2 weeks" : "Monthly"
+                                    Text(freqLabel)
+                                        .font(.carry.caption)
+                                        .foregroundColor(Color.textTertiary)
+                                }
+                            }
+                            Spacer()
+                            Text("Change")
+                                .font(.carry.captionLG)
+                                .foregroundColor(Color.textTertiary)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.vertical, 14)
+                    .padding(.horizontal, 16)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(.white)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .strokeBorder(Color.borderLight, lineWidth: 1)
+                    )
+                }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 20)
+                .sheet(isPresented: $showOptTeeTimePicker) {
+                    if isQuickGame {
+                        // Quick game: simple date/time picker, no recurrence
+                        VStack(spacing: 0) {
+                            Text("Set Tee Time")
+                                .font(.carry.labelBold)
+                                .foregroundColor(Color.textPrimary)
+                                .padding(.top, 40)
+                                .padding(.bottom, 24)
+                            Spacer()
+                            DatePicker("", selection: $optScheduleDate, displayedComponents: [.date, .hourAndMinute])
+                                .datePickerStyle(.wheel)
+                                .labelsHidden()
+                                .frame(height: 160)
+                                .clipped()
+                                .padding(.horizontal, 40)
+                            Spacer()
+                            Button {
+                                showOptTeeTimePicker = false
+                            } label: {
+                                Text("Set Tee Time")
+                                    .font(.carry.sectionTitle)
+                                    .foregroundColor(.white)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 18)
+                                    .background(RoundedRectangle(cornerRadius: 19).fill(Color.textPrimary))
+                            }
+                            .padding(.horizontal, 24)
+                            .padding(.bottom, 24)
+                        }
+                        .presentationDetents([.medium])
+                        .presentationDragIndicator(.visible)
+                    } else {
+                        TeeTimePickerSheet(
+                            scheduleMode: $optScheduleMode,
+                            selectedDate: $optScheduleDate,
+                            repeatMode: $optRepeatMode,
+                            selectedDayPill: $optSelectedDay,
+                            onSet: { showOptTeeTimePicker = false },
+                            onCancel: { showOptTeeTimePicker = false }
+                        )
+                        .presentationDetents([.large])
+                        .presentationDragIndicator(.visible)
+                        .presentationBackground(.white)
+                    }
+                }
+
+                // Course
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Course")
+                        .font(.carry.bodySMBold)
+                        .foregroundColor(Color.textPrimary)
+                        .padding(.leading, 4)
+
+                    Button {
+                        guard !isLiveRound else { return }
+                        showCourseSelector = true
+                    } label: {
+                        if let course = localCourse {
+                            HStack(spacing: 12) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(course.courseName)
+                                        .font(.carry.bodySemibold)
+                                        .foregroundColor(Color.textPrimary)
+                                    if let tee = course.teeBox {
+                                        HStack(spacing: 5) {
+                                            Circle()
+                                                .fill(Color(hexString: tee.color))
+                                                .frame(width: 6, height: 6)
+                                            Text(tee.name)
+                                                .font(.carry.caption)
+                                                .foregroundColor(Color.textSecondary)
+                                            Text("·")
+                                                .foregroundColor(Color.textDisabled)
+                                            Text(String(format: "%.1f / %d", tee.courseRating, tee.slopeRating))
+                                                .font(.carry.caption)
+                                                .foregroundColor(Color.textSecondary)
+                                        }
+                                    }
+                                }
+                                Spacer()
+                                Text(isLiveRound ? "Locked" : "Change")
+                                    .font(.carry.bodySM)
+                                    .foregroundColor(Color.textTertiary)
+                            }
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 12)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .strokeBorder(Color.borderLight, lineWidth: 1)
+                            )
+                        } else {
+                            HStack {
+                                Text("Select a course")
+                                    .font(.carry.bodyLG)
+                                    .foregroundColor(Color.textDisabled)
+                                Spacer()
+                                Image(systemName: "chevron.up.chevron.down")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundColor(Color.borderMedium)
+                            }
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 14)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .strokeBorder(Color.borderLight, lineWidth: 1)
+                            )
+                        }
+                    }
+                    .buttonStyle(.plain)
+
+                    // Handicap Allowance (only when course is selected)
+                    if localCourse != nil {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("Handicap Allowance")
+                                    .font(.carry.bodySMBold)
+                                    .foregroundColor(Color.textPrimary)
+                                Spacer()
+                                Text("\(Int(localHandicap * 100))%")
+                                    .font(.carry.captionLGSemibold)
+                                    .foregroundColor(Color.textPrimary)
+                            }
+                            if isLiveRound {
+                                Text("Locked during active round")
+                                    .font(.carry.caption)
+                                    .foregroundColor(Color.textDisabled)
+                            }
+                            Slider(value: $localHandicap, in: 0.1...1.0, step: 0.05)
+                                .tint(Color.textPrimary)
+                                .disabled(isLiveRound)
+                        }
+                        .padding(.horizontal, 4)
+                        .padding(.top, 12)
+                        .opacity(isLiveRound ? 0.5 : 1)
+                    }
+                }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 20)
+                .sheet(isPresented: $showCourseSelector) {
+                    CourseSelectionView { course in
+                        localCourse = course
+                        showCourseSelector = false
+                    }
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
+                    .presentationBackground(.white)
+                }
+
+                // Buy-In per Player
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Buy-In per Player")
+                        .font(.carry.bodySMBold)
+                        .foregroundColor(Color.textPrimary)
+                        .padding(.leading, 4)
+
+                    VStack(spacing: 8) {
+                        HStack {
+                            Text("$\(Int(Double(localBuyIn) ?? 0))")
+                                .font(.system(size: 32, weight: .bold))
+                                .foregroundColor(Color.textPrimary)
+                            Spacer()
+                        }
+                        Slider(
+                            value: Binding(
+                                get: { Double(localBuyIn) ?? 0 },
+                                set: { localBuyIn = "\(Int($0))" }
+                            ),
+                            in: 0...1000,
+                            step: 5
+                        )
+                        .tint(Color.goldAccent)
+                        .disabled(isLiveRound)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .strokeBorder(Color.borderLight, lineWidth: 1)
+                    )
+                }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 20)
+                .opacity(isLiveRound ? 0.5 : 1)
+
+                // Carries
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("Carries")
+                            .font(.carry.bodySMBold)
+                            .foregroundColor(Color.textPrimary)
+                        if isQuickGame && !storeService.isPremium {
+                            Image(systemName: "lock.fill")
+                                .font(.system(size: 11))
+                                .foregroundColor(Color.textDisabled)
+                        }
+                    }
+                    .padding(.leading, 4)
+
+                    HStack {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Skins carry to the next hole")
+                                .font(.carry.bodySM)
+                                .foregroundColor(Color.textPrimary)
+                            if isQuickGame && !storeService.isPremium {
+                                Text("Premium feature")
+                                    .font(.carry.caption)
+                                    .foregroundColor(Color.textDisabled)
+                            } else if isLiveRound {
+                                Text("Locked during active round")
+                                    .font(.carry.caption)
+                                    .foregroundColor(Color.textDisabled)
+                            }
+                        }
+                        Spacer()
+                        Toggle("", isOn: $localCarries)
+                            .labelsHidden()
+                            .tint(Color.textPrimary)
+                            .disabled(isLiveRound || (isQuickGame && !storeService.isPremium))
+                    }
+                    .padding(.leading, 4)
+                }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 20)
+                .opacity(isLiveRound || (isQuickGame && !storeService.isPremium) ? 0.5 : 1)
+                .alert("What are Carries?", isPresented: $showCarriesInfo) {
+                    Button("Got it", role: .cancel) {}
+                } message: {
+                    Text("When no one wins a hole outright, the skin carries over and adds to the next hole's value. The next outright winner takes all accumulated skins.\n\nWhen off, tied holes are dead — no carryover.")
+                }
+
+                // Scoring Mode (hidden for quick games — single scorer only)
+                if !isQuickGame {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Everyone Can Score")
+                        .font(.carry.bodySMBold)
+                        .foregroundColor(Color.textPrimary)
+                        .padding(.leading, 4)
+
+                    HStack {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Any player can enter and verify scores")
+                                .font(.carry.bodySM)
+                                .foregroundColor(Color.textPrimary)
+                            if isLiveRound {
+                                Text("Locked during active round")
+                                    .font(.carry.caption)
+                                    .foregroundColor(Color.textDisabled)
+                            }
+                        }
+                        Spacer()
+                        Toggle("", isOn: Binding(
+                            get: { localScoringMode == .everyone },
+                            set: { localScoringMode = $0 ? .everyone : .single }
+                        ))
+                            .labelsHidden()
+                            .tint(Color.textPrimary)
+                            .disabled(isLiveRound)
+                    }
+                    .padding(.leading, 4)
+                }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 20)
+                .opacity(isLiveRound ? 0.5 : 1)
+                }
+
+                // Delete Group / Game
+                if let delete = onDeleteGroup {
+                    Button {
+                        delete()
+                    } label: {
+                        Text(isQuickGame ? "Delete Game" : "Delete Group")
+                            .font(.carry.bodySMBold)
+                            .foregroundColor(.red)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 24)
+                    .padding(.top, 12)
+                }
+
+                Spacer().frame(height: 40)
+            }
+        }
+    }
+
+
+    // MARK: - Helpers
+
+    private var divider: some View {
+        Rectangle()
+            .fill(Color.bgPrimary)
+            .frame(height: 1)
+            .padding(.horizontal, 20)
+    }
+
+    private func row<Trailing: View>(title: String, subtitle: String, @ViewBuilder trailing: () -> Trailing) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.carry.bodyLG)
+                    .foregroundColor(Color.textPrimary)
+                Text(subtitle)
+                    .font(.carry.captionLG)
+                    .foregroundColor(Color.textSecondary)
+            }
+            Spacer()
+            trailing()
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 14)
+    }
+
 }
 
 // MARK: - Group Drop Delegate

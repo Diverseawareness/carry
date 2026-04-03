@@ -18,6 +18,9 @@ build/
 *.dSYM.zip
 *.dSYM
 
+# Secrets
+Secrets.xcconfig
+
 # Swift Package Manager
 .build/
 Package.resolved
