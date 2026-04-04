@@ -1541,6 +1541,46 @@ struct GroupManagerView: View {
         return config
     }
 
+    // MARK: - Remove Player (swipe-to-delete)
+
+    private func removePlayer(_ player: Player, fromGroup groupIndex: Int) {
+        guard groupIndex < groups.count else { return }
+
+        // Remove from this group
+        groups[groupIndex].removeAll { $0.id == player.id }
+
+        if isQuickGame {
+            // Quick Game: remove entirely
+            allMembers.removeAll { $0.id == player.id }
+            selectedIDs.remove(player.id)
+
+            // Persist to Supabase
+            if let groupId = supabaseGroupId, let profileId = player.profileId {
+                Task {
+                    try? await SupabaseManager.shared.client
+                        .from("group_members")
+                        .delete()
+                        .eq("group_id", value: groupId.uuidString)
+                        .eq("player_id", value: profileId.uuidString)
+                        .execute()
+                }
+            }
+        } else {
+            // Regular group: just deselect from tee sheet (stays in allMembers for re-add)
+            selectedIDs.remove(player.id)
+        }
+
+        // If group is now empty, remove the group
+        if groups[groupIndex].isEmpty {
+            groups.remove(at: groupIndex)
+        }
+
+        // Re-sync dependent arrays
+        syncTeeTimes()
+        syncScorerIDs()
+        syncSelectedTees()
+    }
+
     // MARK: - Focus State (for guest entry / invite entry sheets)
 
     enum GMField: Hashable { case buyIn, guestName, guestHandicap, invitePhone2 }
@@ -1995,7 +2035,14 @@ struct GroupManagerView: View {
                 .frame(height: 1)
 
             ForEach(players) { player in
-                groupPlayerRow(player: player, groupIndex: index, isLast: player.id == players.last?.id)
+                SwipeToDeleteRow(enabled: isCreator && !isLiveRound && !roundStarted) {
+                    removePlayer(player, fromGroup: index)
+                } content: {
+                    VStack(spacing: 0) {
+                        groupPlayerRow(player: player, groupIndex: index, isLast: player.id == players.last?.id)
+                    }
+                    .background(.white)
+                }
             }
 
             Spacer().frame(height: 10)
@@ -3707,5 +3754,89 @@ struct GroupDropDelegate: DropDelegate {
         dragSourceGroup = nil
         dropTargetGroup = nil
         dropTargetIndex = nil
+    }
+}
+
+// MARK: - Swipe-to-Delete Row Wrapper
+
+/// Custom swipe-to-reveal-delete row. Works alongside drag-and-drop (no List required).
+private struct SwipeToDeleteRow<Content: View>: View {
+    let enabled: Bool
+    let onDelete: () -> Void
+    @ViewBuilder let content: () -> Content
+
+    @State private var offset: CGFloat = 0
+    @State private var isRevealed = false
+
+    private let deleteWidth: CGFloat = 80
+    private let triggerThreshold: CGFloat = 60
+
+    var body: some View {
+        if enabled {
+            ZStack(alignment: .trailing) {
+                // Delete button behind the row
+                HStack {
+                    Spacer()
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            offset = -500 // slide off screen
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                            onDelete()
+                        }
+                    } label: {
+                        Image(systemName: "trash.fill")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(width: deleteWidth, height: .infinity)
+                    }
+                    .frame(width: deleteWidth)
+                    .background(Color.red)
+                }
+
+                // Main content — slides left on drag
+                content()
+                    .offset(x: offset)
+                    .gesture(
+                        DragGesture(minimumDistance: 20, coordinateSpace: .local)
+                            .onChanged { value in
+                                let horizontal = value.translation.width
+                                // Only allow left swipe
+                                if horizontal < 0 {
+                                    offset = isRevealed
+                                        ? max(-deleteWidth + horizontal, -deleteWidth * 1.3)
+                                        : max(horizontal, -deleteWidth * 1.3)
+                                } else if isRevealed {
+                                    offset = min(-deleteWidth + horizontal, 0)
+                                }
+                            }
+                            .onEnded { value in
+                                let horizontal = value.translation.width
+                                withAnimation(.easeOut(duration: 0.2)) {
+                                    if isRevealed {
+                                        // If revealed and swiped right, close
+                                        if horizontal > triggerThreshold / 2 {
+                                            offset = 0
+                                            isRevealed = false
+                                        } else {
+                                            offset = -deleteWidth
+                                        }
+                                    } else {
+                                        // If swiped left past threshold, reveal
+                                        if -horizontal > triggerThreshold {
+                                            offset = -deleteWidth
+                                            isRevealed = true
+                                        } else {
+                                            offset = 0
+                                        }
+                                    }
+                                }
+                            }
+                    )
+            }
+            .clipped()
+        } else {
+            content()
+        }
     }
 }
