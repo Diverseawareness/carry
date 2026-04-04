@@ -563,9 +563,17 @@ struct GroupManagerView: View {
                     }
                 }
 
-                // Update course if changed
+                // Update course if changed — but preserve holes if current course has them and fresh one doesn't
                 if let course = freshGroup.lastCourse {
-                    currentCourse = course
+                    if let existingHoles = currentCourse?.teeBox?.holes, !existingHoles.isEmpty,
+                       (course.teeBox?.holes == nil || course.teeBox?.holes?.isEmpty == true) {
+                        // Keep existing course — it has API holes that the Supabase refresh lost
+                        #if DEBUG
+                        print("[GroupManagerView] refreshGroupData: keeping existing course with \(existingHoles.count) holes (fresh has none)")
+                        #endif
+                    } else {
+                        currentCourse = course
+                    }
                 }
 
                 // Update buy-in
@@ -1173,6 +1181,10 @@ struct GroupManagerView: View {
                     }
                     if let course = result.changedCourse {
                         currentCourse = course
+                        // Cache API holes so they survive Supabase refreshes
+                        if let holes = course.teeBox?.holes, !holes.isEmpty {
+                            cachedHoles = holes
+                        }
                         onCourseChanged?(course)
                     }
                     // Update recurrence
@@ -1223,6 +1235,10 @@ struct GroupManagerView: View {
         .sheet(isPresented: $showCourseChange) {
             CourseSelectionView { course in
                 currentCourse = course
+                // Cache API holes so they survive Supabase refreshes
+                if let holes = course.teeBox?.holes, !holes.isEmpty {
+                    cachedHoles = holes
+                }
                 onCourseChanged?(course)
                 showCourseChange = false
             }

@@ -187,12 +187,8 @@ class RoundViewModel: ObservableObject {
         return skins
     }
 
-    // Money model — only count players who actually participated (have scores)
-    var pot: Int {
-        let participatingIds = Set(activePlayers.map(\.id))
-        let count = Set(config.groups.flatMap { $0.playerIDs }).intersection(participatingIds).count
-        return config.buyIn * max(count, 1)
-    }
+    // Money model — pot is based on all players in the round config (real-world settlement handles no-shows)
+    var pot: Int { config.buyIn * Set(config.groups.flatMap { $0.playerIDs }).count }
 
     func moneyTotals() -> [Int: Int] {
         let skins = cachedSkins
