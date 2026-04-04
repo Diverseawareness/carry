@@ -605,6 +605,12 @@ struct GroupsListView: View {
                 }
                 if authService.isAuthenticated {
                     Task {
+                        // Encode holes JSON for persistent storage
+                        var holesJson: String? = nil
+                        if let holes = updatedCourse.teeBox?.holes,
+                           let data = try? JSONEncoder().encode(holes) {
+                            holesJson = String(data: data, encoding: .utf8)
+                        }
                         try? await GroupService().updateGroup(
                             groupId: group.id,
                             update: SkinsGroupUpdate(
@@ -614,7 +620,8 @@ struct GroupsListView: View {
                                 lastTeeBoxColor: updatedCourse.teeBox?.color,
                                 lastTeeBoxCourseRating: updatedCourse.teeBox?.courseRating,
                                 lastTeeBoxSlopeRating: updatedCourse.teeBox?.slopeRating,
-                                lastTeeBoxPar: updatedCourse.teeBox?.par
+                                lastTeeBoxPar: updatedCourse.teeBox?.par,
+                                lastTeeBoxHolesJson: holesJson
                             )
                         )
                     }

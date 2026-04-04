@@ -382,8 +382,15 @@ struct SkinsGroupDTO: Codable, Identifiable {
     var isQuickGame: Bool?
     var scorerIds: [Int]?  // per-group scorer player IDs
     var teeTimeInterval: Int?  // minutes between consecutive tee times (0 or nil = off)
+    var lastTeeBoxHolesJson: String?  // per-hole par/hcp data, saved at course selection
     let createdAt: Date?
     var updatedAt: Date?
+
+    /// Decode holes from the stored JSON string.
+    func decodeHoles() -> [Hole]? {
+        guard let json = lastTeeBoxHolesJson, let data = json.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode([Hole].self, from: data)
+    }
 
     enum CodingKeys: String, CodingKey {
         case id, name
@@ -403,6 +410,7 @@ struct SkinsGroupDTO: Codable, Identifiable {
         case isQuickGame = "is_quick_game"
         case scorerIds = "scorer_ids"
         case teeTimeInterval = "tee_time_interval"
+        case lastTeeBoxHolesJson = "last_tee_box_holes_json"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
     }
@@ -464,6 +472,7 @@ struct SkinsGroupUpdate: Codable {
     var isQuickGame: Bool?
     var scorerIds: [Int]?
     var teeTimeInterval: Int?
+    var lastTeeBoxHolesJson: String?
 
     enum CodingKeys: String, CodingKey {
         case name
@@ -481,6 +490,7 @@ struct SkinsGroupUpdate: Codable {
         case isQuickGame = "is_quick_game"
         case scorerIds = "scorer_ids"
         case teeTimeInterval = "tee_time_interval"
+        case lastTeeBoxHolesJson = "last_tee_box_holes_json"
     }
 
     func encode(to encoder: Encoder) throws {
@@ -508,6 +518,7 @@ struct SkinsGroupUpdate: Codable {
         if let isQuickGame { try container.encode(isQuickGame, forKey: .isQuickGame) }
         if let scorerIds { try container.encode(scorerIds, forKey: .scorerIds) }
         if let teeTimeInterval { try container.encode(teeTimeInterval, forKey: .teeTimeInterval) }
+        if let lastTeeBoxHolesJson { try container.encode(lastTeeBoxHolesJson, forKey: .lastTeeBoxHolesJson) }
     }
 }
 

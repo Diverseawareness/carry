@@ -427,34 +427,26 @@ final class GroupService {
             // Reconstruct SelectedCourse if we have a saved course name
             var lastCourse: SelectedCourse? = nil
             if let courseName = group.lastCourseName {
-                // Reconstruct tee box from group-level data if available
+                // Reconstruct tee box from group-level data — holes come from skins_groups directly
                 var groupTeeBox: TeeBox? = nil
                 if let teeBoxName = group.lastTeeBoxName, let teeBoxColor = group.lastTeeBoxColor {
-                    // Try to load full tee box (with holes) from the most recent round's tee_box
-                    var holesFromDB: [Hole]? = nil
-                    do {
-                        let rounds = try await roundService.fetchRoundsForGroup(groupId: group.id)
-                        if let latestRound = rounds.first, let teeBoxId = latestRound.teeBoxId {
-                            let teeBoxDTO: TeeBoxDTO = try await client.from("tee_boxes")
-                                .select()
-                                .eq("id", value: teeBoxId.uuidString)
-                                .single()
-                                .execute()
-                                .value
-                            holesFromDB = teeBoxDTO.decodeHoles()
-                            #if DEBUG
-                            print("[GroupService] Loaded tee box holes: \(holesFromDB?.count ?? 0) from teeBoxId=\(teeBoxId)")
-                            #endif
-                        } else {
-                            #if DEBUG
-                            print("[GroupService] No rounds or no teeBoxId for group \(group.id)")
-                            #endif
+                    // Primary source: holes stored on the group itself (saved at course selection)
+                    var holes = group.decodeHoles()
+
+                    // Fallback: fetch from most recent round's tee_box (for groups created before this change)
+                    if holes == nil || holes?.isEmpty == true {
+                        if let rounds = try? await roundService.fetchRoundsForGroup(groupId: group.id),
+                           let latestRound = rounds.first, let teeBoxId = latestRound.teeBoxId,
+                           let dto: TeeBoxDTO = try? await client.from("tee_boxes")
+                            .select().eq("id", value: teeBoxId.uuidString).single().execute().value {
+                            holes = dto.decodeHoles()
                         }
-                    } catch {
-                        #if DEBUG
-                        print("[GroupService] Failed to load tee box holes: \(error)")
-                        #endif
                     }
+
+                    #if DEBUG
+                    print("[GroupService] Tee box holes for \(group.id): \(holes?.count ?? 0) (source: \(group.lastTeeBoxHolesJson != nil ? "group" : "round"))")
+                    #endif
+
                     groupTeeBox = TeeBox(
                         id: UUID().uuidString,
                         courseId: "0",
@@ -463,7 +455,7 @@ final class GroupService {
                         courseRating: group.lastTeeBoxCourseRating ?? 0,
                         slopeRating: group.lastTeeBoxSlopeRating ?? 0,
                         par: group.lastTeeBoxPar ?? 72,
-                        holes: holesFromDB
+                        holes: holes
                     )
                 }
                 lastCourse = SelectedCourse(
