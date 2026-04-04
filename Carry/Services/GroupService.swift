@@ -962,11 +962,13 @@ final class GroupService {
             if allDone && !groupPlayers.isEmpty { completedGroups += 1 }
         }
 
+        // For active/concluded rounds, include ALL round players (not just those who scored)
+        // so the scorecard shows everyone. Skins/pot use activeRoundPlayers above.
         var round = HomeRound(
             id: roundDTO.id,
             groupName: groupName,
             courseName: courseName,
-            players: activeRoundPlayers,
+            players: roundPlayers,
             status: status,
             currentHole: currentHole,
             totalHoles: 18,
