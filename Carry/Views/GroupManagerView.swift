@@ -504,30 +504,59 @@ struct GroupManagerView: View {
             }
 
             await MainActor.run {
-                // Update members list and regroup
+                // Update member statuses in-place if groups already exist (preserves order)
+                let freshById = Dictionary(uniqueKeysWithValues: freshGroup.members.compactMap { m -> (Int, Player)? in
+                    return (m.id, m)
+                })
+                let hadGroups = !groups.isEmpty && !groups.allSatisfy({ $0.isEmpty })
+
                 allMembers = freshGroup.members
                 let sel = Set(freshGroup.members.map(\.id))
                 selectedIDs = sel
-                let playing = freshGroup.members.filter { sel.contains($0.id) }
-                let regrouped = Self.autoGroup(playing)
-                let safeGrouped: [[Player]]
-                if regrouped.isEmpty || regrouped.allSatisfy({ $0.isEmpty }) {
-                    safeGrouped = freshGroup.members.isEmpty ? [[]] : [freshGroup.members]
+
+                if hadGroups {
+                    // In-place update: update player statuses without reshuffling
+                    for gi in groups.indices {
+                        for pi in groups[gi].indices {
+                            if let fresh = freshById[groups[gi][pi].id] {
+                                groups[gi][pi].isPendingAccept = fresh.isPendingAccept
+                                groups[gi][pi].isPendingInvite = fresh.isPendingInvite
+                            }
+                        }
+                    }
+                    // Add any new members that weren't in existing groups
+                    let existingIds = Set(groups.flatMap { $0 }.map(\.id))
+                    let newPlayers = freshGroup.members.filter { !existingIds.contains($0.id) }
+                    if !newPlayers.isEmpty {
+                        for p in newPlayers {
+                            let targetGroup = max(0, min(p.group - 1, groups.count - 1))
+                            groups[targetGroup].append(p)
+                        }
+                    }
                 } else {
-                    safeGrouped = regrouped
+                    // First load — do a full regroup
+                    let playing = freshGroup.members.filter { sel.contains($0.id) }
+                    let regrouped = Self.autoGroup(playing)
+                    let safeGrouped: [[Player]]
+                    if regrouped.isEmpty || regrouped.allSatisfy({ $0.isEmpty }) {
+                        safeGrouped = freshGroup.members.isEmpty ? [[]] : [freshGroup.members]
+                    } else {
+                        safeGrouped = regrouped
+                    }
+                    groups = safeGrouped
                 }
-                groups = safeGrouped
-                let groupCount = max(safeGrouped.count, 1)
+
+                let groupCount = max(groups.count, 1)
                 startingSides = Self.defaultSides(count: groupCount)
                 // Use saved scorer IDs from Supabase if available, otherwise default to first player
                 if let saved = freshGroup.scorerIds, !saved.isEmpty {
                     scorerIDs = saved
                     // Pad if fewer scorer IDs than groups
-                    while scorerIDs.count < safeGrouped.count {
-                        scorerIDs.append(safeGrouped[scorerIDs.count].first?.id ?? 0)
+                    while scorerIDs.count < groups.count {
+                        scorerIDs.append(groups[scorerIDs.count].first?.id ?? 0)
                     }
                 } else {
-                    scorerIDs = safeGrouped.map { $0.first?.id ?? 0 }
+                    scorerIDs = groups.map { $0.first?.id ?? 0 }
                 }
 
                 // Update tee time / schedule
