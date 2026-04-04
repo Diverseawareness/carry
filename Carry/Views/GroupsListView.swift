@@ -781,7 +781,7 @@ struct GroupsListView: View {
             date: dateFormatter.string(from: Date()),
             buyIn: round.buyIn,
             gameType: "skins",
-            skinRules: .default,
+            skinRules: round.skinRules,
             teeBox: resolvedTeeBox,
             groups: groups,
             creatorId: round.creatorId,

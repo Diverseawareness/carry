@@ -44,6 +44,7 @@ struct HomeRound: Identifiable {
     var pendingHoleLeaders: [PendingHoleLeader] = []  // pending holes with current leaders
     var userGroupComplete: Bool = false  // true when the current user's group has all holes scored
     var scoringMode: ScoringMode = .single  // .single or .everyone
+    var skinRules: SkinRules = .default  // actual round settings (net/gross, carries, handicap%)
 
     struct PendingHoleLeader: Identifiable {
         let id: Int  // hole number
@@ -72,7 +73,8 @@ struct HomeRound: Identifiable {
         return Int((Double(potTotal) / Double(denom)).rounded())
     }
 
-    var potTotal: Int { buyIn * players.count }
+    var activePlayerCount: Int = 0  // players who actually scored (set by GroupService)
+    var potTotal: Int { buyIn * (activePlayerCount > 0 ? activePlayerCount : players.count) }
 
     /// All groups have finished scoring all 18 holes
     var isGameDone: Bool {
@@ -1189,7 +1191,7 @@ struct HomeView: View {
             date: dateFormatter.string(from: Date()),
             buyIn: round.buyIn,
             gameType: "skins",
-            skinRules: .default,
+            skinRules: round.skinRules,
             teeBox: round.teeBox,
             groups: groups,
             creatorId: round.creatorId,

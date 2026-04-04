@@ -989,6 +989,13 @@ final class GroupService {
         round.teeBox = resolvedTeeBox
         round.supabaseGroupId = supabaseGroupId
         round.scoringMode = ScoringMode(rawValue: roundDTO.scoringMode ?? "single") ?? .single
+        round.skinRules = SkinRules(
+            net: roundDTO.net,
+            carries: roundDTO.carries,
+            outright: roundDTO.outright,
+            handicapPercentage: roundDTO.handicapPercentage
+        )
+        round.activePlayerCount = activeRoundPlayers.count
         return round
     }
 }

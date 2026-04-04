@@ -117,25 +117,26 @@ class RoundViewModel: ObservableObject {
     @discardableResult
     func calculateSkins() -> [Int: SkinStatus] {
         let carriesEnabled = config.skinRules.carries
+        let useNet = config.skinRules.net
         var skins: [Int: SkinStatus] = [:]
         var pendingCarry = 0  // accumulated skins from prior squashed holes
 
         for hole in holes {
             let hNum = hole.num
 
-            // Collect net scores from ALL players across all groups
+            // Collect scores from ALL players across all groups
             struct NetEntry {
                 let player: Player
                 let gross: Int
-                let net: Int
+                let net: Int  // effective score (net if enabled, gross otherwise)
             }
 
             // Use activePlayers so no-shows (zero scores) are excluded from skins
             let participating = activePlayers
             let nets: [NetEntry] = participating.compactMap { p in
                 guard let gross = scores[p.id]?[hNum] else { return nil }
-                let net = max(1, gross - strokes(for: p, hole: hole))
-                return NetEntry(player: p, gross: gross, net: net)
+                let effective = useNet ? max(1, gross - strokes(for: p, hole: hole)) : gross
+                return NetEntry(player: p, gross: gross, net: effective)
             }
 
             // When force-completed, treat hole as finished if 2+ players scored (ignore missing players)
