@@ -833,12 +833,43 @@ final class GroupService {
             }
         }
 
+        // Build the actual player list from round_players (all who were in the round),
+        // merging with group_members for any extras. This ensures scorers who are still
+        // "pending" in group_members are included.
+        var roundPlayers = players
+        if let rpDTOs: [RoundPlayerDTO] = try? await client.from("round_players")
+            .select()
+            .eq("round_id", value: roundDTO.id.uuidString)
+            .execute()
+            .value, !rpDTOs.isEmpty {
+            let existingIds = Set(players.compactMap(\.profileId))
+            let missingIds = rpDTOs.map(\.playerId).filter { !existingIds.contains($0) }
+            if !missingIds.isEmpty {
+                let profiles: [ProfileDTO] = (try? await client.from("profiles")
+                    .select()
+                    .in("id", values: missingIds.map(\.uuidString))
+                    .execute()
+                    .value) ?? []
+                for profile in profiles {
+                    var player = Player(from: profile)
+                    // Set group number from round_players
+                    if let rp = rpDTOs.first(where: { $0.playerId == profile.id }) {
+                        player.group = rp.groupNum
+                    }
+                    roundPlayers.append(player)
+                }
+                #if DEBUG
+                print("[buildHomeRound] Added \(profiles.count) players from round_players (were missing from group_members)")
+                #endif
+            }
+        }
+
         // Fetch scores for this round
         let scoreDTOs = (try? await roundService.fetchScores(roundId: roundDTO.id)) ?? []
 
         // Build UUID → Int player ID mapping
         var uuidToInt: [UUID: Int] = [:]
-        for player in players {
+        for player in roundPlayers {
             if let profileId = player.profileId {
                 uuidToInt[profileId] = player.id
             }
@@ -855,13 +886,15 @@ final class GroupService {
         let currentHole = scores.values.flatMap { $0.keys }.max() ?? 0
 
         // Compute simple skins summary (outright lowest score wins the hole)
+        // Use only players who actually scored (activePlayers) for pot/skins
+        let activeRoundPlayers = roundPlayers.filter { scores[$0.id]?.isEmpty == false }
         var skinsWon = 0
         var playerSkins: [Int: Int] = [:]  // playerID → skins count
         var playerWonHoles: [Int: [Int]] = [:]
-        players.forEach { playerSkins[$0.id] = 0 }
+        activeRoundPlayers.forEach { playerSkins[$0.id] = 0 }
 
         for holeNum in 1...18 {
-            let holeScores = players.compactMap { p -> (Int, Int)? in
+            let holeScores = activeRoundPlayers.compactMap { p -> (Int, Int)? in
                 guard let score = scores[p.id]?[holeNum] else { return nil }
                 return (p.id, score)
             }
@@ -878,11 +911,11 @@ final class GroupService {
             }
         }
 
-        // Compute winnings
-        let pot = buyIn * players.count
+        // Compute winnings — pot based on players who actually scored
+        let pot = buyIn * max(activeRoundPlayers.count, 1)
         let skinValue = skinsWon > 0 ? Double(pot) / Double(skinsWon) : 0
         var playerWinnings: [Int: Int] = [:]
-        for player in players {
+        for player in activeRoundPlayers {
             let skins = playerSkins[player.id] ?? 0
             playerWinnings[player.id] = skinsWon > 0 ? Int((Double(skins) * skinValue).rounded()) - buyIn : 0
         }
@@ -896,11 +929,11 @@ final class GroupService {
         }()
 
         // Compute completed groups: how many groups have all players scored all 18
-        let groupNums = Set(players.map(\.group))
+        let groupNums = Set(roundPlayers.map(\.group))
         let totalGroups = max(groupNums.count, 1)
         var completedGroups = 0
         for gNum in groupNums {
-            let groupPlayers = players.filter { $0.group == gNum }
+            let groupPlayers = activeRoundPlayers.filter { $0.group == gNum }
             let allDone = groupPlayers.allSatisfy { p in
                 (1...18).allSatisfy { hole in scores[p.id]?[hole] != nil }
             }
@@ -911,7 +944,7 @@ final class GroupService {
             id: roundDTO.id,
             groupName: groupName,
             courseName: courseName,
-            players: players,
+            players: activeRoundPlayers,
             status: status,
             currentHole: currentHole,
             totalHoles: 18,
