@@ -585,7 +585,7 @@ struct RoundCompleteView: View {
                 teeName: config.teeBox?.name,
                 handicapPct: Int((config.skinRules.handicapPercentage) * 100),
                 entries: entries,
-                potTotal: config.buyIn * viewModel.allPlayers.count,
+                potTotal: viewModel.pot,
                 buyIn: config.buyIn
             )
 

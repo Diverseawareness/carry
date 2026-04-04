@@ -885,29 +885,59 @@ final class GroupService {
         // Compute current hole (max hole scored by any player)
         let currentHole = scores.values.flatMap { $0.keys }.max() ?? 0
 
-        // Compute simple skins summary (outright lowest score wins the hole)
+        // Compute skins — respects round settings (net/gross, carries)
         // Use only players who actually scored (activePlayers) for pot/skins
         let activeRoundPlayers = roundPlayers.filter { scores[$0.id]?.isEmpty == false }
-        var skinsWon = 0
+        let useNet = roundDTO.net
+        let carriesEnabled = roundDTO.carries
+        let handicapPct = roundDTO.handicapPercentage
+        let holes = resolvedTeeBox?.holes ?? Hole.allHoles
+
+        var skinsWon = 0  // total skins awarded (carries included in count)
+        var pendingCarry = 0
         var playerSkins: [Int: Int] = [:]  // playerID → skins count
         var playerWonHoles: [Int: [Int]] = [:]
         activeRoundPlayers.forEach { playerSkins[$0.id] = 0 }
 
         for holeNum in 1...18 {
-            let holeScores = activeRoundPlayers.compactMap { p -> (Int, Int)? in
-                guard let score = scores[p.id]?[holeNum] else { return nil }
-                return (p.id, score)
-            }
-            // Need at least 2 players scored for a skin to be contested
-            guard holeScores.count >= 2 else { continue }
+            let hole = holes[holeNum - 1]
 
-            guard let bestScore = holeScores.map(\.1).min() else { continue }
-            let winners = holeScores.filter { $0.1 == bestScore }
+            // Build (playerId, effectiveScore) for each player who scored this hole
+            let holeEntries: [(Int, Int)] = activeRoundPlayers.compactMap { p in
+                guard let gross = scores[p.id]?[holeNum] else { return nil }
+                if useNet, let teeBox = resolvedTeeBox {
+                    let strokes = RoundViewModel.getStrokes(
+                        handicapIndex: p.handicap,
+                        holeHcp: hole.hcp,
+                        teeBox: teeBox,
+                        percentage: handicapPct
+                    )
+                    return (p.id, max(1, gross - strokes))
+                } else if useNet {
+                    let strokes = RoundViewModel.getStrokes(handicap: p.handicap, holeHcp: hole.hcp)
+                    return (p.id, max(1, gross - strokes))
+                }
+                return (p.id, gross)
+            }
+
+            // Need at least 2 players scored for a skin to be contested
+            guard holeEntries.count >= 2 else { continue }
+
+            guard let bestScore = holeEntries.map(\.1).min() else { continue }
+            let winners = holeEntries.filter { $0.1 == bestScore }
             if winners.count == 1 {
-                skinsWon += 1
+                let totalCarry = 1 + pendingCarry
+                skinsWon += totalCarry
                 let winnerId = winners[0].0
-                playerSkins[winnerId, default: 0] += 1
+                playerSkins[winnerId, default: 0] += totalCarry
                 playerWonHoles[winnerId, default: []].append(holeNum)
+                pendingCarry = 0
+            } else {
+                // Tied — carry or squash
+                if carriesEnabled {
+                    pendingCarry += 1
+                }
+                // If carries disabled, skin is simply lost
             }
         }
 
@@ -917,7 +947,7 @@ final class GroupService {
         var playerWinnings: [Int: Int] = [:]
         for player in activeRoundPlayers {
             let skins = playerSkins[player.id] ?? 0
-            playerWinnings[player.id] = skinsWon > 0 ? Int((Double(skins) * skinValue).rounded()) - buyIn : 0
+            playerWinnings[player.id] = skinsWon > 0 ? Int((Double(skins) * skinValue - Double(buyIn)).rounded()) : 0
         }
 
         let status: HomeRoundStatus = {
