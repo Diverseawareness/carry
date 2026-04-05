@@ -3829,9 +3829,10 @@ private struct SwipeToDeleteRow<Content: View>: View {
                         Image(systemName: "trash.fill")
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundColor(.white)
-                            .frame(width: deleteWidth, height: .infinity)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                     .frame(width: deleteWidth)
+                    .frame(maxHeight: .infinity)
                     .background(Color.red)
                 }
 
