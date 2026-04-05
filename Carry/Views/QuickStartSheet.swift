@@ -62,7 +62,7 @@ struct QuickGameSheet: View {
         return cal.date(from: comps) ?? now
     }()
     @State private var hasTeeTime = false
-    @State private var consecutiveInterval: Int = 0
+    @State private var consecutiveInterval: Int = 10  // default 10 min between groups
 
     // Scorer search state
     @State private var scorerSearchText: String = ""
