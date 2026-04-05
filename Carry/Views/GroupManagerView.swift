@@ -1524,6 +1524,10 @@ struct GroupManagerView: View {
 
         #if DEBUG
         print("[buildRoundConfig] buyInText='\(buyInText)' → Int=\(Int(buyInText) ?? 0), players=\(roundGroups.flatMap { $0 }.count)")
+        print("[buildRoundConfig] currentCourse=\(currentCourse?.courseName ?? "nil") teeBox.holes=\(currentCourse?.teeBox?.holes?.count ?? 0) cachedHoles=\(cachedHoles?.count ?? 0) apiTee.holes=\(currentCourse?.apiTee?.holes?.count ?? 0)")
+        if let h = currentCourse?.teeBox?.holes, h.count >= 3 {
+            print("[buildRoundConfig] hole pars: \(h.prefix(5).map(\.par))")
+        }
         #endif
         var resolvedTeeBox = currentCourse?.teeBox ?? TeeBox(id: "default", courseId: "0", name: "Default", color: "white", courseRating: 72.0, slopeRating: 113, par: 72)
         // Restore holes from multiple fallback sources
@@ -1531,11 +1535,21 @@ struct GroupManagerView: View {
             // 1. Cached holes from initial load (survives Supabase refresh on same session)
             if let cached = cachedHoles, !cached.isEmpty {
                 resolvedTeeBox.holes = cached
+                #if DEBUG
+                print("[buildRoundConfig] ⚠️ Used cachedHoles fallback")
+                #endif
             }
             // 2. API tee data from course selection
             else if let apiTee = currentCourse?.apiTee,
                     let apiHoles = apiTee.holes, !apiHoles.isEmpty {
                 resolvedTeeBox.holes = Hole.fromAPI(apiHoles)
+                #if DEBUG
+                print("[buildRoundConfig] ⚠️ Used apiTee fallback")
+                #endif
+            } else {
+                #if DEBUG
+                print("[buildRoundConfig] ❌ NO HOLES — will fall back to Hole.allHoles in RoundViewModel")
+                #endif
             }
         }
         // Cache holes for future use (e.g. if view is re-created)
@@ -1543,7 +1557,10 @@ struct GroupManagerView: View {
             cachedHoles = holes
         }
         #if DEBUG
-        print("[buildRoundConfig] teeBox.name=\(resolvedTeeBox.name) holes=\(resolvedTeeBox.holes?.count ?? 0) course=\(currentCourse?.courseName ?? "nil")")
+        print("[buildRoundConfig] FINAL teeBox.name=\(resolvedTeeBox.name) holes=\(resolvedTeeBox.holes?.count ?? 0)")
+        if let h = resolvedTeeBox.holes, h.count >= 3 {
+            print("[buildRoundConfig] FINAL hole pars: \(h.prefix(5).map(\.par))")
+        }
         #endif
         var config = RoundConfig(
             id: UUID().uuidString,
