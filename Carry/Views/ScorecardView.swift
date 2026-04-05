@@ -190,8 +190,9 @@ struct ScorecardView: View {
                     }
                     await MainActor.run {
                         NotificationCenter.default.post(name: .didEndRound, object: nil)
+                        viewModel.isRoundComplete = true
                         withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
-                            viewModel.isRoundComplete = true
+                            showRoundComplete = true
                         }
                     }
                 }
@@ -215,8 +216,9 @@ struct ScorecardView: View {
                     }
                     await MainActor.run {
                         NotificationCenter.default.post(name: .didEndRound, object: nil)
+                        viewModel.isRoundComplete = true
                         withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
-                            viewModel.isRoundComplete = true
+                            showRoundComplete = true
                         }
                     }
                 }
