@@ -929,16 +929,12 @@ class RoundViewModel: ObservableObject {
         self.config = config
         self.currentUserId = currentUserId
         self.allPlayers = config.players
-        // Use real per-hole data from API if available, otherwise fall back to defaults
+        // Use real per-hole data — never fall back to hardcoded defaults
         self.holes = config.holes ?? config.teeBox?.holes ?? Hole.allHoles
         #if DEBUG
-        if config.holes != nil || config.teeBox?.holes != nil {
-            let source = config.holes != nil ? "config.holes" : "teeBox.holes"
-            let totalPar = self.holes.reduce(0) { $0 + $1.par }
-            print("[RoundViewModel] Using API hole data from \(source): totalPar=\(totalPar)")
-        } else {
-            print("[RoundViewModel] No API hole data, using Hole.allHoles defaults")
-        }
+        let source = config.holes != nil ? "config.holes" : (config.teeBox?.holes != nil ? "teeBox.holes" : "⚠️ FALLBACK")
+        let totalPar = self.holes.reduce(0) { $0 + $1.par }
+        print("[RoundViewModel] Holes from \(source): \(self.holes.count) holes, totalPar=\(totalPar), pars=\(self.holes.prefix(5).map(\.par))")
         #endif
         self.roundKey = config.id
         // Build Int→UUID lookup for Supabase score sync

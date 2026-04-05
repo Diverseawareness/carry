@@ -1000,8 +1000,7 @@ struct GroupManagerView: View {
                         } else if needsNextSchedule {
                             showSettings = true
                         } else {
-                            let config = buildRoundConfig()
-                            onConfirm(config)
+                            Task { await startRoundWithHolesSafetyNet() }
                         }
                     } label: {
                         HStack(spacing: 10) {
@@ -1106,6 +1105,20 @@ struct GroupManagerView: View {
                                     }
                                     return
                                 }
+                            }
+                            // Safety net: if holes still missing, fetch from skins_groups
+                            if config.holes == nil || config.holes?.isEmpty == true,
+                               let groupId = supabaseGroupId {
+                                if let holesFromGroup = await fetchHolesFromGroup(groupId: groupId) {
+                                    config.holes = holesFromGroup
+                                }
+                            }
+                            if config.holes == nil || config.holes?.isEmpty == true {
+                                await MainActor.run {
+                                    isJoiningRound = false
+                                    ToastManager.shared.error("Course hole data missing — please ask the host to reselect the course")
+                                }
+                                return
                             }
                             await MainActor.run {
                                 isJoiningRound = false
@@ -1580,6 +1593,53 @@ struct GroupManagerView: View {
         config.scorerProfileId = scorerProfileId
         config.scoringMode = scoringMode
         return config
+    }
+
+    // MARK: - Start Round with Holes Safety Net
+
+    /// Builds the round config and ensures holes are available before starting.
+    /// If holes are missing from local state, fetches from skins_groups as a last resort.
+    /// Blocks round start if no hole data is available.
+    private func startRoundWithHolesSafetyNet() async {
+        var config = buildRoundConfig()
+        // Safety net: if holes are missing, fetch from skins_groups
+        if config.holes == nil || config.holes?.isEmpty == true,
+           let groupId = supabaseGroupId {
+            if let holesFromGroup = await fetchHolesFromGroup(groupId: groupId) {
+                config.holes = holesFromGroup
+                #if DEBUG
+                print("[StartRound] ✅ Fetched holes from skins_groups: \(holesFromGroup.count) holes, pars=\(holesFromGroup.prefix(5).map(\.par))")
+                #endif
+            }
+        }
+        if config.holes == nil || config.holes?.isEmpty == true {
+            await MainActor.run {
+                ToastManager.shared.error("Course hole data missing — please reselect your course")
+            }
+            return
+        }
+        await MainActor.run { onConfirm(config) }
+    }
+
+    // MARK: - Fetch Holes Safety Net
+
+    /// Last-resort fetch of holes from skins_groups.last_tee_box_holes_json
+    private func fetchHolesFromGroup(groupId: UUID) async -> [Hole]? {
+        do {
+            let groups: [SkinsGroupDTO] = try await SupabaseManager.shared.client
+                .from("skins_groups")
+                .select("last_tee_box_holes_json")
+                .eq("id", value: groupId.uuidString)
+                .limit(1)
+                .execute()
+                .value
+            return groups.first?.decodeHoles()
+        } catch {
+            #if DEBUG
+            print("[fetchHolesFromGroup] Failed: \(error)")
+            #endif
+            return nil
+        }
     }
 
     // MARK: - Remove Player (swipe-to-delete)
