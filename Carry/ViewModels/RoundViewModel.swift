@@ -131,9 +131,9 @@ class RoundViewModel: ObservableObject {
                 let net: Int  // effective score (net if enabled, gross otherwise)
             }
 
-            // Use activePlayers so no-shows (zero scores) are excluded from skins
-            let participating = activePlayers
-            let nets: [NetEntry] = participating.compactMap { p in
+            // Collect scores from ALL players (not just active) for per-hole resolution
+            // A skin can only be awarded when every player in the round has scored that hole
+            let nets: [NetEntry] = allPlayers.compactMap { p in
                 guard let gross = scores[p.id]?[hNum] else { return nil }
                 let effective = useNet ? max(1, gross - strokes(for: p, hole: hole)) : gross
                 return NetEntry(player: p, gross: gross, net: effective)
@@ -142,7 +142,7 @@ class RoundViewModel: ObservableObject {
             // When force-completed, treat hole as finished if 2+ players scored (ignore missing players)
             let allFinished = forceCompleted
                 ? nets.count >= 2
-                : participating.allSatisfy { scores[$0.id]?[hNum] != nil }
+                : allPlayers.allSatisfy { scores[$0.id]?[hNum] != nil }
 
             if nets.isEmpty {
                 skins[hNum] = .pending
@@ -152,7 +152,7 @@ class RoundViewModel: ObservableObject {
                 guard let bestNet = nets.map(\.net).min() else { continue }
                 let leaders = nets.filter { $0.net == bestNet }
                 let bestGross = leaders.map(\.gross).min() ?? 0
-                skins[hNum] = .provisional(leaders: leaders.map(\.player), bestNet: bestNet, bestGross: bestGross, scored: nets.count, total: participating.count)
+                skins[hNum] = .provisional(leaders: leaders.map(\.player), bestNet: bestNet, bestGross: bestGross, scored: nets.count, total: allPlayers.count)
             } else if nets.count < 2 {
                 // Force-completed but only 1 scorer on this hole — unawarded
                 skins[hNum] = .pending
@@ -161,7 +161,7 @@ class RoundViewModel: ObservableObject {
                 guard let bestNet = nets.map(\.net).min() else { continue }
                 let leaders = nets.filter { $0.net == bestNet }
                 let bestGross = leaders.map(\.gross).min() ?? 0
-                skins[hNum] = .provisional(leaders: leaders.map(\.player), bestNet: bestNet, bestGross: bestGross, scored: nets.count, total: participating.count)
+                skins[hNum] = .provisional(leaders: leaders.map(\.player), bestNet: bestNet, bestGross: bestGross, scored: nets.count, total: allPlayers.count)
             } else {
                 guard let bestNet = nets.map(\.net).min() else { continue }
                 let winners = nets.filter { $0.net == bestNet }
