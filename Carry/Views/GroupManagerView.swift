@@ -514,23 +514,18 @@ struct GroupManagerView: View {
                 let sel = Set(freshGroup.members.map(\.id))
                 selectedIDs = sel
 
-                if hadGroups {
-                    // In-place update: update player statuses without reshuffling
+                let existingIds = Set(groups.flatMap { $0 }.map(\.id))
+                let newPlayers = freshGroup.members.filter { !existingIds.contains($0.id) }
+                let memberCountChanged = !newPlayers.isEmpty || freshGroup.members.count != existingIds.count
+
+                if hadGroups && !memberCountChanged {
+                    // Same members — just update statuses in-place (preserves order)
                     for gi in groups.indices {
                         for pi in groups[gi].indices {
                             if let fresh = freshById[groups[gi][pi].id] {
                                 groups[gi][pi].isPendingAccept = fresh.isPendingAccept
                                 groups[gi][pi].isPendingInvite = fresh.isPendingInvite
                             }
-                        }
-                    }
-                    // Add any new members that weren't in existing groups
-                    let existingIds = Set(groups.flatMap { $0 }.map(\.id))
-                    let newPlayers = freshGroup.members.filter { !existingIds.contains($0.id) }
-                    if !newPlayers.isEmpty {
-                        for p in newPlayers {
-                            let targetGroup = max(0, min(p.group - 1, groups.count - 1))
-                            groups[targetGroup].append(p)
                         }
                     }
                 } else {
