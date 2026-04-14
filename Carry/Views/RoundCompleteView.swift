@@ -128,7 +128,7 @@ struct RoundCompleteView: View {
 
                 // Benefits
                 VStack(alignment: .leading, spacing: 16) {
-                    benefitRow("Turn this into your skins group")
+                    benefitRow("Manage players & who's playing today")
                     benefitRow("Set up recurring tee times")
                     benefitRow("Track stats over time")
                 }
@@ -140,13 +140,22 @@ struct RoundCompleteView: View {
                 VStack(spacing: 12) {
                     Button {
                         if storeService.isPremium {
+                            // Mark round as completed before converting to group
+                            if let roundId = viewModel.config.supabaseRoundId {
+                                Task {
+                                    try? await RoundService().updateRoundStatus(roundId: roundId, status: "completed")
+                                    if let groupId = viewModel.config.supabaseGroupId {
+                                        await GroupService().advanceScheduledDateIfRecurring(groupId: groupId)
+                                    }
+                                }
+                            }
                             showCreateGroupCard = false
                             onCreateGroup?()
                         } else {
                             showPaywall = true
                         }
                     } label: {
-                        Text("Yes, Create a Group")
+                        Text("Create Group")
                             .font(.system(size: 18, weight: .semibold))
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
@@ -172,7 +181,7 @@ struct RoundCompleteView: View {
                         onDeclineGroup?()
                         if let onExitRound { onExitRound() } else { onDismiss() }
                     } label: {
-                        Text("No, This Was a Single Game")
+                        Text("Skip")
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundColor(Color.systemRedColor)
                             .frame(maxWidth: .infinity)
@@ -482,35 +491,14 @@ struct RoundCompleteView: View {
 
     // MARK: - Winner Section
 
-    /// Hero section — always shows the current user's avatar, name, and earnings/status.
+    /// Hero section — uses the shared FinalResultsHero so this view matches ResultsSheet.
     private func userHeroSection(entry: LeaderboardEntry) -> some View {
-        VStack(spacing: 12) {
-            PlayerAvatar(player: entry.player, size: 86)
-
-            Text(entry.player.shortName)
-                .font(Font.system(size: 24, weight: .bold))
-                .foregroundColor(Color.textPrimary)
-                .lineLimit(1)
-
-            if entry.skinsWon == 0 {
-                // No skins won
-                Text("No Skins Won")
-                    .font(Font.system(size: 20, weight: .semibold))
-                    .foregroundColor(Color.textSecondary)
-            } else if pendingSkins.isEmpty {
-                // Round complete — "X Skins Won · $Y"
-                (Text("\(entry.skinsWon) Skin\(entry.skinsWon == 1 ? "" : "s") Won · ")
-                    .foregroundColor(Color.textPrimary)
-                + Text(moneyText(entry.netMoney))
-                    .foregroundColor(Color.goldMuted))
-                    .font(Font.system(size: 20, weight: .semibold))
-            } else {
-                // Skins pending — show skins count only
-                Text("\(entry.skinsWon) Skin\(entry.skinsWon == 1 ? "" : "s") Won")
-                    .font(Font.system(size: 20, weight: .semibold))
-                    .foregroundColor(Color.textPrimary)
-            }
-        }
+        FinalResultsHero(
+            player: entry.player,
+            skinsWon: entry.skinsWon,
+            winAmount: entry.netMoney,
+            isFinal: pendingSkins.isEmpty
+        )
     }
 
     // MARK: - Won Skins (per-hole)
@@ -650,54 +638,15 @@ struct RoundCompleteView: View {
 
     // MARK: - Leaderboard Row (final results)
 
+    /// Shared winner row — delegates to FinalResultsWinnerRow so this sheet stays in
+    /// sync with ResultsSheet's rendering.
     private func leaderboardRow(entry: LeaderboardEntry) -> some View {
-        let isYou = entry.player.id == viewModel.currentUserId
-
-        return HStack(spacing: 12) {
-            PlayerAvatar(player: entry.player, size: 38)
-
-            HStack(spacing: 5) {
-                Text(entry.player.shortName)
-                    .font(Font.system(size: 17, weight: isYou ? .bold : .semibold))
-                    .foregroundColor(Color.textPrimary)
-                    .lineLimit(1)
-                if isYou {
-                    Text("You")
-                        .font(Font.system(size: 12, weight: .semibold))
-                        .foregroundColor(Color.gold)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 1)
-                        .background(Capsule().fill(Color.gold.opacity(0.10)))
-                }
-            }
-
-            Spacer()
-
-            if entry.skinsWon > 0 {
-                Text("\(entry.skinsWon)")
-                    .font(Font.system(size: 17, weight: .medium))
-                    .foregroundColor(Color.textPrimary)
-                    .frame(width: 36, alignment: .center)
-            } else {
-                Text("0")
-                    .font(Font.system(size: 17, weight: .medium))
-                    .foregroundColor(Color.borderMedium)
-                    .frame(width: 36, alignment: .center)
-            }
-
-            Text(entry.netMoney > 0 ? "+$\(entry.netMoney)" : "$\(abs(entry.netMoney))")
-                .font(.system(size: 18, weight: .bold))
-                .monospacedDigit()
-                .foregroundColor(
-                    entry.netMoney > 0 ? Color.goldMuted : entry.netMoney < 0 ? Color.textDisabled : Color.borderSoft
-                )
-                .frame(width: 78, alignment: .trailing)
-        }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 10)
-        .background(isYou ? Color.gold.opacity(0.03) : .clear)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(isYou ? "You" : entry.player.shortName), \(entry.skinsWon) skin\(entry.skinsWon == 1 ? "" : "s"), $\(entry.netMoney)")
+        FinalResultsWinnerRow(
+            player: entry.player,
+            skins: entry.skinsWon,
+            amount: entry.netMoney,
+            isYou: entry.player.id == viewModel.currentUserId
+        )
     }
 
     // MARK: - Pending Skin Row

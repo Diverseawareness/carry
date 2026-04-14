@@ -123,6 +123,7 @@ struct SMSInviteSheet: View {
                         .background(Circle().fill(Color.bgSecondary))
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Remove phone number")
             }
         }
         .padding(.vertical, 12)
@@ -150,7 +151,7 @@ struct SMSInviteSheet: View {
                 onSend(numbers)
             } label: {
                 HStack(spacing: 8) {
-                    Image(systemName: "message.fill")
+                    Image(systemName: "iphone")
                         .font(.system(size: 14))
                     Text("Send Invite\(validNumbers.count > 1 ? "s" : "")")
                         .font(.carry.headline)

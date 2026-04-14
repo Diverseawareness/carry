@@ -13,20 +13,11 @@ struct ScoringInfoModal: View {
 
             // Card
             VStack(spacing: 0) {
-                VStack(spacing: 15) {
-                    Image("carry-glyph")
-                        .renderingMode(.template)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 42, height: 38)
-                        .foregroundColor(Color(hexString: "#BCF0B5"))
-
-                    Text("How it Works")
-                        .font(.system(size: 26, weight: .semibold))
-                        .foregroundColor(.black)
-                }
-                .padding(.top, 32)
-                .padding(.bottom, 26)
+                Text("Keeping Score")
+                    .font(.system(size: 26, weight: .semibold))
+                    .foregroundColor(.black)
+                    .padding(.top, 28)
+                    .padding(.bottom, 22)
 
                 VStack(alignment: .leading, spacing: 23) {
                     infoSection(
@@ -49,8 +40,7 @@ struct ScoringInfoModal: View {
                     )
                 }
                 .padding(.horizontal, 28)
-
-                Spacer().frame(minHeight: 30, maxHeight: 57)
+                .padding(.bottom, 28)
 
                 Button {
                     onDismiss()

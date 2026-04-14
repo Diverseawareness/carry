@@ -29,6 +29,7 @@ class RoundViewModel: ObservableObject {
     @Published private(set) var cachedSkins: [Int: SkinStatus] = [:]
     @Published var gameEvents: [GameEvent] = []
     @Published var activeProposal: (playerId: Int, holeNum: Int, original: Int, proposed: Int, proposedByUUID: UUID)? = nil
+    @Published var roundWasCancelled = false
 
     /// When a proposal is active, no one can enter new scores until it's resolved.
     var isScoringBlocked: Bool { activeProposal != nil }
@@ -69,10 +70,10 @@ class RoundViewModel: ObservableObject {
 
     /// Simple stroke allocation using raw handicap index (fallback when no tee box).
     /// Rounds decimal handicap to nearest integer, distributes across 18 holes by difficulty.
+    /// Supports plus handicaps (negative values) — delegates to TeeBox.strokesOnHole.
     static func getStrokes(handicap: Double, holeHcp: Int) -> Int {
         let rHcp = Int(handicap.rounded())
-        if rHcp <= 0 { return 0 }
-        return rHcp / 18 + (holeHcp <= rHcp % 18 ? 1 : 0)
+        return TeeBox.strokesOnHole(playingHandicap: rHcp, holeHcp: holeHcp)
     }
 
     /// Full USGA Course Handicap calculation using tee box data.
@@ -188,8 +189,10 @@ class RoundViewModel: ObservableObject {
         return skins
     }
 
-    // Money model — pot counts only players who actually played (have at least one score)
-    var pot: Int { config.buyIn * max(activePlayers.count, 1) }
+    // Money model — pot counts EVERY player in the round (everyone bought in at start),
+    // not just those who've scored so far. Otherwise the pot shrinks while waiting for
+    // late/offline groups to sync, and skin values visibly drift on the cash bar.
+    var pot: Int { config.buyIn * max(allPlayers.count, 1) }
 
     func moneyTotals() -> [Int: Int] {
         let skins = cachedSkins
@@ -209,20 +212,30 @@ class RoundViewModel: ObservableObject {
             return total
         }
 
+        // Open = holes still in play (nobody could score yet, or only some players have).
+        // .carried is NOT counted: once a carry gets picked up by a later winner its
+        // value is already baked into that winner's skin count via `carry`. If the round
+        // ends with an unresolved .carried hole, it's effectively squashed (money lost)
+        // and still shouldn't dilute the remaining per-skin value.
         let openCount = skins.values.reduce(0) { total, status in
             switch status {
-            case .pending, .provisional, .carried: return total + 1
-            case .won, .squashed: return total
+            case .pending, .provisional: return total + 1
+            case .won, .squashed, .carried: return total
             }
         }
 
         let estimatedTotalSkins = openCount == 0 ? totalSkinsAwarded : (totalSkinsAwarded + openCount)
         let skinValue = estimatedTotalSkins > 0 ? Double(pot) / Double(estimatedTotalSkins) : 0
 
+        // Respect the gross/net display setting from Game Options. Gross = skins × value
+        // (never negative). Net = gross − buy-in (shows profit/loss). Previously this
+        // was hardcoded to net, causing the scorecard and leaderboard to disagree.
+        let displayMode = config.winningsDisplay
         var totals: [Int: Int] = [:]
         participating.forEach { p in
             if totalSkinsAwarded > 0 {
-                totals[p.id] = Int((Double(skinsWon[p.id] ?? 0) * skinValue - Double(config.buyIn)).rounded())
+                let gross = Int((Double(skinsWon[p.id] ?? 0) * skinValue).rounded())
+                totals[p.id] = displayMode == "net" ? (gross - config.buyIn) : gross
             } else {
                 totals[p.id] = 0
             }
@@ -250,9 +263,14 @@ class RoundViewModel: ObservableObject {
             if case .won(_, _, _, let carry) = status { return total + carry }
             return total
         }
+        // Open = pending or provisional only. .carried holes whose carry has been
+        // picked up by a later winner are already baked into totalWon via `carry`;
+        // counting them again here would inflate the denominator and under-value
+        // per-skin. Unresolved end-of-round carries are squashed (money lost), not
+        // included in the denom.
         let stillOpen = skins.values.reduce(0) { total, status in
             switch status {
-            case .pending, .provisional, .carried: return total + 1
+            case .pending, .provisional: return total + 1
             default: return total
             }
         }
@@ -263,9 +281,10 @@ class RoundViewModel: ObservableObject {
 
     var skinsStillOpen: Int {
         let skins = cachedSkins
+        // Excludes .carried — see skinValue comment for why carried holes are not counted.
         return skins.values.reduce(0) { total, status in
             switch status {
-            case .pending, .provisional, .carried: return total + 1
+            case .pending, .provisional: return total + 1
             default: return total
             }
         }
@@ -281,12 +300,14 @@ class RoundViewModel: ObservableObject {
         return nil
     }
 
-    /// True when all participating players (those with at least one score) have scored all 18 holes.
-    /// No-shows (zero scores) are excluded so they don't block round completion.
+    /// True when EVERY configured player in the round has scored all 18 holes.
+    /// Mid-round we cannot distinguish "hasn't started yet" from "no-show", so we require
+    /// all `allPlayers` to have scored. The creator can short-circuit via `forceCompleted`
+    /// (End Round button), in which case we accept whoever has scored at least one hole.
     var allGroupsFinished: Bool {
-        let participating = activePlayers
-        guard !participating.isEmpty else { return false }
-        return participating.allSatisfy { player in
+        let pool: [Player] = forceCompleted ? activePlayers : allPlayers
+        guard !pool.isEmpty else { return false }
+        return pool.allSatisfy { player in
             holes.allSatisfy { hole in scores[player.id]?[hole.num] != nil }
         }
     }
@@ -487,7 +508,7 @@ class RoundViewModel: ObservableObject {
             .sink { [weak self] _ in
                 guard let self = self else { return }
                 // Don't poll if the round is already complete
-                guard !self.isRoundComplete else {
+                guard !self.isRoundComplete, !self.roundWasCancelled else {
                     self.pollingCancellable?.cancel()
                     return
                 }
@@ -509,7 +530,21 @@ class RoundViewModel: ObservableObject {
 
         do {
             let scoreDTOs = try await roundService.fetchScores(roundId: roundId)
-            guard !scoreDTOs.isEmpty else { return }
+            if scoreDTOs.isEmpty {
+                // Scores are empty — could mean the round was deleted (Cancel Round),
+                // OR just that nobody has scored yet, OR a transient server error.
+                // Only conclude "cancelled" if we had local scores AND the round row
+                // itself no longer exists in the DB. A network error or empty response
+                // alone is NOT proof of deletion — going offline must not kill the round.
+                let hadLocalScores = await MainActor.run { !scores.values.allSatisfy({ $0.isEmpty }) }
+                if hadLocalScores {
+                    let roundStillExists = (try? await roundService.fetchRoundById(roundId: roundId)) != nil
+                    if !roundStillExists {
+                        await MainActor.run { roundWasCancelled = true }
+                    }
+                }
+                return
+            }
 
             await MainActor.run {
                 var updated = false
@@ -584,6 +619,11 @@ class RoundViewModel: ObservableObject {
             #if DEBUG
             print("[RoundViewModel] Polling failed: \(error)")
             #endif
+            // Network error — do NOT conclude the round was cancelled. The device is
+            // likely just offline (airplane mode, tunnel, bad signal). The round still
+            // exists in Supabase. When connectivity returns, the next poll will succeed
+            // and scores will resync. Wrongly setting roundWasCancelled here was causing
+            // both devices to auto-exit the round whenever cell signal dropped.
         }
     }
 
@@ -658,7 +698,10 @@ class RoundViewModel: ObservableObject {
         scores[intId, default: [:]][dto.holeNum] = dto.score
         ScoreStorage.shared.save(scores: scores, forKey: roundKey)
         activeHole = computeActiveHole()
-        calculateSkins()
+        let newSkins = calculateSkins()
+        // Detect carry events from realtime updates so other groups see them instantly
+        // (without waiting for the next 15s poll tick).
+        checkForCarryEvents(skins: newSkins)
     }
 
     deinit {
@@ -930,9 +973,15 @@ class RoundViewModel: ObservableObject {
         self.currentUserId = currentUserId
         self.allPlayers = config.players
         // Use real per-hole data — never fall back to hardcoded defaults
-        self.holes = config.holes ?? config.teeBox?.holes ?? Hole.allHoles
+        // STRICT: never fall back to default pars. RoundCoordinatorView gates on
+        // holes presence before mounting the scorecard, so this should never be empty.
+        let resolved = config.holes ?? config.teeBox?.holes ?? []
+        if resolved.isEmpty {
+            assertionFailure("RoundViewModel mounted without holes — RoundCoordinatorView should have blocked this")
+        }
+        self.holes = resolved
         #if DEBUG
-        let source = config.holes != nil ? "config.holes" : (config.teeBox?.holes != nil ? "teeBox.holes" : "⚠️ FALLBACK")
+        let source = config.holes != nil ? "config.holes" : (config.teeBox?.holes != nil ? "teeBox.holes" : "⚠️ EMPTY (assertion will fire)")
         let totalPar = self.holes.reduce(0) { $0 + $1.par }
         print("[RoundViewModel] Holes from \(source): \(self.holes.count) holes, totalPar=\(totalPar), pars=\(self.holes.prefix(5).map(\.par))")
         #endif

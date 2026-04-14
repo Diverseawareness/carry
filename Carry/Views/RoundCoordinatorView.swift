@@ -242,7 +242,7 @@ struct RoundCoordinatorView: View {
                     .transition(.opacity)
 
             case .active:
-                if let activeConfig = roundConfig {
+                if let activeConfig = roundConfig, !((activeConfig.holes ?? activeConfig.teeBox?.holes ?? []).isEmpty) {
                 ScorecardView(config: activeConfig, onBack: {
                     // Only mark as completed if the round is actually done (all groups finished)
                     // Mid-round exits keep the round as "active" so the active card stays
@@ -268,14 +268,23 @@ struct RoundCoordinatorView: View {
                 }, isQuickGame: isQuickGame, currentUserId: currentUserId, demoMode: initialDemoMode, isViewer: isViewer)
                 .transition(.move(edge: .bottom))
                 } else {
-                    // Round still being created — show spinner until roundConfig is ready
+                    // Either round is still being created, or its config has no holes.
+                    // If config exists but holes are empty, GroupService.buildHomeRound's
+                    // safety net already tried — there's no real data anywhere. Tell the
+                    // user to re-select the course (which writes the JSON via persistCourseSelection).
                     VStack(spacing: 16) {
                         ProgressView()
-                        Text("Setting up round...")
+                        Text(roundConfig == nil ? "Setting up round..." : "Loading course data...")
                             .font(.carry.bodySM)
                             .foregroundColor(Color.textSecondary)
                     }
                     .onAppear {
+                        if let cfg = roundConfig,
+                           (cfg.holes ?? cfg.teeBox?.holes ?? []).isEmpty {
+                            ToastManager.shared.error("Course hole data missing — please re-select the course in Game Options")
+                            onExit?()
+                            return
+                        }
                         // Safety timeout: if round creation hangs, cancel and start offline
                         DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
                             guard roundConfig == nil else { return }
@@ -303,7 +312,7 @@ struct RoundCoordinatorView: View {
             let course = try await roundService.createCourse(
                 name: config.course,
                 clubName: nil,
-                holes: config.holes ?? config.teeBox?.holes ?? Hole.allHoles,
+                holes: config.holes ?? config.teeBox?.holes ?? [],
                 userId: userId
             )
             courseId = course.id
@@ -706,4 +715,5 @@ struct RoundCoordinatorView: View {
                 .strokeBorder(Color.bgLight, lineWidth: 1)
         )
     }
+
 }

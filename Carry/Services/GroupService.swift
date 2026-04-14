@@ -27,7 +27,8 @@ final class GroupService {
         isQuickGame: Bool = false,
         memberGroupNums: [UUID: Int] = [:],
         teeTimeInterval: Int? = nil,
-        scorerIdsToInvite: Set<UUID> = []
+        scorerIdsToInvite: Set<UUID> = [],
+        lastTeeBoxHolesJson: String? = nil
     ) async throws -> SkinsGroupDTO {
         let recurrenceJSON: String? = {
             guard let recurrence else { return nil }
@@ -57,7 +58,8 @@ final class GroupService {
                     lastTeeBoxPar: teeBoxPar,
                     handicapPercentage: handicapPercentage,
                     isQuickGame: isQuickGame,
-                    teeTimeInterval: teeTimeInterval
+                    teeTimeInterval: teeTimeInterval,
+                    lastTeeBoxHolesJson: lastTeeBoxHolesJson
                 ))
                 .select()
                 .single()
@@ -160,6 +162,51 @@ final class GroupService {
             .update(update)
             .eq("id", value: groupId.uuidString)
             .execute()
+    }
+
+    /// Single source of truth for reading per-hole data from a group.
+    /// Returns nil if the group has no persisted holes JSON.
+    func fetchPersistedHoles(groupId: UUID) async -> [Hole]? {
+        struct HolesOnly: Codable {
+            let lastTeeBoxHolesJson: String?
+            enum CodingKeys: String, CodingKey { case lastTeeBoxHolesJson = "last_tee_box_holes_json" }
+        }
+        guard let rows: [HolesOnly] = try? await client.from("skins_groups")
+            .select("last_tee_box_holes_json")
+            .eq("id", value: groupId.uuidString)
+            .limit(1)
+            .execute()
+            .value,
+            let json = rows.first?.lastTeeBoxHolesJson,
+            let data = json.data(using: .utf8),
+            let decoded = try? JSONDecoder().decode([Hole].self, from: data),
+            !decoded.isEmpty else { return nil }
+        return decoded
+    }
+
+    /// Single source of truth for persisting a course selection to a group.
+    /// Writes both denormalized fields AND the per-hole JSON in one call.
+    /// Use this everywhere a course is saved — never write course fields directly.
+    func persistCourseSelection(groupId: UUID, course: SelectedCourse) async throws {
+        var holesJson: String? = nil
+        if let holes = course.teeBox?.holes,
+           !holes.isEmpty,
+           let data = try? JSONEncoder().encode(holes) {
+            holesJson = String(data: data, encoding: .utf8)
+        }
+        try await updateGroup(
+            groupId: groupId,
+            update: SkinsGroupUpdate(
+                lastCourseName: course.courseName,
+                lastCourseClubName: course.clubName,
+                lastTeeBoxName: course.teeBox?.name,
+                lastTeeBoxColor: course.teeBox?.color,
+                lastTeeBoxCourseRating: course.teeBox?.courseRating,
+                lastTeeBoxSlopeRating: course.teeBox?.slopeRating,
+                lastTeeBoxPar: course.teeBox?.par,
+                lastTeeBoxHolesJson: holesJson
+            )
+        )
     }
 
     /// Convert a Quick Game to a recurring group. Sets name and marks guests as pending.
@@ -356,6 +403,17 @@ final class GroupService {
         }
     }
 
+    /// Save group_num assignments for all members (Quick Games).
+    func saveGroupNums(groupId: UUID, assignments: [(playerId: UUID, groupNum: Int)]) async throws {
+        for item in assignments {
+            try await client.from("group_members")
+                .update(["group_num": item.groupNum])
+                .eq("group_id", value: groupId.uuidString)
+                .eq("player_id", value: item.playerId.uuidString)
+                .execute()
+        }
+    }
+
     /// Delete a group entirely — uses RPC to delete in FK-safe order.
     func deleteGroup(groupId: UUID) async throws {
         try await client.rpc("delete_group", params: ["gid": groupId.uuidString]).execute()
@@ -496,24 +554,19 @@ final class GroupService {
                         scheduledDate: group.scheduledDate,
                         currentUserId: currentPlayerIntId,
                         teeBox: lastCourse?.teeBox,
-                        supabaseGroupId: group.id
+                        supabaseGroupId: group.id,
+                        winningsDisplay: group.winningsDisplay,
+                        isQuickGame: group.isQuickGame ?? false
                     )
 
                     switch roundDTO.status {
                     case "active":
                         if activeRound == nil { activeRound = homeRound }
                     case "concluded":
-                        // Auto-archive concluded rounds after 12 hours
-                        let concludedAge = roundDTO.updatedAt.map { Date().timeIntervalSince($0) } ?? 0
-                        if concludedAge > 43200 {
-                            // Auto-flip to completed
-                            Task {
-                                try? await roundService.updateRoundStatus(roundId: roundDTO.id, status: "completed")
-                            }
-                            roundHistory.append(homeRound)
-                        } else {
-                            if concludedRound == nil { concludedRound = homeRound }
-                        }
+                        // Concluded rounds stay pinned to the active section until the user
+                        // explicitly taps "Save Round Results" (which marks them completed).
+                        // No time-based auto-archive — would cause confusing disappearance.
+                        if concludedRound == nil { concludedRound = homeRound }
                     case "completed":
                         roundHistory.append(homeRound)
                     default:
@@ -523,16 +576,16 @@ final class GroupService {
             }
 
             // Extract tee box from most recent round and attach to lastCourse
-            if lastCourse != nil {
+            if let existingCourse = lastCourse {
                 let roundTeeBox = activeRound?.teeBox ?? concludedRound?.teeBox ?? roundHistory.first?.teeBox
                 if let teeBox = roundTeeBox {
                     lastCourse = SelectedCourse(
-                        courseId: lastCourse!.courseId,
-                        courseName: lastCourse!.courseName,
-                        clubName: lastCourse!.clubName,
-                        location: lastCourse!.location,
+                        courseId: existingCourse.courseId,
+                        courseName: existingCourse.courseName,
+                        clubName: existingCourse.clubName,
+                        location: existingCourse.location,
                         teeBox: teeBox,
-                        apiTee: lastCourse!.apiTee
+                        apiTee: existingCourse.apiTee
                     )
                 }
             }
@@ -560,7 +613,8 @@ final class GroupService {
                 isQuickGame: group.isQuickGame ?? false,
                 scorerIds: group.scorerIds,
                 teeTimes: teeTimes,
-                teeTimeInterval: group.teeTimeInterval
+                teeTimeInterval: group.teeTimeInterval,
+                winningsDisplay: group.winningsDisplay ?? "gross"
             )
             savedGroups.append(savedGroup)
         }
@@ -624,6 +678,11 @@ final class GroupService {
         if let courseName = group.lastCourseName {
             var groupTeeBox: TeeBox? = nil
             if let teeBoxName = group.lastTeeBoxName, let teeBoxColor = group.lastTeeBoxColor {
+                // Hole resolution chain: group JSON → fetchPersistedHoles fallback
+                var holes = group.decodeHoles()
+                if holes == nil || holes?.isEmpty == true {
+                    holes = await fetchPersistedHoles(groupId: group.id)
+                }
                 groupTeeBox = TeeBox(
                     id: UUID().uuidString,
                     courseId: "0",
@@ -631,7 +690,8 @@ final class GroupService {
                     color: teeBoxColor,
                     courseRating: group.lastTeeBoxCourseRating ?? 0,
                     slopeRating: group.lastTeeBoxSlopeRating ?? 0,
-                    par: group.lastTeeBoxPar ?? 72
+                    par: group.lastTeeBoxPar ?? 72,
+                    holes: holes
                 )
             }
             lastCourse = SelectedCourse(
@@ -668,22 +728,16 @@ final class GroupService {
                     scheduledDate: group.scheduledDate,
                     currentUserId: currentPlayerIntId,
                     teeBox: lastCourse?.teeBox,
-                    supabaseGroupId: group.id
+                    supabaseGroupId: group.id,
+                    winningsDisplay: group.winningsDisplay,
+                    isQuickGame: group.isQuickGame ?? false
                 )
                 switch roundDTO.status {
                 case "active":
                     if activeRound == nil { activeRound = homeRound }
                 case "concluded":
-                    // Auto-complete concluded rounds after 1 hour
-                    let concludedAge = roundDTO.updatedAt.map { Date().timeIntervalSince($0) } ?? 0
-                    if concludedAge > 3600 {
-                        Task {
-                            try? await roundService.updateRoundStatus(roundId: roundDTO.id, status: "completed")
-                        }
-                        roundHistory.append(homeRound)
-                    } else {
-                        if concludedRound == nil { concludedRound = homeRound }
-                    }
+                    // Concluded rounds stay pinned until user saves results — no auto-archive.
+                    if concludedRound == nil { concludedRound = homeRound }
                 case "completed":
                     roundHistory.append(homeRound)
                 default:
@@ -692,16 +746,16 @@ final class GroupService {
             }
         }
 
-        if lastCourse != nil {
+        if let existingCourse = lastCourse {
             let roundTeeBox = activeRound?.teeBox ?? concludedRound?.teeBox ?? roundHistory.first?.teeBox
             if let teeBox = roundTeeBox {
                 lastCourse = SelectedCourse(
-                    courseId: lastCourse!.courseId,
-                    courseName: lastCourse!.courseName,
-                    clubName: lastCourse!.clubName,
-                    location: lastCourse!.location,
+                    courseId: existingCourse.courseId,
+                    courseName: existingCourse.courseName,
+                    clubName: existingCourse.clubName,
+                    location: existingCourse.location,
                     teeBox: teeBox,
-                    apiTee: lastCourse!.apiTee
+                    apiTee: existingCourse.apiTee
                 )
             }
         }
@@ -730,7 +784,8 @@ final class GroupService {
             isQuickGame: group.isQuickGame ?? false,
             scorerIds: group.scorerIds,
             teeTimes: teeTimes,
-            teeTimeInterval: group.teeTimeInterval
+            teeTimeInterval: group.teeTimeInterval,
+            winningsDisplay: group.winningsDisplay ?? "gross"
         )
     }
 
@@ -744,6 +799,14 @@ final class GroupService {
             return str
         }()
 
+        // Encode holes JSON so par/hcp data syncs across devices
+        var holesJson: String? = nil
+        if let holes = group.lastCourse?.teeBox?.holes,
+           !holes.isEmpty,
+           let data = try? JSONEncoder().encode(holes) {
+            holesJson = String(data: data, encoding: .utf8)
+        }
+
         let update = SkinsGroupUpdate(
             name: group.name,
             buyIn: group.buyInPerPlayer,
@@ -755,7 +818,8 @@ final class GroupService {
             lastTeeBoxColor: group.lastCourse?.teeBox?.color,
             lastTeeBoxCourseRating: group.lastCourse?.teeBox?.courseRating,
             lastTeeBoxSlopeRating: group.lastCourse?.teeBox?.slopeRating,
-            lastTeeBoxPar: group.lastCourse?.teeBox?.par
+            lastTeeBoxPar: group.lastCourse?.teeBox?.par,
+            lastTeeBoxHolesJson: holesJson
         )
 
         try await updateGroup(groupId: group.id, update: update)
@@ -810,7 +874,9 @@ final class GroupService {
         scheduledDate: Date? = nil,
         currentUserId: Int? = nil,
         teeBox: TeeBox? = nil,
-        supabaseGroupId: UUID? = nil
+        supabaseGroupId: UUID? = nil,
+        winningsDisplay: String? = nil,
+        isQuickGame: Bool = false
     ) async -> HomeRound {
         // Fetch tee box from round if not provided
         var resolvedTeeBox = teeBox
@@ -822,6 +888,17 @@ final class GroupService {
                 .execute()
                 .value {
                 resolvedTeeBox = TeeBox(id: dto.id.uuidString, courseId: dto.courseId.uuidString, name: dto.name, color: dto.color, courseRating: dto.courseRating, slopeRating: dto.slopeRating, par: dto.par, holes: dto.decodeHoles())
+            }
+        }
+
+        // Holes safety net: if the resolved tee box is missing per-hole data,
+        // pull from the group's persisted JSON (single source of truth helper).
+        if (resolvedTeeBox?.holes ?? []).isEmpty, let groupId = supabaseGroupId,
+           let decodedHoles = await fetchPersistedHoles(groupId: groupId) {
+            if let tb = resolvedTeeBox {
+                resolvedTeeBox = TeeBox(id: tb.id, courseId: tb.courseId, name: tb.name, color: tb.color, courseRating: tb.courseRating, slopeRating: tb.slopeRating, par: tb.par, holes: decodedHoles)
+            } else {
+                resolvedTeeBox = TeeBox(id: "", courseId: "", name: "", color: "", courseRating: 0, slopeRating: 0, par: decodedHoles.reduce(0) { $0 + $1.par }, holes: decodedHoles)
             }
         }
 
@@ -877,25 +954,66 @@ final class GroupService {
         // Compute current hole (max hole scored by any player)
         let currentHole = scores.values.flatMap { $0.keys }.max() ?? 0
 
-        // Compute skins — respects round settings (net/gross, carries)
-        // Use only players who actually scored (activePlayers) for pot/skins
+        // Compute skins — must mirror RoundViewModel.calculateSkins exactly so the
+        // home active card pill and the scorecard CashGamesBar agree.
+        //
+        // participatingPlayers excludes no-shows (players who scored zero holes across the
+        // entire round). For an ACTIVE round we keep the full roundPlayers as the threshold
+        // so the pot doesn't shrink while waiting for late scorers. For a CONCLUDED or
+        // COMPLETED round we exclude no-shows entirely — they never put money in and
+        // shouldn't block hole resolution or inflate the player count.
         let activeRoundPlayers = roundPlayers.filter { scores[$0.id]?.isEmpty == false }
+        let roundIsDone = (roundDTO.status == "concluded" || roundDTO.status == "completed")
+        let participatingPlayers: [Player] = roundIsDone ? activeRoundPlayers : roundPlayers
         let useNet = roundDTO.net
         let carriesEnabled = roundDTO.carries
         let handicapPct = roundDTO.handicapPercentage
-        let holes = resolvedTeeBox?.holes ?? Hole.allHoles
+        // STRICT: if we still don't have real per-hole data, skip skin computation.
+        // The home active card will show $0 rather than wrong numbers based on default pars.
+        guard let holes = resolvedTeeBox?.holes, !holes.isEmpty else {
+            #if DEBUG
+            print("[buildHomeRound] ⚠️ No holes available — returning round with empty winnings")
+            #endif
+            var emptyRound = HomeRound(
+                id: roundDTO.id,
+                groupName: groupName,
+                courseName: courseName,
+                players: roundPlayers,
+                status: roundDTO.status == "active" ? .active : (roundDTO.status == "concluded" ? .concluded : .completed),
+                currentHole: currentHole,
+                totalHoles: 18,
+                buyIn: buyIn,
+                skinsWon: 0,
+                totalSkins: 18,
+                yourSkins: 0,
+                invitedBy: nil,
+                creatorId: creatorId,
+                startedAt: nil,
+                completedAt: nil,
+                playerWinnings: [:],
+                playerWonHoles: [:]
+            )
+            emptyRound.teeBox = resolvedTeeBox
+            emptyRound.supabaseGroupId = supabaseGroupId
+            emptyRound.scoringMode = ScoringMode(rawValue: roundDTO.scoringMode ?? "single") ?? .single
+            emptyRound.skinRules = SkinRules(net: roundDTO.net, carries: roundDTO.carries, outright: roundDTO.outright, handicapPercentage: roundDTO.handicapPercentage)
+            emptyRound.winningsDisplay = winningsDisplay ?? "gross"
+            return emptyRound
+        }
 
-        var skinsWon = 0  // total skins awarded (carries included in count)
-        var pendingCarry = 0
-        var playerSkins: [Int: Int] = [:]  // playerID → skins count
+        var skinsWon = 0       // total skins awarded so far (carries baked in)
+        var openSkins = 0      // pending/provisional holes (not all players scored)
+        var pendingCarry = 0   // carries waiting to be picked up by the next outright winner
+        var playerSkins: [Int: Int] = [:]
         var playerWonHoles: [Int: [Int]] = [:]
-        activeRoundPlayers.forEach { playerSkins[$0.id] = 0 }
+        var pendingLeaders: [HomeRound.PendingHoleLeader] = []  // provisional holes (some scored, not all)
+        participatingPlayers.forEach { playerSkins[$0.id] = 0 }
 
         for holeNum in 1...18 {
             let hole = holes[holeNum - 1]
 
-            // Build (playerId, effectiveScore) for each player who scored this hole
-            let holeEntries: [(Int, Int)] = activeRoundPlayers.compactMap { p in
+            // Effective scores for THIS hole, across all participating players
+            let holeEntries: [(Int, Int)] = participatingPlayers.compactMap { p in
                 guard let gross = scores[p.id]?[holeNum] else { return nil }
                 if useNet, let teeBox = resolvedTeeBox {
                     let strokes = RoundViewModel.getStrokes(
@@ -912,9 +1030,41 @@ final class GroupService {
                 return (p.id, gross)
             }
 
-            // Need at least 2 players scored for a skin to be contested
-            guard holeEntries.count >= 2 else { continue }
+            // A hole is finished when every PARTICIPATING player (not no-shows) scored it.
+            // For active rounds, participating = full roster so nothing gets awarded until
+            // every configured player has scored. For concluded/completed rounds, no-shows
+            // are already excluded from participating, so the threshold matches reality.
+            if holeEntries.count < participatingPlayers.count {
+                openSkins += 1
+                // Always capture an entry for in-flight holes so the "Pending Results"
+                // sheet shows the full per-hole snapshot. If anyone has scored, capture
+                // the current leader; otherwise emit a placeholder (leader: nil → "-" row).
+                if !holeEntries.isEmpty,
+                   let bestScore = holeEntries.map(\.1).min() {
+                    let leaderIds = holeEntries.filter { $0.1 == bestScore }.map(\.0)
+                    let leader = roundPlayers.first(where: { leaderIds.contains($0.id) })
+                    pendingLeaders.append(HomeRound.PendingHoleLeader(
+                        id: holeNum,
+                        holeNum: holeNum,
+                        leader: leader,
+                        score: bestScore,
+                        scored: holeEntries.count,
+                        total: participatingPlayers.count
+                    ))
+                } else {
+                    pendingLeaders.append(HomeRound.PendingHoleLeader(
+                        id: holeNum,
+                        holeNum: holeNum,
+                        leader: nil,
+                        score: 0,
+                        scored: 0,
+                        total: participatingPlayers.count
+                    ))
+                }
+                continue
+            }
 
+            // All scored — resolve
             guard let bestScore = holeEntries.map(\.1).min() else { continue }
             let winners = holeEntries.filter { $0.1 == bestScore }
             if winners.count == 1 {
@@ -925,21 +1075,34 @@ final class GroupService {
                 playerWonHoles[winnerId, default: []].append(holeNum)
                 pendingCarry = 0
             } else {
-                // Tied — carry or squash
+                // Tied — carry forward if enabled, otherwise squashed (money lost to the pot)
                 if carriesEnabled {
                     pendingCarry += 1
                 }
-                // If carries disabled, skin is simply lost
             }
         }
 
-        // Compute winnings — pot based on players who actually scored
-        let pot = buyIn * max(activeRoundPlayers.count, 1)
-        let skinValue = skinsWon > 0 ? Double(pot) / Double(skinsWon) : 0
+        // Pot = buyIn × participatingPlayers.count. For active rounds participating =
+        // full roster (pot stable while waiting for late scorers). For done rounds
+        // participating = only actual scorers (no-shows excluded — they never paid in).
+        let potPlayerCount = participatingPlayers.count
+        let pot = buyIn * max(potPlayerCount, 1)
+        // Denominator for per-skin value:
+        //   - Awarded skins (carries already baked in via skinsWon += totalCarry)
+        //   - Plus holes still in play (not all players scored yet) — these hold
+        //     a share of the pot while we wait for resolution
+        //   - Unresolved pending carries at round end are squashed (money lost) and
+        //     intentionally NOT counted in the denom, so remaining awarded skins take
+        //     the full pot between them.
+        let stillOpen = openSkins
+        let estimatedTotalSkins = stillOpen == 0 ? skinsWon : (skinsWon + stillOpen)
+        let skinValue = estimatedTotalSkins > 0 ? Double(pot) / Double(estimatedTotalSkins) : 0
+        let displayMode = winningsDisplay ?? "gross"
         var playerWinnings: [Int: Int] = [:]
         for player in activeRoundPlayers {
             let skins = playerSkins[player.id] ?? 0
-            playerWinnings[player.id] = skinsWon > 0 ? Int((Double(skins) * skinValue - Double(buyIn)).rounded()) : 0
+            let gross = Int((Double(skins) * skinValue).rounded())
+            playerWinnings[player.id] = displayMode == "net" ? (gross - buyIn) : gross
         }
 
         let status: HomeRoundStatus = {
@@ -950,25 +1113,31 @@ final class GroupService {
             }
         }()
 
-        // Compute completed groups: how many groups have all players scored all 18
+        // Compute completed groups: how many groups have ALL players scored all 18.
+        // Iterate ALL roundPlayers (not activeRoundPlayers) so a group with a player
+        // who hasn't started yet correctly counts as "not done". Otherwise if Group 1
+        // finished and Group 2 hasn't scored anything, the activeRoundPlayers filter
+        // would drop Group 2 entirely → hasPendingResults breaks.
         let groupNums = Set(roundPlayers.map(\.group))
         let totalGroups = max(groupNums.count, 1)
         var completedGroups = 0
         for gNum in groupNums {
-            let groupPlayers = activeRoundPlayers.filter { $0.group == gNum }
+            let groupPlayers = roundPlayers.filter { $0.group == gNum }
+            guard !groupPlayers.isEmpty else { continue }
             let allDone = groupPlayers.allSatisfy { p in
                 (1...18).allSatisfy { hole in scores[p.id]?[hole] != nil }
             }
-            if allDone && !groupPlayers.isEmpty { completedGroups += 1 }
+            if allDone { completedGroups += 1 }
         }
 
-        // For active/concluded rounds, include ALL round players (not just those who scored)
-        // so the scorecard shows everyone. Skins/pot use activeRoundPlayers above.
+        // For concluded/completed rounds, the leaderboard and pills should only show
+        // players who actually played. No-shows stay out of the display.
+        // Active rounds keep the full roster so late scorers still appear in the pills.
         var round = HomeRound(
             id: roundDTO.id,
             groupName: groupName,
             courseName: courseName,
-            players: roundPlayers,
+            players: participatingPlayers,
             status: status,
             currentHole: currentHole,
             totalHoles: 18,
@@ -995,7 +1164,11 @@ final class GroupService {
             outright: roundDTO.outright,
             handicapPercentage: roundDTO.handicapPercentage
         )
-        round.activePlayerCount = activeRoundPlayers.count
+        // Match internal pot math: pot is buyIn × participatingPlayers.count
+        round.activePlayerCount = participatingPlayers.count
+        round.winningsDisplay = displayMode
+        round.pendingHoleLeaders = pendingLeaders
+        round.isQuickGame = isQuickGame
         return round
     }
 }

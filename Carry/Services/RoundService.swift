@@ -91,15 +91,39 @@ final class RoundService {
             .execute()
             .value
 
-        // Add players to round
+        // Add players to round. If this fails, the rounds row would be orphaned with
+        // no players — roll it back so we don't leave junk in the DB.
         let playerInserts = players.map { p in
             RoundPlayerInsert(roundId: round.id, playerId: p.userId, groupNum: p.group)
         }
-        try await client.from("round_players")
-            .insert(playerInserts)
-            .execute()
+        do {
+            try await client.from("round_players")
+                .insert(playerInserts)
+                .execute()
+        } catch {
+            #if DEBUG
+            print("[RoundService] round_players insert failed — rolling back rounds row \(round.id): \(error)")
+            #endif
+            // Best-effort cleanup; ignore secondary failure
+            _ = try? await client.from("rounds")
+                .delete()
+                .eq("id", value: round.id.uuidString)
+                .execute()
+            throw error
+        }
 
         return round
+    }
+
+    /// Check whether a specific round still exists in the DB. Returns nil if deleted.
+    func fetchRoundById(roundId: UUID) async throws -> RoundDTO? {
+        let rounds: [RoundDTO] = try await client.from("rounds")
+            .select()
+            .eq("id", value: roundId.uuidString)
+            .limit(1)
+            .execute()
+            .value
+        return rounds.first
     }
 
     func fetchActiveRound(userId: UUID) async throws -> RoundDTO? {

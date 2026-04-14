@@ -153,12 +153,14 @@ struct AuthView: View {
                 do {
                     try await authService.signInWithApple(credential: credential)
                 } catch {
-                    self.error = error.localizedDescription
+                    self.error = "Sign in failed. Please try again."
                 }
                 isSigningIn = false
             }
         case .failure(let err):
-            error = err.localizedDescription
+            // Error 1001 = user cancelled — don't show anything
+            if (err as NSError).code == 1001 { return }
+            error = "Sign in failed. Please try again."
         }
     }
 }

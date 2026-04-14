@@ -56,7 +56,15 @@ class CarryAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCente
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
         let userInfo = notification.request.content.userInfo
-        if let type = userInfo["type"] as? String, type == "groupInvite" {
+        let type = userInfo["type"] as? String ?? ""
+
+        // Check user's notification preferences
+        guard NotificationService.shared.shouldShowPush(type: type) else {
+            completionHandler([])
+            return
+        }
+
+        if type == "groupInvite" {
             // Immediately trigger invite check when push arrives in foreground
             NotificationCenter.default.post(name: .didTapGroupInviteNotification, object: nil)
         }
@@ -87,6 +95,7 @@ extension NSNotification.Name {
     static let didTapGroupInviteNotification = NSNotification.Name("didTapGroupInviteNotification")
     static let didTapRoundNotification = NSNotification.Name("didTapRoundNotification")
     static let didEndRound = NSNotification.Name("didEndRound")
+    static let didCancelRound = NSNotification.Name("didCancelRound")
     static let showNewGamePicker = NSNotification.Name("showNewGamePicker")
     static let showDebugGuestClaim = NSNotification.Name("showDebugGuestClaim")
 }
@@ -110,6 +119,7 @@ struct CarryApp: App {
     @State private var showDebugMenu = false
     #endif
     @State private var justOnboarded = false
+    @AppStorage("disclaimerAccepted") private var disclaimerAccepted = false
     private let groupService = GroupService()
 
     init() {
@@ -216,7 +226,6 @@ struct CarryApp: App {
             }
         } else if !authService.isAuthenticated {
             AuthView()
-                .transition(.opacity)
         } else if !authService.isOnboarded {
             ZStack {
                 Color.white.ignoresSafeArea()
@@ -225,10 +234,8 @@ struct CarryApp: App {
                     claimPhoneInvitesIfNeeded()
                 }
             }
-            .transition(.opacity)
         } else {
             MainTabView(initialTab: justOnboarded ? .skinGames : .home)
-                .transition(.opacity)
                 .onAppear {
                     if justOnboarded {
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -241,8 +248,6 @@ struct CarryApp: App {
                 }
         }
         }
-        .animation(.easeOut(duration: 0.35), value: authService.isAuthenticated)
-        .animation(.easeOut(duration: 0.35), value: authService.isOnboarded)
     }
 
     // MARK: - Deep Link Handling
@@ -251,12 +256,13 @@ struct CarryApp: App {
     private func handleIncomingURL(_ url: URL) {
         if let invite = GroupInviteParser.parse(url) {
             if let groupId = invite.groupId {
-                // Create invite row if user isn't already a member, then navigate to Home
+                // Create invite row if user isn't already a member, then navigate into the group
                 Task {
-                    guard let userId = try? SupabaseManager.shared.client.auth.session.user.id else { return }
+                    guard let userId = try? await SupabaseManager.shared.client.auth.session.user.id else { return }
                     try? await groupService.inviteMember(groupId: groupId, playerId: userId)
                     await MainActor.run {
-                        appRouter.navigateToTab = "home"
+                        appRouter.shouldRefreshGroups = true
+                        appRouter.pendingRoundGroupId = groupId
                     }
                 }
             } else {
@@ -298,6 +304,13 @@ struct CarryApp: App {
     #if DEBUG
     @ViewBuilder
     private func debugView(for scenario: DebugScenario) -> some View {
+        // Handle scenarios that don't use DebugWorldState directly
+        if scenario == .disclaimer {
+            DisclaimerView {
+                debugScenario = .homeEmpty
+            }
+        } else {
+
         let world = scenario.worldState
 
         switch world.startScreen {
@@ -319,6 +332,7 @@ struct CarryApp: App {
                 initialBuyIn: Double(world.roundConfig.buyIn),
                 onExit: { debugScenario = .home }
             )
+            .ignoresSafeArea(.container, edges: .bottom)
             .onAppear { if let p = world.isPremium { storeService.isPremium = p } }
 
         case .scorecard:
@@ -334,12 +348,40 @@ struct CarryApp: App {
                 onExit: { debugScenario = .home },
                 isViewer: world.isViewer
             )
+            .ignoresSafeArea(.container, edges: .bottom)
             .onAppear { if let p = world.isPremium { storeService.isPremium = p } }
 
         case .onboarding:
             DebugOnboardingFlowView(onComplete: {
                 debugScenario = .homeEmpty
             })
+
+        case .onboarding3Step:
+            // Skip auth — go straight to onboarding with Apple name pre-filled
+            ZStack {
+                Color.white.ignoresSafeArea()
+                OnboardingView {
+                    debugScenario = .homeEmpty
+                }
+            }
+
+        case .onboarding4Step:
+            // Skip auth — go straight to onboarding with no name (forces name step)
+            ZStack {
+                Color.white.ignoresSafeArea()
+                OnboardingView {
+                    debugScenario = .homeEmpty
+                }
+                .onAppear {
+                    // Clear name so hasAppleName = false
+                    if var user = authService.currentUser {
+                        user.firstName = ""
+                        user.lastName = ""
+                        user.displayName = "Player"
+                        authService.currentUser = user
+                    }
+                }
+            }
 
         case .welcome:
             AuthView()
@@ -353,13 +395,14 @@ struct CarryApp: App {
 
         case .createGroup:
             MainTabView(initialTab: .skinGames)
+
         }
+        } // else
     }
     #endif
 }
 
 #if DEBUG
-/// Debug wrapper: Welcome → Onboarding → Home.
 private struct DebugOnboardingFlowView: View {
     @EnvironmentObject var authService: AuthService
     var onComplete: () -> Void
@@ -367,15 +410,15 @@ private struct DebugOnboardingFlowView: View {
 
     var body: some View {
         if showOnboarding {
-            OnboardingView(onComplete: onComplete)
-                .transition(.move(edge: .trailing))
+            ZStack {
+                Color.white.ignoresSafeArea()
+                OnboardingView(onComplete: onComplete)
+            }
         } else {
             AuthView(onDebugSkip: {
                 authService.isAuthenticated = true
                 authService.isOnboarded = false
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    showOnboarding = true
-                }
+                showOnboarding = true
             })
         }
     }

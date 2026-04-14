@@ -13,20 +13,9 @@ struct PlayerAvatar: View {
         ZStack(alignment: .bottomTrailing) {
             // Main avatar circle
             Group {
-                if let urlString = player.avatarUrl, let url = URL(string: urlString) {
-                    // Remote photo avatar
-                    AsyncImage(url: url) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image
-                                .resizable()
-                                .scaledToFill()
-                                .frame(width: size, height: size)
-                                .clipShape(Circle())
-                        default:
-                            initialsView
-                        }
-                    }
+                if let urlString = player.avatarUrl, !urlString.isEmpty {
+                    // Remote photo avatar — uses in-memory cache for instant repeat loads
+                    CachedAvatarImage(urlString: urlString, size: size, placeholder: { initialsView })
                 } else if player.hasPhoto, let imgName = player.avatarImageName {
                     // Local asset photo avatar
                     Image(imgName)
@@ -93,7 +82,7 @@ struct PlayerAvatar: View {
             Circle()
                 .strokeBorder(Color(hexString: isPending ? "#F8D6C4" : "#A3E09C"), lineWidth: 1.5)
             if player.isPendingInvite {
-                Image(systemName: "message.fill")
+                Image(systemName: "iphone")
                     .font(.system(size: size * 0.38, weight: .medium))
                     .foregroundColor(Color.pendingFill)
             } else {
@@ -104,6 +93,42 @@ struct PlayerAvatar: View {
         }
         .frame(width: size, height: size)
         .clipShape(Circle())
+    }
+}
+
+// MARK: - Cached Avatar Image
+
+/// Loads a remote image via ImageCache. Shows placeholder while loading on first fetch;
+/// subsequent renders show the cached image instantly (no flicker).
+private struct CachedAvatarImage<Placeholder: View>: View {
+    let urlString: String
+    let size: CGFloat
+    @ViewBuilder let placeholder: () -> Placeholder
+
+    @State private var image: UIImage?
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: size, height: size)
+                    .clipShape(Circle())
+            } else {
+                placeholder()
+            }
+        }
+        .task {
+            // Check cache first, then fetch if needed
+            if let cached = await ImageCache.shared.get(urlString) {
+                image = cached
+                return
+            }
+            if let fetched = await ImageCache.shared.fetch(urlString) {
+                image = fetched
+            }
+        }
     }
 }
 

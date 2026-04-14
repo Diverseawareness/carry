@@ -51,14 +51,18 @@ struct GroupManagerView: View {
     @State private var selectedTees: [String]  // tee color per group (e.g. "Combos", "Blues")
     @State private var carriesEnabled = false  // carries toggle (off by default for multi-group)
     @State private var scoringMode: ScoringMode = .everyone  // .single or .everyone (on by default)
+    @State private var winningsDisplay: String = "gross"  // "gross" or "net" — how winnings show in UI
     @State private var handicapPercentage: Double = 1.0  // 1.0 = 100%, 0.7 = 70%
     @State private var buyInText: String = ""  // per-player buy-in amount
     @State private var showManageMembers = false
+    @State private var showPlayerGroups = false
     @State private var showTipBanner = true  // green tip banner, dismissible
     @State private var roundDate: Date = Date()  // mandatory round date (defaults to today)
     @State private var showDatePicker = false  // date picker sheet
     @State private var showLeaveDeleteAlert = false
     @State private var showCloseQuickGameAlert = false
+    @State private var showPendingScorersAlert = false
+    @State private var pendingScorersAlertMessage = ""
     @State private var countdownText = ""  // updated every second by timer
     @State private var refreshTimer: Timer? = nil  // 30s auto-refresh polling
     @State private var isJoiningRound = false  // loading state for "Join Round" button
@@ -91,6 +95,7 @@ struct GroupManagerView: View {
     @State private var inviteShareLink: String = ""
     @State private var cachedHoles: [Hole]? = nil  // preserves API holes across Supabase refreshes
     @State private var invitePhones: [Int: String] = [:]  // playerId → phone number
+    @State private var recentlyRemovedIds: Set<Int> = []  // players manually deleted; refresh skips re-merging them
 
     /// Only the group creator can manage settings, players and tee times.
     private var isCreator: Bool { currentUserId == creatorId }
@@ -220,6 +225,12 @@ struct GroupManagerView: View {
         allMembers + guests
     }
 
+    // MARK: - Player Groups Sheet (extracted to PlayerGroupsSheet.swift)
+
+    // All pg* functions, bindings, and state moved to PlayerGroupsSheet struct.
+    // Sheet is presented via .sheet(isPresented:) with onSave/onCancel callbacks.
+
+
     /// Extracted to reduce body complexity for Swift type checker.
     @ViewBuilder
     private var manageMembersSheet: some View {
@@ -283,6 +294,22 @@ struct GroupManagerView: View {
         while teeTimes.count > groups.count {
             teeTimes.removeLast()
         }
+    }
+
+    /// Returns (groupNum, scorerName) for any group whose assigned scorer hasn't accepted yet.
+    /// Used to warn the creator at round-start time so they can chase the scorer or reassign.
+    private var pendingScorerWarnings: [(group: Int, name: String)] {
+        var result: [(group: Int, name: String)] = []
+        for i in 0..<min(scorerIDs.count, groups.count) {
+            // Group 1 is the creator — never pending
+            if i == 0 { continue }
+            let scorerId = scorerIDs[i]
+            guard let scorer = groups[i].first(where: { $0.id == scorerId }) else { continue }
+            if scorer.isPendingInvite || scorer.isPendingAccept {
+                result.append((group: i + 1, name: scorer.shortName))
+            }
+        }
+        return result
     }
 
     /// Ensure each group has a valid scorer; default to first confirmed (non-pending) player
@@ -492,6 +519,8 @@ struct GroupManagerView: View {
 
     /// Fetches fresh group data from Supabase and updates local state.
     private func refreshGroupData() async {
+        // Don't refresh while Player Groups sheet is open — user is actively editing
+        guard !showPlayerGroups else { return }
         guard let groupId = supabaseGroupId else { return }
         guard let userId = try? await SupabaseManager.shared.client.auth.session.user.id else { return }
 
@@ -505,36 +534,91 @@ struct GroupManagerView: View {
 
             await MainActor.run {
                 // Update member statuses in-place if groups already exist (preserves order)
-                let freshById = Dictionary(uniqueKeysWithValues: freshGroup.members.compactMap { m -> (Int, Player)? in
+                let freshById = Dictionary(uniqueKeysWithValues: freshGroup.members.filter { !recentlyRemovedIds.contains($0.id) }.compactMap { m -> (Int, Player)? in
                     return (m.id, m)
                 })
                 let hadGroups = !groups.isEmpty && !groups.allSatisfy({ $0.isEmpty })
 
-                allMembers = freshGroup.members
-                let sel = Set(freshGroup.members.map(\.id))
+                // Filter out players that were just manually removed (refresh race condition)
+                let filteredFreshMembers = freshGroup.members.filter { !recentlyRemovedIds.contains($0.id) }
+                allMembers = filteredFreshMembers
+                let sel = Set(filteredFreshMembers.map(\.id))
                 selectedIDs = sel
 
-                let existingIds = Set(groups.flatMap { $0 }.map(\.id))
-                let newPlayers = freshGroup.members.filter { !existingIds.contains($0.id) }
-                let memberCountChanged = !newPlayers.isEmpty || freshGroup.members.count != existingIds.count
+                if hadGroups {
+                    // Preserve existing group arrangement — merge changes in-place
+                    let freshIds = Set(filteredFreshMembers.map(\.id))
 
-                if hadGroups && !memberCountChanged {
-                    // Same members — just update statuses in-place (preserves order)
+                    // Track scorers who just accepted so we can toast
+                    let scorerIdSet = Set(scorerIDs)
+                    var newlyAcceptedScorers: [String] = []
+
+                    // 1. Update statuses for existing members, remove gone members
                     for gi in groups.indices {
-                        for pi in groups[gi].indices {
-                            if let fresh = freshById[groups[gi][pi].id] {
-                                groups[gi][pi].isPendingAccept = fresh.isPendingAccept
-                                groups[gi][pi].isPendingInvite = fresh.isPendingInvite
+                        groups[gi] = groups[gi].compactMap { player in
+                            guard freshIds.contains(player.id) else { return nil } // removed/declined
+                            if let fresh = freshById[player.id] {
+                                // Detect scorer acceptance: was pending, now active
+                                if player.isPendingAccept && !fresh.isPendingAccept && scorerIdSet.contains(player.id) {
+                                    newlyAcceptedScorers.append(fresh.name)
+                                }
+                                var updated = player
+                                updated.isPendingAccept = fresh.isPendingAccept
+                                updated.isPendingInvite = fresh.isPendingInvite
+                                return updated
                             }
+                            return player
                         }
                     }
+
+                    // Toast for scorers who just accepted
+                    for name in newlyAcceptedScorers {
+                        let first = name.components(separatedBy: " ").first ?? name
+                        ToastManager.shared.success("\(first) accepted — ready to score")
+                    }
+
+                    // 2. Add new members to their assigned group (from group_num), respecting max 4
+                    let existingIdsNow = Set(groups.flatMap { $0 }.map(\.id))
+                    var newlyJoinedNames: [String] = []
+                    for newPlayer in filteredFreshMembers where !existingIdsNow.contains(newPlayer.id) {
+                        let targetGroup = max(0, newPlayer.group - 1)
+                        if targetGroup < groups.count && groups[targetGroup].count < 4 {
+                            groups[targetGroup].append(newPlayer)
+                        } else if targetGroup >= groups.count {
+                            while groups.count <= targetGroup { groups.append([]) }
+                            groups[targetGroup].append(newPlayer)
+                        } else {
+                            // Target group full — find group with fewest players
+                            if let minIdx = groups.indices.min(by: { groups[$0].count < groups[$1].count }),
+                               groups[minIdx].count < 4 {
+                                groups[minIdx].append(newPlayer)
+                            }
+                        }
+                        // Track for toast (skins groups only — quick game members are added by creator)
+                        if !isQuickGame && !newPlayer.isPendingAccept {
+                            let first = newPlayer.name.components(separatedBy: " ").first ?? newPlayer.name
+                            newlyJoinedNames.append(first)
+                        }
+                    }
+
+                    // Toast for members who just joined
+                    if let name = newlyJoinedNames.first, newlyJoinedNames.count == 1 {
+                        ToastManager.shared.success("\(name) joined the group")
+                    } else if newlyJoinedNames.count > 1 {
+                        ToastManager.shared.success("\(newlyJoinedNames.joined(separator: ", ")) joined the group")
+                    }
+
+                    // 3. Remove trailing empty groups
+                    while groups.last?.isEmpty == true && groups.count > 1 {
+                        groups.removeLast()
+                    }
                 } else {
-                    // First load — do a full regroup
-                    let playing = freshGroup.members.filter { sel.contains($0.id) }
+                    // First load — use autoGroup to set up initial arrangement
+                    let playing = filteredFreshMembers.filter { sel.contains($0.id) }
                     let regrouped = Self.autoGroup(playing)
                     let safeGrouped: [[Player]]
                     if regrouped.isEmpty || regrouped.allSatisfy({ $0.isEmpty }) {
-                        safeGrouped = freshGroup.members.isEmpty ? [[]] : [freshGroup.members]
+                        safeGrouped = filteredFreshMembers.isEmpty ? [[]] : [filteredFreshMembers]
                     } else {
                         safeGrouped = regrouped
                     }
@@ -608,6 +692,9 @@ struct GroupManagerView: View {
                 // Update group name
                 groupName = freshGroup.name
 
+                // Sync winnings display preference
+                winningsDisplay = freshGroup.winningsDisplay
+
                 // Update round status
                 roundStarted = freshGroup.activeRound != nil || freshGroup.concludedRound != nil
 
@@ -675,8 +762,7 @@ struct GroupManagerView: View {
 
                     Spacer()
 
-                    // Leaderboard button (hidden for quick games — no history yet)
-                    if !isQuickGame {
+                    // Leaderboard button
                     Button {
                         showLeaderboard = true
                     } label: {
@@ -691,7 +777,6 @@ struct GroupManagerView: View {
                     }
                     .accessibilityLabel("Leaderboard")
                     .accessibilityHint("Shows round and all-time leaderboard")
-                    }
 
                     // Group options button — creator only
                     if isCreator {
@@ -858,87 +943,35 @@ struct GroupManagerView: View {
                     .background(Color.bgPrimary)
                 }
 
-                ScrollView {
-                VStack(spacing: 0) {
-                    if !isQuickGame {
-                    // "Playing" section header + "Invite & Manage" (admin only)
-                    HStack {
-                        Text("Playing")
-                            .font(.system(size: 18, weight: .heavy))
-                            .foregroundColor(Color.deepNavy)
-                        Spacer()
-                        if isCreator && activePlayerCount > 0 {
-                            Button {
-                                showManageMembers = true
-                            } label: {
-                                Text("Invite & Manage")
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundColor(Color.textPrimary)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 4)
-                                    .background(Capsule().strokeBorder(Color.textPrimary, lineWidth: 1))
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 16)
-
-                    // Horizontal scrolling player pills — only confirmed (non-pending) players
-                    if activePlayerCount == 0 {
+                // "Tee Times" header — pinned above scroll
+                HStack {
+                    Text("Tee Times")
+                        .font(.system(size: 18, weight: .heavy))
+                        .foregroundColor(Color.deepNavy)
+                    Spacer()
+                    if isCreator && !isLiveRound && !roundStarted && selectedCount > 0 {
                         Button {
-                            showManageMembers = true
-                        } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: "plus")
-                                    .font(.system(size: 14, weight: .bold))
-                                Text("Add Players")
-                                    .font(.carry.bodySMBold)
+                            if isQuickGame {
+                                showPlayerGroups = true
+                            } else {
+                                showManageMembers = true
                             }
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 24)
-                            .padding(.vertical, 12)
-                            .background(Capsule().fill(Color.textPrimary))
+                        } label: {
+                            Text("Invite & Manage")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(Color.textPrimary)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 4)
+                                .background(Capsule().strokeBorder(Color.textPrimary, lineWidth: 1))
                         }
                         .buttonStyle(.plain)
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, 16)
-                    } else {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 10) {
-                                ForEach(allAvailable.filter { selectedIDs.contains($0.id) && !$0.isPendingInvite && !$0.isPendingAccept }) { player in
-                                    HStack(spacing: 6) {
-                                        PlayerAvatar(player: player, size: 32)
-                                        Text(player.shortName)
-                                            .font(.carry.bodySMSemibold)
-                                            .foregroundColor(Color.deepNavy)
-                                            .lineLimit(1)
-                                    }
-                                    .padding(.leading, 6)
-                                    .padding(.trailing, 15)
-                                    .padding(.vertical, 6)
-                                    .background(.white)
-                                    .clipShape(Capsule())
-                                    .shadow(color: .black.opacity(0.06), radius: 6, y: 2)
-                                }
-                            }
-                            .padding(.horizontal, 20)
-                            .padding(.vertical, 3)
-                        }
-                        .padding(.bottom, 16)
                     }
-                    } // end if !isQuickGame (Playing section)
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 16)
 
-                    // "Tee Times" section header
-                    HStack {
-                        Text("Tee Times")
-                            .font(.system(size: 18, weight: .heavy))
-                            .foregroundColor(Color.deepNavy)
-                        Spacer()
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 16)
-
+                ScrollView {
+                VStack(spacing: 0) {
                     // Green tip banner (admin only, dismissible)
                     if isCreator && showTipBanner && selectedCount > 0 {
                         VStack(spacing: 0) {
@@ -956,6 +989,7 @@ struct GroupManagerView: View {
                                         .foregroundColor(Color.successGreen)
                                 }
                                 .buttonStyle(.plain)
+                                .accessibilityLabel("Dismiss tip")
                             }
                             .padding(.horizontal, 16)
                             .padding(.vertical, 10)
@@ -1000,7 +1034,15 @@ struct GroupManagerView: View {
                         } else if needsNextSchedule {
                             showSettings = true
                         } else {
-                            Task { await startRoundWithHolesSafetyNet() }
+                            // Check for scorers in groups 2+ that haven't accepted yet
+                            let pending = pendingScorerWarnings
+                            if !pending.isEmpty {
+                                let names = pending.map { "Group \($0.group): \($0.name)" }.joined(separator: "\n")
+                                pendingScorersAlertMessage = "These scorers haven't accepted yet and won't be able to enter scores until they do:\n\n\(names)\n\nMake sure they tap the invite in Carry, or pick a different scorer."
+                                showPendingScorersAlert = true
+                            } else {
+                                Task { await startRoundWithHolesSafetyNet() }
+                            }
                         }
                     } label: {
                         HStack(spacing: 10) {
@@ -1021,7 +1063,7 @@ struct GroupManagerView: View {
                     .disabled(!buttonEnabled)
                     .accessibilityLabel(startButtonLabel)
                     .accessibilityHint(isLiveRound ? "Returns to the live scorecard" : "Starts a new round")
-                    .padding(.bottom, 40)
+                    .padding(.bottom, 20)
                     .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
                         if let secs = secondsUntilTeeWindow {
                             countdownText = countdownLabel(seconds: secs)
@@ -1052,9 +1094,11 @@ struct GroupManagerView: View {
                                     .eq("group_id", value: groupId.uuidString)
                                     .execute()
                                     .value {
-                                    let activeIds = Set(members.filter { $0.status == "active" }.map { $0.playerId })
+                                    let activeMembers = members.filter { $0.status == "active" }
+                                    let activeIds = Set(activeMembers.map { $0.playerId })
                                     // Check if any phone invites were claimed (invited_phone cleared + status active)
-                                    let claimedPhones = Set(members.filter { $0.status == "active" && ($0.invitedPhone == nil || ($0.invitedPhone ?? "").isEmpty) }.map { $0.playerId })
+                                    let claimedMembers = activeMembers.filter { ($0.invitedPhone ?? "").isEmpty }
+                                    let claimedPhones = Set(claimedMembers.map { $0.playerId })
                                     let hasClaimedInvite = allMembers.contains { $0.isPendingInvite } && !claimedPhones.isEmpty
                                     await MainActor.run {
                                         for i in allMembers.indices {
@@ -1108,10 +1152,9 @@ struct GroupManagerView: View {
                             }
                             // Safety net: if holes still missing, fetch from skins_groups
                             if config.holes == nil || config.holes?.isEmpty == true,
-                               let groupId = supabaseGroupId {
-                                if let holesFromGroup = await fetchHolesFromGroup(groupId: groupId) {
-                                    config.holes = holesFromGroup
-                                }
+                               let groupId = supabaseGroupId,
+                               let holesFromGroup = await GroupService().fetchPersistedHoles(groupId: groupId) {
+                                config.holes = holesFromGroup
                             }
                             if config.holes == nil || config.holes?.isEmpty == true {
                                 await MainActor.run {
@@ -1145,7 +1188,7 @@ struct GroupManagerView: View {
                         )
                     }
                     .disabled(isJoiningRound)
-                    .padding(.bottom, 40)
+                    .padding(.bottom, 20)
                 } else {
                     // Member, round not started: show countdown or "Round Not Started..."
                     HStack(spacing: 10) {
@@ -1160,7 +1203,7 @@ struct GroupManagerView: View {
                         RoundedRectangle(cornerRadius: 12)
                             .fill(Color.borderMedium)
                     )
-                    .padding(.bottom, 40)
+                    .padding(.bottom, 20)
                 }
             }
         }
@@ -1197,6 +1240,7 @@ struct GroupManagerView: View {
                 groupName: groupName,
                 carriesEnabled: carriesEnabled,
                 scoringMode: scoringMode,
+                winningsDisplay: winningsDisplay,
                 handicapPercentage: handicapPercentage,
                 buyInText: buyInText,
                 teeTime: teeTimes.first.flatMap { $0 },
@@ -1207,8 +1251,22 @@ struct GroupManagerView: View {
                     groupName = result.groupName
                     carriesEnabled = result.carriesEnabled
                     scoringMode = result.scoringMode
+                    winningsDisplay = result.winningsDisplay
                     handicapPercentage = result.handicapPercentage
                     buyInText = result.buyInText
+                    // Persist name + buy-in + winnings display to Supabase
+                    if let groupId = supabaseGroupId {
+                        Task {
+                            try? await GroupService().updateGroup(
+                                groupId: groupId,
+                                update: SkinsGroupUpdate(
+                                    name: result.groupName,
+                                    buyIn: Double(result.buyInText) ?? 0,
+                                    winningsDisplay: result.winningsDisplay
+                                )
+                            )
+                        }
+                    }
                     if let t = result.teeTime {
                         roundDate = t
                         if teeTimes.isEmpty { syncTeeTimes() }
@@ -1276,6 +1334,12 @@ struct GroupManagerView: View {
                 if let holes = course.teeBox?.holes, !holes.isEmpty {
                     cachedHoles = holes
                 }
+                // Persist full course (denormalized fields + holes JSON) in one call
+                if let groupId = supabaseGroupId {
+                    Task {
+                        try? await GroupService().persistCourseSelection(groupId: groupId, course: course)
+                    }
+                }
                 onCourseChanged?(course)
                 showCourseChange = false
             }
@@ -1317,6 +1381,44 @@ struct GroupManagerView: View {
                 .presentationDragIndicator(.visible)
                 .presentationBackground(.white)
         }
+        .sheet(isPresented: $showPlayerGroups) {
+            PlayerGroupsSheet(
+                initialGroups: groups,
+                initialScorerIDs: scorerIDs,
+                initialTeeTimes: teeTimes,
+                initialStartingSides: startingSides,
+                initialSelectedTees: selectedTees,
+                initialAllMembers: allMembers,
+                initialSelectedIDs: selectedIDs,
+                initialNextGuestID: nextGuestID,
+                currentUserId: currentUserId,
+                supabaseGroupId: supabaseGroupId,
+                isQuickGame: isQuickGame,
+                handicapPercentage: handicapPercentage,
+                currentCourse: currentCourse,
+                onSave: { result in
+                    groups = result.groups
+                    scorerIDs = result.scorerIDs
+                    teeTimes = result.teeTimes
+                    startingSides = result.startingSides
+                    selectedTees = result.selectedTees
+                    allMembers = result.allMembers
+                    selectedIDs = result.selectedIDs
+                    nextGuestID = result.nextGuestID
+                    // Clear removed IDs — user explicitly saved new group arrangement,
+                    // so any prior swipe-deletes are superseded by the new state.
+                    recentlyRemovedIds.removeAll()
+                    onTeeTimeChanged?(teeTimes.first.flatMap { $0 })
+                    showPlayerGroups = false
+                },
+                onCancel: {
+                    showPlayerGroups = false
+                }
+            )
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+            .presentationBackground(.white)
+        }
         .sheet(isPresented: $showShareCardSheet) {
             VStack(spacing: 0) {
                 // Scrollable results card
@@ -1330,17 +1432,18 @@ struct GroupManagerView: View {
                 }
 
                 // Pinned bottom: invite CTA
-                VStack(spacing: 8) {
-                    Text("Join our skins group on Carry")
-                        .font(.system(size: 18, weight: .bold))
+                VStack(spacing: 12) {
+                    Text("Join our Skins Group on Carry")
+                        .font(.system(size: 20, weight: .bold))
                         .foregroundColor(Color.textPrimary)
 
-                    Text("Track your scores, see who won,\nand settle up — all in one place.")
+                    Text("Copy and share the link with the players\nto join your Skins Group on Carry")
                         .font(.system(size: 15))
                         .foregroundColor(Color.textTertiary)
                         .multilineTextAlignment(.center)
                         .lineSpacing(3)
                 }
+                .padding(.horizontal, 24)
                 .padding(.top, 20)
                 .padding(.bottom, 16)
 
@@ -1422,12 +1525,22 @@ struct GroupManagerView: View {
                 let trimmed = editingName.trimmingCharacters(in: .whitespaces)
                 if !trimmed.isEmpty {
                     groupName = trimmed
+                    if let groupId = supabaseGroupId {
+                        Task {
+                            try? await GroupService().updateGroup(
+                                groupId: groupId,
+                                update: SkinsGroupUpdate(name: trimmed)
+                            )
+                        }
+                    }
                 }
             }
             Button("Cancel", role: .cancel) { }
         }
         .alert(
-            isCreator ? "Delete Group?" : "Leave Group?",
+            isCreator
+                ? (isQuickGame ? "Delete Game?" : "Delete Group?")
+                : (isQuickGame ? "Leave Game?" : "Leave Group?"),
             isPresented: $showLeaveDeleteAlert
         ) {
             Button("Cancel", role: .cancel) { }
@@ -1439,9 +1552,10 @@ struct GroupManagerView: View {
                 }
             }
         } message: {
+            let label = isQuickGame ? "game" : "group"
             Text(isCreator
                 ? "This will remove \(groupName) for all members. This can't be undone."
-                : "You'll be removed from \(groupName) and future games.")
+                : "You'll be removed from \(groupName) and future \(label)s.")
         }
         .alert("Leave game?", isPresented: $showCloseQuickGameAlert) {
             Button("Cancel", role: .cancel) { }
@@ -1450,6 +1564,14 @@ struct GroupManagerView: View {
             }
         } message: {
             Text("Your game setup will be lost.")
+        }
+        .alert("Scorer not yet joined", isPresented: $showPendingScorersAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Start Anyway", role: .destructive) {
+                Task { await startRoundWithHolesSafetyNet() }
+            }
+        } message: {
+            Text(pendingScorersAlertMessage)
         }
         .onAppear {
             // Fresh load on appear and start 30s polling
@@ -1474,12 +1596,13 @@ struct GroupManagerView: View {
             stopDetailAutoRefresh()
         }
         .onChange(of: groups) { _, _ in
-            // Debounce: only sync after user stops reordering
+            // Debounce: sync sort_order + group_num after user stops reordering
             orderSyncTask?.cancel()
             orderSyncTask = Task {
                 try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
                 guard !Task.isCancelled else { return }
                 syncPlayerOrderToSupabase()
+                syncGroupNumsToSupabase()
             }
         }
     }
@@ -1556,7 +1679,7 @@ struct GroupManagerView: View {
                 #endif
             } else {
                 #if DEBUG
-                print("[buildRoundConfig] ❌ NO HOLES — will fall back to Hole.allHoles in RoundViewModel")
+                print("[buildRoundConfig] ❌ NO HOLES — startRoundWithHolesSafetyNet will fetch from Supabase")
                 #endif
             }
         }
@@ -1592,6 +1715,7 @@ struct GroupManagerView: View {
         )
         config.scorerProfileId = scorerProfileId
         config.scoringMode = scoringMode
+        config.winningsDisplay = winningsDisplay
         return config
     }
 
@@ -1602,14 +1726,14 @@ struct GroupManagerView: View {
     /// Blocks round start if no hole data is available.
     private func startRoundWithHolesSafetyNet() async {
         var config = buildRoundConfig()
-        // Safety net: if holes are missing, fetch from skins_groups
+        // Safety net: if holes are missing, fetch from skins_groups via the single helper.
+        // Patch BOTH config.holes AND config.teeBox.holes so every downstream consumer sees them.
         if config.holes == nil || config.holes?.isEmpty == true,
-           let groupId = supabaseGroupId {
-            if let holesFromGroup = await fetchHolesFromGroup(groupId: groupId) {
-                config.holes = holesFromGroup
-                #if DEBUG
-                print("[StartRound] ✅ Fetched holes from skins_groups: \(holesFromGroup.count) holes, pars=\(holesFromGroup.prefix(5).map(\.par))")
-                #endif
+           let groupId = supabaseGroupId,
+           let holesFromGroup = await GroupService().fetchPersistedHoles(groupId: groupId) {
+            config.holes = holesFromGroup
+            if let tb = config.teeBox {
+                config.teeBox = TeeBox(id: tb.id, courseId: tb.courseId, name: tb.name, color: tb.color, courseRating: tb.courseRating, slopeRating: tb.slopeRating, par: tb.par, holes: holesFromGroup)
             }
         }
         if config.holes == nil || config.holes?.isEmpty == true {
@@ -1621,54 +1745,60 @@ struct GroupManagerView: View {
         await MainActor.run { onConfirm(config) }
     }
 
-    // MARK: - Fetch Holes Safety Net
-
-    /// Last-resort fetch of holes from skins_groups.last_tee_box_holes_json
-    private func fetchHolesFromGroup(groupId: UUID) async -> [Hole]? {
-        do {
-            let groups: [SkinsGroupDTO] = try await SupabaseManager.shared.client
-                .from("skins_groups")
-                .select("last_tee_box_holes_json")
-                .eq("id", value: groupId.uuidString)
-                .limit(1)
-                .execute()
-                .value
-            return groups.first?.decodeHoles()
-        } catch {
-            #if DEBUG
-            print("[fetchHolesFromGroup] Failed: \(error)")
-            #endif
-            return nil
-        }
-    }
-
     // MARK: - Remove Player (swipe-to-delete)
 
     private func removePlayer(_ player: Player, fromGroup groupIndex: Int) {
         guard groupIndex < groups.count else { return }
 
-        // Remove from this group
+        // Remove from this group + track so refresh doesn't re-merge
         groups[groupIndex].removeAll { $0.id == player.id }
+        recentlyRemovedIds.insert(player.id)
+        allMembers.removeAll { $0.id == player.id }
+        selectedIDs.remove(player.id)
 
         if isQuickGame {
-            // Quick Game: remove entirely
-            allMembers.removeAll { $0.id == player.id }
-            selectedIDs.remove(player.id)
-
-            // Persist to Supabase
+            // Quick Game: hard delete from Supabase
             if let groupId = supabaseGroupId, let profileId = player.profileId {
                 Task {
-                    try? await SupabaseManager.shared.client
-                        .from("group_members")
-                        .delete()
-                        .eq("group_id", value: groupId.uuidString)
-                        .eq("player_id", value: profileId.uuidString)
-                        .execute()
+                    do {
+                        try await SupabaseManager.shared.client
+                            .from("group_members")
+                            .delete()
+                            .eq("group_id", value: groupId.uuidString)
+                            .eq("player_id", value: profileId.uuidString)
+                            .execute()
+                        #if DEBUG
+                        print("[removePlayer] ✅ Hard-deleted \(player.name) (\(profileId)) from \(groupId)")
+                        #endif
+                    } catch {
+                        #if DEBUG
+                        print("[removePlayer] ❌ Failed to delete \(player.name): \(error)")
+                        #endif
+                        await MainActor.run {
+                            ToastManager.shared.error("Failed to remove player")
+                        }
+                    }
                 }
             }
         } else {
-            // Regular group: just deselect from tee sheet (stays in allMembers for re-add)
-            selectedIDs.remove(player.id)
+            // Regular group: mark as 'removed' in Supabase so refresh excludes them
+            if let groupId = supabaseGroupId, let profileId = player.profileId {
+                Task {
+                    do {
+                        try await GroupService().removeMember(groupId: groupId, playerId: profileId)
+                        #if DEBUG
+                        print("[removePlayer] ✅ Marked \(player.name) (\(profileId)) as removed in \(groupId)")
+                        #endif
+                    } catch {
+                        #if DEBUG
+                        print("[removePlayer] ❌ Failed to mark removed: \(error)")
+                        #endif
+                        await MainActor.run {
+                            ToastManager.shared.error("Failed to remove player")
+                        }
+                    }
+                }
+            }
         }
 
         // If group is now empty, remove the group
@@ -1678,8 +1808,16 @@ struct GroupManagerView: View {
 
         // Re-sync dependent arrays
         syncTeeTimes()
+        let oldScorerIDs = scorerIDs
         syncScorerIDs()
         syncSelectedTees()
+
+        // If scorer changed (because we removed the old scorer), persist to Supabase
+        if oldScorerIDs != scorerIDs {
+            saveScorerIds()
+        }
+
+        ToastManager.shared.success("\(player.shortName) removed")
     }
 
     // MARK: - Focus State (for guest entry / invite entry sheets)
@@ -1730,7 +1868,7 @@ struct GroupManagerView: View {
                                         }
                                         return Int(destPlayer.handicap.rounded())
                                     }()
-                                    Text(pops > 0 ? "\(formatHandicap(destPlayer.handicap)) · \(pops) pop\(pops == 1 ? "" : "s")" : formatHandicap(destPlayer.handicap))
+                                    Text(pops != 0 ? "\(formatHandicap(destPlayer.handicap)) · \(pops > 0 ? "\(pops)" : "+\(abs(pops))")" : formatHandicap(destPlayer.handicap))
                                         .font(.carry.caption)
                                         .foregroundColor(Color.textSecondary)
                                 }
@@ -1958,12 +2096,20 @@ struct GroupManagerView: View {
                 .padding(.bottom, 20)
 
             if groupIndex < groups.count {
-                ForEach(groups[groupIndex]) { player in
+                // Show group members if available, otherwise all confirmed members
+                let candidates = groups[groupIndex].isEmpty
+                    ? allAvailable.filter { !$0.isPendingInvite && !$0.isPendingAccept && $0.profileId != nil }
+                    : groups[groupIndex]
+                ForEach(candidates) { player in
                     let isCurrentScorer = groupIndex < scorerIDs.count && scorerIDs[groupIndex] == player.id
                     let isPending = player.isPendingInvite || player.isPendingAccept
 
                     Button {
                         guard !isPending else { return }
+                        // If the group is empty, add the player to it
+                        if groups[groupIndex].isEmpty || !groups[groupIndex].contains(where: { $0.id == player.id }) {
+                            groups[groupIndex].append(player)
+                        }
                         scorerIDs[groupIndex] = player.id
                         scorerPickerItem = nil
                         saveScorerIds()
@@ -1987,7 +2133,7 @@ struct GroupManagerView: View {
                                         }
                                         return Int(player.handicap.rounded())
                                     }()
-                                    Text(pops > 0 ? "\(formatHandicap(player.handicap)) · \(pops) pop\(pops == 1 ? "" : "s")" : formatHandicap(player.handicap))
+                                    Text(pops != 0 ? "\(formatHandicap(player.handicap)) · \(pops > 0 ? "\(pops)" : "+\(abs(pops))")" : formatHandicap(player.handicap))
                                         .font(.system(size: 14))
                                         .foregroundColor(Color.textSecondary)
                                 }
@@ -2136,7 +2282,7 @@ struct GroupManagerView: View {
                 .frame(height: 1)
 
             ForEach(players) { player in
-                SwipeToDeleteRow(enabled: isCreator && !isLiveRound && !roundStarted) {
+                SwipeToDeleteRow(enabled: isCreator && !isLiveRound && !roundStarted && player.id != currentUserId) {
                     removePlayer(player, fromGroup: index)
                 } content: {
                     VStack(spacing: 0) {
@@ -2235,7 +2381,7 @@ struct GroupManagerView: View {
                     showTeeTimePicker = true
                 } label: {
                     if index < teeTimes.count, teeTimes[index] != nil {
-                        Text("edit")
+                        Text("Edit")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundColor(Color.textSecondary)
                     } else {
@@ -2299,7 +2445,7 @@ struct GroupManagerView: View {
                     .opacity(isPendingPlayer ? 0.7 : 1)
                     .lineLimit(1)
 
-                Text(pops > 0 ? "\(formatHandicap(player.handicap)) · \(pops) pop\(pops == 1 ? "" : "s")" : formatHandicap(player.handicap))
+                Text(pops != 0 ? "\(formatHandicap(player.handicap)) · \(pops > 0 ? "\(pops)" : "+\(abs(pops))")" : formatHandicap(player.handicap))
                     .font(.system(size: 14))
                     .foregroundColor(Color(hexString: "#BFC0C2"))
                     .opacity(isPendingPlayer ? 0.7 : 1)
@@ -2331,8 +2477,8 @@ struct GroupManagerView: View {
                         .background(Capsule().strokeBorder(Color.textPrimary, lineWidth: 1))
                     }
                     .buttonStyle(.plain)
-                } else if player.isPendingAccept {
-                    // Carry user who hasn't accepted yet
+                } else if player.isPendingAccept && !(groupIndex < scorerIDs.count && scorerIDs[groupIndex] == player.id) {
+                    // Carry user who hasn't accepted yet (hidden for scorers — orange avatar + opacity is enough)
                     Text("Pending")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(Color(hexString: "#E38049"))
@@ -2351,7 +2497,7 @@ struct GroupManagerView: View {
 
 
 
-            if groupIndex < scorerIDs.count && scorerIDs[groupIndex] == player.id && !isPendingPlayer {
+            if groupIndex < scorerIDs.count && scorerIDs[groupIndex] == player.id {
                 if isCreator && !isQuickGame {
                     Button {
                         scorerPickerItem = SheetItem(id: groupIndex)
@@ -2504,9 +2650,13 @@ struct GroupManagerView: View {
                     Text("Leaderboard")
                         .font(Font.system(size: 24, weight: .bold))
                         .foregroundColor(Color.textPrimary)
-                    Text(groupName)
-                        .font(Font.system(size: 16, weight: .medium))
-                        .foregroundColor(Color.textSecondary)
+                    let subtitle = [groupName, currentCourse?.courseName]
+                        .compactMap { $0 }.joined(separator: " · ")
+                    if !subtitle.isEmpty {
+                        Text(subtitle)
+                            .font(Font.system(size: 16, weight: .medium))
+                            .foregroundColor(Color.textSecondary)
+                    }
                 }
                 Spacer()
                 Image(systemName: "chart.bar.fill")
@@ -2517,39 +2667,41 @@ struct GroupManagerView: View {
             .padding(.top, 34)
             .padding(.bottom, 24)
 
-            // Last Round | All Time tabs
-            HStack(spacing: 16) {
-                ForEach(Array(["Last Round", "All Time"].enumerated()), id: \.offset) { idx, label in
-                    Button {
-                        if idx == 1 && !storeService.isPremium {
-                            showPaywall = true
-                        } else {
-                            withAnimation(.easeOut(duration: 0.2)) {
-                                leaderboardTab = idx
-                            }
-                        }
-                    } label: {
-                        HStack(spacing: 4) {
-                            Text(label)
-                                .font(.system(size: 14, weight: .semibold))
+            // Last Round | All Time tabs (skins groups only — quick games have a single round)
+            if !isQuickGame {
+                HStack(spacing: 16) {
+                    ForEach(Array(["Last Round", "All Time"].enumerated()), id: \.offset) { idx, label in
+                        Button {
                             if idx == 1 && !storeService.isPremium {
-                                Image(systemName: "lock.fill")
-                                    .font(.system(size: 10))
-                                    .foregroundColor(Color.goldMuted)
+                                showPaywall = true
+                            } else {
+                                withAnimation(.easeOut(duration: 0.2)) {
+                                    leaderboardTab = idx
+                                }
                             }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text(label)
+                                    .font(.system(size: 14, weight: .semibold))
+                                if idx == 1 && !storeService.isPremium {
+                                    Image(systemName: "lock.fill")
+                                        .font(.system(size: 10))
+                                        .foregroundColor(Color.goldMuted)
+                                }
+                            }
+                            .foregroundColor(leaderboardTab == idx ? .white : Color.textPrimary)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 36)
+                            .background(
+                                Capsule().fill(leaderboardTab == idx ? Color.textPrimary : Color.bgPrimary)
+                            )
                         }
-                        .foregroundColor(leaderboardTab == idx ? .white : Color.textPrimary)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 36)
-                        .background(
-                            Capsule().fill(leaderboardTab == idx ? Color.textPrimary : Color.bgPrimary)
-                        )
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 14)
             }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 14)
 
             if roundHistory.isEmpty {
                 // Empty state — no rounds played yet
@@ -2994,35 +3146,7 @@ struct GroupManagerView: View {
 
     /// Filter handicap/index input: digits + one decimal, max 1 decimal place, capped at 54.0
     /// Allows 0…54.0 or +0.1…+10.0 (plus handicap) with one decimal place.
-    private func filterHandicapInput(_ input: String) -> String {
-        var filtered = ""
-        var hasDecimal = false
-        var hasPlus = false
-        var decimalDigits = 0
-        for ch in input {
-            if ch == "+" && filtered.isEmpty && !hasPlus {
-                hasPlus = true
-                filtered.append(ch)
-            } else if (ch == "." || ch == ",") && !hasDecimal {
-                hasDecimal = true
-                filtered.append(ch)
-            } else if ch.isNumber {
-                if hasDecimal {
-                    guard decimalDigits < 1 else { continue }
-                    filtered.append(ch)
-                    decimalDigits += 1
-                } else {
-                    filtered.append(ch)
-                }
-            }
-        }
-        let numericStr = filtered.hasPrefix("+") ? String(filtered.dropFirst()) : filtered
-        if let value = Double(numericStr) {
-            if hasPlus && value > 10.0 { filtered = "+10.0" }
-            else if !hasPlus && value > 54.0 { filtered = "54.0" }
-        }
-        return filtered
-    }
+    // Uses shared filterHandicapInput() from Player.swift
 
     /// Formats a phone number for display: (555) 123-4567
     private func formatPhoneDisplay(_ phone: String?) -> String {
@@ -3086,6 +3210,11 @@ struct GroupManagerView: View {
     private func movePlayer(_ player: Player, from sourceGroup: Int, to destGroup: Int) {
         withAnimation(.easeOut(duration: 0.2)) {
             guard sourceGroup < groups.count, destGroup < groups.count else { return }
+            // Don't allow moving the only player out of a group
+            if groups[sourceGroup].count == 1 {
+                ToastManager.shared.success("Remove the group to move the scorer")
+                return
+            }
             groups[sourceGroup].removeAll { $0.id == player.id }
             groups[destGroup].append(player)
             // Remove empty groups
@@ -3149,7 +3278,31 @@ struct GroupManagerView: View {
             }
         }
     }
+
+    /// Persist group_num assignments to Supabase (Quick Games only).
+    private func syncGroupNumsToSupabase() {
+        guard let groupId = supabaseGroupId else { return }
+        var assignments: [(playerId: UUID, groupNum: Int)] = []
+        for (gi, group) in groups.enumerated() {
+            for player in group {
+                if let profileId = player.profileId {
+                    assignments.append((playerId: profileId, groupNum: gi + 1))
+                }
+            }
+        }
+        Task {
+            do {
+                try await GroupService().saveGroupNums(groupId: groupId, assignments: assignments)
+            } catch {
+                #if DEBUG
+                print("[GroupManager] Failed to sync group nums: \(error)")
+                #endif
+            }
+        }
+    }
 }
+
+// MARK: - Empty Slot Row (isolated for typing performance)
 
 // MARK: - Group Options Sheet (extracted for performance)
 
@@ -3174,6 +3327,7 @@ struct GroupOptionsSheet: View {
         let changedCourse: SelectedCourse?
         let recurrence: GameRecurrence?
         let clearRecurrence: Bool
+        let winningsDisplay: String
     }
 
     // All local state
@@ -3181,6 +3335,7 @@ struct GroupOptionsSheet: View {
     @State private var localTeeTime: Date?
     @State private var localCarries: Bool
     @State private var localScoringMode: ScoringMode
+    @State private var localWinningsDisplay: String
     @State private var localHandicap: Double
     @State private var localBuyIn: String
     @State private var showCarriesInfo = false
@@ -3202,6 +3357,7 @@ struct GroupOptionsSheet: View {
         groupName: String,
         carriesEnabled: Bool,
         scoringMode: ScoringMode = .single,
+        winningsDisplay: String = "gross",
         handicapPercentage: Double,
         buyInText: String,
         teeTime: Date?,
@@ -3222,6 +3378,7 @@ struct GroupOptionsSheet: View {
         _localGroupName = State(initialValue: groupName)
         _localCarries = State(initialValue: carriesEnabled)
         _localScoringMode = State(initialValue: scoringMode)
+        _localWinningsDisplay = State(initialValue: winningsDisplay)
         _localHandicap = State(initialValue: handicapPercentage)
         _localBuyIn = State(initialValue: buyInText)
         _localTeeTime = State(initialValue: teeTime)
@@ -3286,7 +3443,8 @@ struct GroupOptionsSheet: View {
                                 teeTime: optScheduleDate,
                                 changedCourse: localCourse,
                                 recurrence: rec,
-                                clearRecurrence: optScheduleMode == 0
+                                clearRecurrence: optScheduleMode == 0,
+                                winningsDisplay: localWinningsDisplay
                             ))
                         } label: {
                             Text("Save")
@@ -3539,19 +3697,36 @@ struct GroupOptionsSheet: View {
                                 Text("Handicap Allowance")
                                     .font(.carry.bodySMBold)
                                     .foregroundColor(Color.textPrimary)
+                                if isQuickGame && !storeService.isPremium {
+                                    Image(systemName: "lock.fill")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(Color.textDisabled)
+                                }
                                 Spacer()
                                 Text("\(Int(localHandicap * 100))%")
                                     .font(.carry.captionLGSemibold)
                                     .foregroundColor(Color.textPrimary)
                             }
-                            if isLiveRound {
+                            if isQuickGame && !storeService.isPremium {
+                                HStack(spacing: 4) {
+                                    Image("premium-crown")
+                                        .renderingMode(.template)
+                                        .resizable()
+                                        .scaledToFit()
+                                        .frame(height: 11)
+                                        .foregroundColor(Color.goldDark)
+                                    Text("Premium feature")
+                                        .font(.carry.caption)
+                                        .foregroundColor(Color.textDisabled)
+                                }
+                            } else if isLiveRound {
                                 Text("Locked during active round")
                                     .font(.carry.caption)
                                     .foregroundColor(Color.textDisabled)
                             }
                             Slider(value: $localHandicap, in: 0.1...1.0, step: 0.05)
                                 .tint(Color.textPrimary)
-                                .disabled(isLiveRound)
+                                .disabled(isLiveRound || (isQuickGame && !storeService.isPremium))
                         }
                         .padding(.horizontal, 4)
                         .padding(.top, 12)
@@ -3626,9 +3801,17 @@ struct GroupOptionsSheet: View {
                                 .font(.carry.bodySM)
                                 .foregroundColor(Color.textPrimary)
                             if isQuickGame && !storeService.isPremium {
-                                Text("Premium feature")
-                                    .font(.carry.caption)
-                                    .foregroundColor(Color.textDisabled)
+                                HStack(spacing: 4) {
+                                    Image("premium-crown")
+                                        .renderingMode(.template)
+                                        .resizable()
+                                        .scaledToFit()
+                                        .frame(height: 11)
+                                        .foregroundColor(Color.goldDark)
+                                    Text("Premium feature")
+                                        .font(.carry.caption)
+                                        .foregroundColor(Color.textDisabled)
+                                }
                             } else if isLiveRound {
                                 Text("Locked during active round")
                                     .font(.carry.caption)
@@ -3645,7 +3828,7 @@ struct GroupOptionsSheet: View {
                 }
                 .padding(.horizontal, 24)
                 .padding(.bottom, 20)
-                .opacity(isLiveRound || (isQuickGame && !storeService.isPremium) ? 0.5 : 1)
+                .opacity(isLiveRound ? 0.5 : 1)
                 .alert("What are Carries?", isPresented: $showCarriesInfo) {
                     Button("Got it", role: .cancel) {}
                 } message: {
@@ -3686,6 +3869,34 @@ struct GroupOptionsSheet: View {
                 .padding(.bottom, 20)
                 .opacity(isLiveRound ? 0.5 : 1)
                 }
+
+                // Winnings Display (Gross / Net)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Winnings Display")
+                        .font(.carry.bodySMBold)
+                        .foregroundColor(Color.textPrimary)
+                        .padding(.leading, 4)
+
+                    Picker("", selection: $localWinningsDisplay) {
+                        Text("Gross").tag("gross")
+                        Text("Net").tag("net")
+                    }
+                    .pickerStyle(.segmented)
+                    .disabled(isLiveRound)
+
+                    Text(isLiveRound
+                         ? "Locked during active round"
+                         : (localWinningsDisplay == "net"
+                            ? "Shows profit/loss after subtracting buy-in"
+                            : "Shows total skins won (never negative)"))
+                        .font(.carry.caption)
+                        .foregroundColor(isLiveRound ? Color.textDisabled : Color.textSecondary)
+                        .padding(.leading, 4)
+                        .padding(.top, 2)
+                }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 20)
+                .opacity(isLiveRound ? 0.5 : 1)
 
                 // Delete Group / Game
                 if let delete = onDeleteGroup {
@@ -3817,6 +4028,13 @@ struct GroupDropDelegate: DropDelegate {
             return true
         }
 
+        // Only player in source group — block the drag to preserve group structure
+        if groups[sourceGroup].count == 1 {
+            ToastManager.shared.success("Remove the group to move the scorer")
+            resetDrag()
+            return true
+        }
+
         // Full group — show swap picker, no move yet
         if playerCount >= maxGroupSize {
             pendingSwapPlayer = player
@@ -3875,7 +4093,7 @@ private struct SwipeToDeleteRow<Content: View>: View {
     var body: some View {
         if enabled {
             ZStack(alignment: .trailing) {
-                // Delete button behind the row
+                // Delete button behind the row — centered vertically
                 HStack {
                     Spacer()
                     Button {
@@ -3887,13 +4105,16 @@ private struct SwipeToDeleteRow<Content: View>: View {
                         }
                     } label: {
                         Image(systemName: "trash.fill")
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.system(size: 18, weight: .semibold))
                             .foregroundColor(.white)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .frame(width: 52, height: 52)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(Color(hexString: "#D94444"))
+                            )
                     }
                     .frame(width: deleteWidth)
                     .frame(maxHeight: .infinity)
-                    .background(Color.red)
                 }
 
                 // Main content — slides left on drag

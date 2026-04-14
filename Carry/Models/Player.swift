@@ -5,10 +5,10 @@ let MAX_NAME_CHARS = 10
 
 struct Player: Identifiable, Hashable {
     let id: Int
-    let name: String
-    let initials: String
+    var name: String
+    var initials: String
     let color: String  // hex
-    let handicap: Double  // decimal HCP index (e.g. 6.5)
+    var handicap: Double  // decimal HCP index (e.g. 6.5)
     let avatar: String  // emoji fallback
     var group: Int
     let ghinNumber: String?  // GHIN number for handicap lookup
@@ -20,6 +20,7 @@ struct Player: Identifiable, Hashable {
     var isPendingAccept: Bool = false  // true when added from Carry search but hasn't accepted yet
     var isGuest: Bool = false  // true for guest profiles created via Quick Start
     var profileId: UUID? = nil  // link back to Supabase profile
+    var homeClub: String? = nil  // home course name from profile
 
     /// First name + last initial: "Daniel S."
     var shortName: String {
@@ -99,7 +100,8 @@ extension Player {
             avatarImageName: nil,
             avatarUrl: profile.avatarUrl,
             isGuest: profile.isGuest ?? false,
-            profileId: profile.id
+            profileId: profile.id,
+            homeClub: profile.homeClub
         )
     }
 }
@@ -113,6 +115,43 @@ func formatHandicap(_ value: Double) -> String {
         return "+\(String(format: "%.1f", abs(value)))"
     }
     return String(format: "%.1f", value)
+}
+
+/// Filters handicap text input: max 4 characters, max value 54.0, one decimal place.
+/// Accepts optional "+" prefix for plus handicaps (max +10.0).
+func filterHandicapInput(_ input: String) -> String {
+    var filtered = ""
+    var hasDecimal = false
+    var hasPlus = false
+    var decimalDigits = 0
+    for ch in input {
+        if ch == "+" && filtered.isEmpty && !hasPlus {
+            hasPlus = true
+            filtered.append(ch)
+        } else if (ch == "." || ch == ",") && !hasDecimal {
+            hasDecimal = true
+            filtered.append(".")
+        } else if ch.isNumber {
+            if hasDecimal {
+                guard decimalDigits < 1 else { continue }
+                filtered.append(ch)
+                decimalDigits += 1
+            } else {
+                let wholeDigits = filtered.filter { $0.isNumber }.count
+                guard wholeDigits < 2 else { continue }
+                filtered.append(ch)
+            }
+        }
+        // Hard cap: 4 chars for regular (e.g. "54.0"), 5 chars for plus (e.g. "+10.0")
+        let maxLen = hasPlus ? 5 : 4
+        if filtered.count >= maxLen { break }
+    }
+    let numericStr = filtered.hasPrefix("+") ? String(filtered.dropFirst()) : filtered
+    if let value = Double(numericStr) {
+        if hasPlus && value > 10.0 { filtered = "+10.0" }
+        else if !hasPlus && value > 54.0 { filtered = "54.0" }
+    }
+    return filtered
 }
 
 extension Color {

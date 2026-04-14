@@ -51,6 +51,7 @@ struct CourseSelectionView: View {
                             .frame(width: 40, height: 40)
                             .background(Circle().fill(Color.bgPrimary))
                     }
+                    .accessibilityLabel("Close course picker")
                 } else {
                     Color.clear.frame(width: 40, height: 40)
                 }
@@ -264,14 +265,9 @@ struct CourseSelectionView: View {
 
     private func searchResultRow(_ course: GolfCourseResult) -> some View {
         Button {
-            // Search results already include full tee data — use directly, no extra API call needed.
-            if let tees = course.tees, !tees.all.isEmpty {
-                selectedCourse = course
-                courseDetail = course
-                withAnimation(.easeInOut(duration: 0.25)) { showTeePicker = true }
-            } else {
-                loadCourseDetails(courseId: course.id)
-            }
+            // ALWAYS fetch full details — search results often omit per-hole data,
+            // and we need real holes_json to start a round (no defaults allowed).
+            loadCourseDetails(courseId: course.id)
         } label: {
             HStack(spacing: 0) {
                 VStack(alignment: .leading, spacing: 3) {
@@ -335,51 +331,60 @@ struct CourseSelectionView: View {
                 .padding(.top, 20)
                 .padding(.bottom, 24)
 
+                // Filter helper: only tees with complete 18-hole par data are selectable
+                let validMale = (course.tees?.male ?? []).filter { Self.teeHasFullHoleData($0) }
+                let validFemale = (course.tees?.female ?? []).filter { Self.teeHasFullHoleData($0) }
+                let allInvalid = validMale.isEmpty && validFemale.isEmpty
+
                 // Men's tees
-                if let maleTees = course.tees?.male, !maleTees.isEmpty {
+                if !validMale.isEmpty {
                     teeSectionHeader("Men's Tees")
-                    ForEach(maleTees) { tee in
+                    ForEach(validMale) { tee in
                         teeRow(tee, course: course)
                     }
                 }
 
                 // Women's tees
-                if let femaleTees = course.tees?.female, !femaleTees.isEmpty {
+                if !validFemale.isEmpty {
                     teeSectionHeader("Women's Tees")
                         .padding(.top, 16)
-                    ForEach(femaleTees) { tee in
+                    ForEach(validFemale) { tee in
                         teeRow(tee, course: course)
                     }
                 }
 
-                // No tees fallback
-                if course.tees?.all.isEmpty ?? true {
-                    VStack(spacing: 6) {
-                        Text("No tee data available")
-                            .font(.carry.bodySM)
+                // No valid tees — refuse the course outright
+                if allInvalid {
+                    VStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.system(size: 28))
                             .foregroundColor(Color.textTertiary)
-                        Text("You can still select this course")
+                        Text("Hole data unavailable")
+                            .font(.carry.bodySMBold)
+                            .foregroundColor(Color.textPrimary)
+                        Text("This course doesn't have per-hole par/handicap data in our database. Please pick a different course.")
                             .font(.carry.caption)
-                            .foregroundColor(Color.textDisabled)
+                            .foregroundColor(Color.textTertiary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 32)
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 32)
-
-                    Button {
-                        selectCourse(course, tee: nil)
-                    } label: {
-                        Text("Continue Without Tee Data")
-                            .font(.carry.bodySemibold)
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 48)
-                            .background(RoundedRectangle(cornerRadius: 12).fill(Color.textPrimary))
-                    }
-                    .padding(.horizontal, 40)
+                    .padding(.vertical, 40)
                 }
 
                 Spacer().frame(height: 60)
             }
+        }
+    }
+
+    /// Returns true ONLY if the API tee box has exactly 18 holes, every par is non-nil
+    /// AND > 0. Used to filter the tee picker so users can only select tees with real,
+    /// usable hole data.
+    private static func teeHasFullHoleData(_ tee: GolfCourseTeeBox) -> Bool {
+        guard let holes = tee.holes, holes.count >= 18 else { return false }
+        return holes.prefix(18).allSatisfy { hole in
+            guard let par = hole.par else { return false }
+            return par > 0
         }
     }
 
@@ -520,6 +525,13 @@ struct CourseSelectionView: View {
             print("[CourseSelection] Hole pars: \(pars)")
         }
         #endif
+
+        // STRICT: refuse selection if hole data is missing — never let a course
+        // with no real per-hole pars enter the round flow.
+        if let teeBox, (teeBox.holes ?? []).isEmpty {
+            ToastManager.shared.error("This tee box is missing hole data. Try a different tee or course.")
+            return
+        }
 
         let selected = SelectedCourse(
             courseId: course.id,

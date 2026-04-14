@@ -21,10 +21,10 @@ final class PlayerSearchService {
             .execute()
             .value
 
-        // Search by display name (exclude guest profiles)
+        // Search by display name prefix or last name prefix (exclude guest profiles)
         let byName: [ProfileDTO] = try await client.from("profiles")
             .select()
-            .ilike("display_name", pattern: "%\(trimmed)%")
+            .or("display_name.ilike.\(trimmed)%,last_name.ilike.\(trimmed)%")
             .neq("is_guest", value: true)
             .limit(10)
             .execute()
@@ -94,7 +94,8 @@ final class PlayerSearchService {
         return Self.demoProfiles.filter {
             ($0.username ?? "").hasPrefix(q) ||
             $0.displayName.lowercased().contains(q) ||
-            $0.firstName.lowercased().hasPrefix(q)
+            $0.firstName.lowercased().hasPrefix(q) ||
+            $0.lastName.lowercased().hasPrefix(q)
         }
         #else
         return []

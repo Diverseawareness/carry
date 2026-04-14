@@ -135,6 +135,14 @@ struct PaywallView: View {
                             .padding(.top, 8)
                     }
 
+                    // Auto-renewal disclosure (required by App Store Guideline 3.1.2)
+                    Text("Subscription automatically renews unless cancelled at least 24 hours before the end of the current period. Manage in Settings > Apple ID > Subscriptions.")
+                        .font(.system(size: 11))
+                        .foregroundColor(Color.textDisabled)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
+                        .padding(.top, 16)
+
                     // Restore
                     Button {
                         Task { await storeService.restorePurchases() }
@@ -143,7 +151,7 @@ struct PaywallView: View {
                             .font(.system(size: 14))
                             .foregroundColor(Color.textTertiary)
                     }
-                    .padding(.top, 16)
+                    .padding(.top, 12)
                     .padding(.bottom, 40)
                 }
             }

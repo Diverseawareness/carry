@@ -32,167 +32,35 @@ struct MainTabView: View {
     @ObservedObject private var syncQueue = SyncQueue.shared
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            // Tab content
-            Group {
-                switch selectedTab {
-                case .home:
-                    HomeView(selectedTab: $selectedTab, skinGameGroups: $skinGameGroups, showTabBar: $showTabBar, isLoadingGroups: isLoadingGroups, pendingActiveGroupId: $pendingActiveGroupId)
-                case .skinGames:
-                    GroupsListView(groups: $skinGameGroups, showTabBar: $showTabBar, pendingActiveGroupId: $pendingActiveGroupId, isLoadingGroups: isLoadingGroups)
-                case .profile:
-                    ProfileView(skinGameGroups: $skinGameGroups)
+        #if DEBUG
+        mainContentBase
+            .onChange(of: appRouter.debugResetGroups) {
+                if appRouter.debugResetGroups {
+                    appRouter.debugResetGroups = false
+                    skinGameGroups = SavedGroup.demo
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .safeAreaInset(edge: .top) {
-                if !syncQueue.isOnline {
-                    HStack(spacing: 6) {
-                        Image(systemName: "wifi.slash")
-                            .font(.system(size: 12, weight: .semibold))
-                        Text("No connection")
-                            .font(.system(size: 13, weight: .semibold))
-                        if syncQueue.pendingCount > 0 {
-                            Text("· \(syncQueue.pendingCount) pending")
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundColor(.white.opacity(0.7))
-                        }
-                    }
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                    .background(Color.systemRedColor)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                    .animation(.easeInOut(duration: 0.3), value: syncQueue.isOnline)
+            .onChange(of: appRouter.debugClearGroups) {
+                if appRouter.debugClearGroups {
+                    appRouter.debugClearGroups = false
+                    skinGameGroups = []
+                    GroupStorage.shared.clear()
                 }
             }
-
-            // Floating tab bar — hidden when navigated into a group
-            if showTabBar {
-                tabBar
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-        }
-        .carryToastOverlay()
-        .onAppear {
-            // Clear old cached demo data when running with real auth
-            if authService.isAuthenticated {
-                GroupStorage.shared.save([])
-            }
-
-            // Load persisted groups — skip when debug scenario provides initial groups
-            if initialGroups == nil {
-                if authService.isAuthenticated, let userId = authService.currentUser?.id {
-                    // Authenticated: load from Supabase
-                    loadGroupsFromSupabase(userId: userId)
-                } else if !authService.isAuthenticated {
-                    // Not authenticated (dev mode only): load from UserDefaults
-                    let summaries = GroupStorage.shared.load()
-                    if !summaries.isEmpty {
-                        skinGameGroups = GroupStorage.shared.hydrate(summaries)
-                    }
-                }
-                // If authenticated but currentUser not yet loaded, wait for onChange below
-            } else if initialGroups?.isEmpty == true {
-                // Debug empty scenario — briefly show loading state
-                #if DEBUG
-                isLoadingGroups = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-                    isLoadingGroups = false
-                }
-                #endif
-            }
-
-            // New users land on Skin Games tab to set up their first game
-            if authService.isNewUser {
-                selectedTab = .skinGames
-                authService.isNewUser = false
-            }
-        }
-        .onChange(of: authService.currentUser) {
-            // Auth loaded — now fetch groups from Supabase
-            if let userId = authService.currentUser?.id, skinGameGroups.isEmpty {
-                loadGroupsFromSupabase(userId: userId)
-            }
-        }
-        .onChange(of: skinGameGroups) { _, newValue in
-            // Always save locally as a cache
-            GroupStorage.shared.save(newValue)
-        }
-        .onChange(of: appRouter.shouldRefreshGroups) {
-            if appRouter.shouldRefreshGroups {
-                appRouter.shouldRefreshGroups = false
-                if let userId = authService.currentUser?.id {
-                    loadGroupsFromSupabase(userId: userId)
-                }
-            }
-        }
-        .onChange(of: appRouter.navigateToTab) {
-            if let tab = appRouter.navigateToTab {
-                appRouter.navigateToTab = nil
-                if tab == "skinGames" { selectedTab = .skinGames }
-                else if tab == "home" { selectedTab = .home }
-                else if tab == "profile" { selectedTab = .profile }
-            }
-        }
-        .onChange(of: appRouter.pendingRoundGroupId) {
-            if let groupId = appRouter.pendingRoundGroupId {
-                appRouter.pendingRoundGroupId = nil
-                selectedTab = .skinGames
-                // Reload groups first, then open the group
-                if let userId = authService.currentUser?.id {
-                    loadGroupsFromSupabase(userId: userId)
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    pendingActiveGroupId = groupId
-                }
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .didEndRound)) { _ in
-            // Clear stale cache first, then reload fresh from Supabase
-            GroupStorage.shared.save([])
-            if let userId = authService.currentUser?.id {
-                loadGroupsFromSupabase(userId: userId)
-            }
-        }
-        .onChange(of: appRouter.debugResetGroups) {
-            if appRouter.debugResetGroups {
-                appRouter.debugResetGroups = false
-                #if DEBUG
-                skinGameGroups = SavedGroup.demo
-                #endif
-            }
-        }
-        .onChange(of: appRouter.debugClearGroups) {
-            if appRouter.debugClearGroups {
-                appRouter.debugClearGroups = false
-                skinGameGroups = []
-                GroupStorage.shared.clear()
-            }
-        }
-        .onChange(of: selectedTab) {
-            // Auto-refresh every 15s while on Games tab
-            refreshTimer?.invalidate()
-            refreshTimer = nil
-            if selectedTab == .skinGames {
-                startAutoRefresh()
-            }
-        }
-        .onDisappear {
-            refreshTimer?.invalidate()
-            refreshTimer = nil
-        }
+        #else
+        mainContentBase
+        #endif
     }
 
     private func startAutoRefresh() {
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { _ in
-            guard let userId = authService.currentUser?.id else {
-                #if DEBUG
-                print("[AutoRefresh] No current user, skipping")
-                #endif
-                return
-            }
-            Task {
+            Task { @MainActor in
+                guard let userId = authService.currentUser?.id else {
+                    #if DEBUG
+                    print("[AutoRefresh] No current user, skipping")
+                    #endif
+                    return
+                }
                 do {
                     let groups = try await groupService.loadGroups(userId: userId)
                     #if DEBUG
@@ -204,9 +72,7 @@ struct MainTabView: View {
                         }
                     }
                     #endif
-                    await MainActor.run {
-                        skinGameGroups = groups
-                    }
+                    skinGameGroups = groups
                 } catch {
                     #if DEBUG
                     print("[AutoRefresh] loadGroups failed: \(error)")
@@ -217,6 +83,159 @@ struct MainTabView: View {
     }
 
     // MARK: - Supabase Group Loading
+
+    // MARK: - Main Content
+
+    private var mainContentBase: some View {
+        mainContentWithDataHandlers
+            .onReceive(NotificationCenter.default.publisher(for: .didEndRound)) { _ in clearCacheAndReload() }
+            .onReceive(NotificationCenter.default.publisher(for: .didCancelRound)) { _ in clearCacheAndReload() }
+            .onChange(of: selectedTab) { handleTabChanged() }
+            .onDisappear { refreshTimer?.invalidate(); refreshTimer = nil }
+    }
+
+    private var mainContentWithDataHandlers: some View {
+        mainLayout
+            .carryToastOverlay()
+            .onAppear(perform: handleAppear)
+            .onChange(of: authService.currentUser) { handleUserChanged() }
+            .onChange(of: skinGameGroups) { _, newValue in GroupStorage.shared.save(newValue) }
+            .onChange(of: appRouter.shouldRefreshGroups) { handleRefreshRequest() }
+            .onChange(of: appRouter.navigateToTab) { handleTabNavigation() }
+            .onChange(of: appRouter.pendingRoundGroupId) { handlePendingRound() }
+    }
+
+    private var mainLayout: some View {
+        ZStack(alignment: .bottom) {
+            tabContent
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .safeAreaInset(edge: .top) { offlineBanner }
+
+            if showTabBar {
+                tabBar
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var tabContent: some View {
+        switch selectedTab {
+        case .home:
+            HomeView(selectedTab: $selectedTab, skinGameGroups: $skinGameGroups, showTabBar: $showTabBar, isLoadingGroups: isLoadingGroups, pendingActiveGroupId: $pendingActiveGroupId)
+        case .skinGames:
+            GroupsListView(groups: $skinGameGroups, showTabBar: $showTabBar, pendingActiveGroupId: $pendingActiveGroupId, isLoadingGroups: isLoadingGroups)
+        case .profile:
+            ProfileView(skinGameGroups: $skinGameGroups)
+        }
+    }
+
+    @ViewBuilder
+    private var offlineBanner: some View {
+        if !syncQueue.isOnline {
+            HStack(spacing: 6) {
+                Image(systemName: "wifi.slash")
+                    .font(.system(size: 12, weight: .semibold))
+                Text("No connection")
+                    .font(.system(size: 13, weight: .semibold))
+                if syncQueue.pendingCount > 0 {
+                    Text("· \(syncQueue.pendingCount) pending")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.white.opacity(0.7))
+                }
+            }
+            .foregroundColor(.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .background(Color.systemRedColor)
+            .transition(.move(edge: .top).combined(with: .opacity))
+            .animation(.easeInOut(duration: 0.3), value: syncQueue.isOnline)
+        }
+    }
+
+    // MARK: - Event Handlers
+
+    private func handleAppear() {
+        if authService.isAuthenticated {
+            GroupStorage.shared.save([])
+        }
+
+        if initialGroups == nil {
+            if authService.isAuthenticated, let userId = authService.currentUser?.id {
+                loadGroupsFromSupabase(userId: userId)
+            } else if !authService.isAuthenticated {
+                let summaries = GroupStorage.shared.load()
+                if !summaries.isEmpty {
+                    skinGameGroups = GroupStorage.shared.hydrate(summaries)
+                }
+            }
+        } else if initialGroups?.isEmpty == true {
+            #if DEBUG
+            isLoadingGroups = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                isLoadingGroups = false
+            }
+            #endif
+        }
+
+        if authService.isNewUser {
+            selectedTab = .skinGames
+            authService.isNewUser = false
+        }
+    }
+
+    private func handleUserChanged() {
+        if let userId = authService.currentUser?.id, skinGameGroups.isEmpty {
+            loadGroupsFromSupabase(userId: userId)
+        }
+    }
+
+    private func handleRefreshRequest() {
+        if appRouter.shouldRefreshGroups {
+            appRouter.shouldRefreshGroups = false
+            if let userId = authService.currentUser?.id {
+                loadGroupsFromSupabase(userId: userId)
+            }
+        }
+    }
+
+    private func handleTabNavigation() {
+        if let tab = appRouter.navigateToTab {
+            appRouter.navigateToTab = nil
+            if tab == "skinGames" { selectedTab = .skinGames }
+            else if tab == "home" { selectedTab = .home }
+            else if tab == "profile" { selectedTab = .profile }
+        }
+    }
+
+    private func handlePendingRound() {
+        if let groupId = appRouter.pendingRoundGroupId {
+            appRouter.pendingRoundGroupId = nil
+            selectedTab = .skinGames
+            if let userId = authService.currentUser?.id {
+                loadGroupsFromSupabase(userId: userId)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                pendingActiveGroupId = groupId
+            }
+        }
+    }
+
+    private func handleTabChanged() {
+        refreshTimer?.invalidate()
+        refreshTimer = nil
+        if selectedTab == .skinGames {
+            startAutoRefresh()
+        }
+    }
+
+    /// Clear local cache and reload groups from Supabase.
+    private func clearCacheAndReload() {
+        GroupStorage.shared.save([])
+        if let userId = authService.currentUser?.id {
+            loadGroupsFromSupabase(userId: userId)
+        }
+    }
 
     private func loadGroupsFromSupabase(userId: UUID) {
         guard !isLoadingGroups else { return }
@@ -247,6 +266,7 @@ struct MainTabView: View {
         }
     }
 
+    @MainActor
     func refreshGroups() async {
         guard let userId = authService.currentUser?.id, authService.isAuthenticated else {
             // Dev mode: nothing to refresh
@@ -262,9 +282,7 @@ struct MainTabView: View {
             #if DEBUG
             print("[GroupService] Refresh failed: \(error)")
             #endif
-            await MainActor.run {
-                ToastManager.shared.error("Couldn't refresh groups")
-            }
+            // Silently fail — polling errors shouldn't toast on every refresh cycle
         }
     }
 

@@ -21,11 +21,12 @@ struct ScorecardView: View {
     @State private var showOptionsMenu = false
     @State private var showEndRoundAlert = false
     @State private var showEndShareRoundAlert = false
+    @State private var showCancelRoundAlert = false
+    @State private var showRoundCancelledAlert = false
     @State private var showCourseSelector = false
     @State private var showScorerPicker = false
     @State private var activeToast: GameEvent?
-    @State private var showShareSheet = false
-    @State private var shareText = ""
+    // Share sheet removed — sharing handled in RoundCompleteView
     @State private var showScoringInfo = false
 
     private static let scoringInfoKeyPrefix = "scoringInfoShownCount"
@@ -48,12 +49,13 @@ struct ScorecardView: View {
     }
 
     /// Init with an externally-owned viewmodel (keeps state across navigation)
-    init(viewModel: RoundViewModel, onBack: (() -> Void)? = nil, onEditPlayers: (() -> Void)? = nil, onCourseChanged: ((SelectedCourse) -> Void)? = nil) {
+    init(viewModel: RoundViewModel, onBack: (() -> Void)? = nil, onEditPlayers: (() -> Void)? = nil, onCourseChanged: ((SelectedCourse) -> Void)? = nil, isQuickGame: Bool = false) {
         self.config = viewModel.config
         self._isViewer = State(initialValue: false)
         self.onBack = onBack
         self.onEditPlayers = onEditPlayers
         self.onCourseChanged = onCourseChanged
+        self.isQuickGame = isQuickGame
         self.currentUserId = viewModel.currentUserId
         _viewModel = StateObject(wrappedValue: viewModel)
     }
@@ -89,8 +91,8 @@ struct ScorecardView: View {
             }
 
             // Score dispute modal (Everyone Scores mode)
-            if viewModel.activeProposal != nil {
-                scoreDisputeOverlay(proposal: viewModel.activeProposal!)
+            if let proposal = viewModel.activeProposal {
+                scoreDisputeOverlay(proposal: proposal)
                     .transition(.opacity)
                     .zIndex(200)
             }
@@ -98,6 +100,8 @@ struct ScorecardView: View {
         .ignoresSafeArea(.container, edges: .top)
         .ignoresSafeArea(.keyboard)
         .onAppear {
+            // Only show scoring info when scorecard opens to hole 1 (not from final results)
+            guard viewModel.activeHole == 1 else { return }
             let perUserKey = "\(Self.scoringInfoKeyPrefix)_\(currentUserId)"
             let count = UserDefaults.standard.integer(forKey: perUserKey)
             if count < 5 {
@@ -153,8 +157,10 @@ struct ScorecardView: View {
                         showRoundComplete = false
                     }
                 }, onExitRound: {
-                    // Just navigate back — don't mark round as completed
-                    // Round completion is handled by the Create Group card or when all groups finish
+                    // DO NOT mark the round as completed here. RoundCompleteView's individual
+                    // buttons mark their own status (Save Round Results / Skip / Create Group
+                    // → completed; "Done — Waiting on others" → keeps round active).
+                    // This wrapper is JUST an exit shortcut now.
                     onBack?()
                 }, isCreator: currentUserId == config.creatorId,
                    isQuickGame: isQuickGame,
@@ -202,7 +208,7 @@ struct ScorecardView: View {
                  ? "This will end the round and show results."
                  : "Not all groups have finished scoring. Skins will be awarded based on completed holes.")
         }
-        .alert("End Round & Share Results?", isPresented: $showEndShareRoundAlert) {
+        .alert("End Round & Save Results?", isPresented: $showEndShareRoundAlert) {
             Button("Cancel", role: .cancel) { }
             Button("Share Results", role: .destructive) {
                 Task {
@@ -228,6 +234,34 @@ struct ScorecardView: View {
                  ? "This will end the round and share results with all players."
                  : "Not all groups have finished scoring. Skins will be awarded based on completed holes and shared with all players.")
         }
+        .alert("Cancel Round?", isPresented: $showCancelRoundAlert) {
+            Button("Keep Playing", role: .cancel) { }
+            Button("Cancel Round", role: .destructive) {
+                Task {
+                    if let roundId = viewModel.config.supabaseRoundId {
+                        try? await RoundService().deleteRound(roundId: roundId)
+                    }
+                    await MainActor.run {
+                        NotificationCenter.default.post(name: .didCancelRound, object: nil)
+                        onBack?()
+                    }
+                }
+            }
+        } message: {
+            Text("This will delete the round and all scores. Your game setup will be preserved.")
+        }
+        .alert("Round Cancelled", isPresented: $showRoundCancelledAlert) {
+            Button("OK") {
+                onBack?()
+            }
+        } message: {
+            Text("This round was cancelled by the host.")
+        }
+        .onReceive(viewModel.$roundWasCancelled) { cancelled in
+            if cancelled {
+                showRoundCancelledAlert = true
+            }
+        }
         .fullScreenCover(isPresented: $showCourseSelector) {
             CourseSelectionView { course in
                 onCourseChanged?(course)
@@ -235,24 +269,12 @@ struct ScorecardView: View {
             }
             .presentationBackground(.white)
         }
-        .sheet(isPresented: $showShareSheet) {
-            ShareSheet(items: [shareText])
-        }
         .sheet(isPresented: $showScorerPicker) {
             scorerPickerSheet()
                 .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
                 .presentationBackground(.white)
         }
-    }
-
-    // MARK: - Share Sheet
-    private struct ShareSheet: UIViewControllerRepresentable {
-        let items: [Any]
-        func makeUIViewController(context: Context) -> UIActivityViewController {
-            UIActivityViewController(activityItems: items, applicationActivities: nil)
-        }
-        func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
     }
 
     // MARK: - Scorer Picker
@@ -410,18 +432,21 @@ struct ScorecardView: View {
                         }
                     }
 
-                    Button {
-                        shareText = viewModel.generateScorecard()
-                        showShareSheet = true
-                    } label: {
-                        Label("Share Scorecard", systemImage: "square.and.arrow.up")
-                    }
-
-                    if isRoundCreator {
+                    if isRoundCreator && !isQuickGame {
                         Button {
                             showScorerPicker = true
                         } label: {
                             Label("Change Scorer", systemImage: "person.badge.key")
+                        }
+                    }
+
+                    if isRoundCreator {
+                        Divider()
+
+                        Button {
+                            showCancelRoundAlert = true
+                        } label: {
+                            Label("Cancel Round", systemImage: "trash")
                         }
 
                         Divider()
@@ -435,7 +460,7 @@ struct ScorecardView: View {
                         Button(role: .destructive) {
                             showEndShareRoundAlert = true
                         } label: {
-                            Label("End Round & Share Results", systemImage: "square.and.arrow.up")
+                            Label("End Round & Save Results", systemImage: "checkmark.circle")
                         }
                     }
                 } label: {
@@ -447,7 +472,7 @@ struct ScorecardView: View {
                         .clipShape(Circle())
                 }
                 .accessibilityLabel("Round options")
-                .accessibilityHint("Shows settings, course change, share, and end round options")
+                .accessibilityHint("Shows group settings and round options")
                 } // end if creator
             }
         }

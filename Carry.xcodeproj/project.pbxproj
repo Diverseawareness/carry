@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 56;
+	objectVersion = 70;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -13,12 +13,14 @@
 		60385FDD2F76EC5C00FBF213 /* QuickStartSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60385FDC2F76EC5C00FBF213 /* QuickStartSheet.swift */; };
 		60385FDF2F76EC9B00FBF213 /* GuestProfileService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60385FDE2F76EC9B00FBF213 /* GuestProfileService.swift */; };
 		60385FE12F78D10200FBF213 /* ResultsShareCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60385FE02F78D10200FBF213 /* ResultsShareCard.swift */; };
-		7F68AD8196384B3AB96CBCFF /* GuestClaimView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEC0B2BCD1224503A328768D /* GuestClaimView.swift */; };
 		60385FE32F78D12100FBF213 /* ShareCardRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60385FE22F78D12100FBF213 /* ShareCardRenderer.swift */; };
 		60385FE52F7A167800FBF213 /* SMSInviteSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60385FE42F7A167800FBF213 /* SMSInviteSheet.swift */; };
 		6067A5C52F75E4140055DE9A /* PostHog in Frameworks */ = {isa = PBXBuildFile; productRef = 6067A5C42F75E4140055DE9A /* PostHog */; };
 		6067A5C72F75E7980055DE9A /* AnalyticsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6067A5C62F75E7980055DE9A /* AnalyticsService.swift */; };
+		608DA9452F8A3A0200B69072 /* PostHog in Frameworks */ = {isa = PBXBuildFile; productRef = CT0001 /* PostHog */; };
+		608DA9462F8A3A0200B69072 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = CT0002 /* Supabase */; };
 		70E6DD8F93DE4E9B947D2ADE /* GolfCourseService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC29B0CF11FF413AA819A069 /* GolfCourseService.swift */; };
+		7F68AD8196384B3AB96CBCFF /* GuestClaimView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEC0B2BCD1224503A328768D /* GuestClaimView.swift */; };
 		8F4CA1E527DB49E3A6D8B193 /* PlayerSearchService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3B7E2D419CF4FA8B1C60D72 /* PlayerSearchService.swift */; };
 		95379D27DEDC14C1D60D06A4 /* VenmoLogo.swift in Sources */ = {isa = PBXBuildFile; fileRef = A298F2722FC1DED0209E5BB2 /* VenmoLogo.swift */; };
 		A10001 /* CarryApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10001 /* CarryApp.swift */; };
@@ -58,6 +60,13 @@
 		A20001 /* StoreService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001 /* StoreService.swift */; };
 		A20002 /* PaywallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20002 /* PaywallView.swift */; };
 		A20003 /* CarryInputModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20003 /* CarryInputModifier.swift */; };
+		A20099 /* ScorerAssignmentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20099 /* ScorerAssignmentView.swift */; };
+		A20100 /* CarryTextField.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20100 /* CarryTextField.swift */; };
+		A20101 /* HandicapPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20101 /* HandicapPickerSheet.swift */; };
+		A20102 /* PlayerGroupsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20102 /* PlayerGroupsSheet.swift */; };
+		A20199 /* FinalResultsComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20199 /* FinalResultsComponents.swift */; };
+		A20200 /* DisclaimerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20200 /* DisclaimerView.swift */; };
+		A20201 /* ImageCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20201 /* ImageCache.swift */; };
 		B5263A87AFF44D4C95F2CB91 /* CourseSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7A80C81F7A84402810B5460 /* CourseSelectionView.swift */; };
 		C20001 /* AppRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20001 /* AppRouter.swift */; };
 		C20002 /* GroupInviteParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20002 /* GroupInviteParser.swift */; };
@@ -84,17 +93,27 @@
 		S10002 /* SyncQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = S10001 /* SyncQueue.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		608DA9202F8A35F900B69072 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = F10001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D10001;
+			remoteInfo = Carry;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		602CE3382F735F7C0028D0AF /* ScoringInfoModal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoringInfoModal.swift; sourceTree = "<group>"; };
 		602CE33C2F747A2F0028D0AF /* TeeTimePickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeeTimePickerSheet.swift; sourceTree = "<group>"; };
 		60385FDC2F76EC5C00FBF213 /* QuickStartSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickStartSheet.swift; sourceTree = "<group>"; };
 		60385FDE2F76EC9B00FBF213 /* GuestProfileService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuestProfileService.swift; sourceTree = "<group>"; };
 		60385FE02F78D10200FBF213 /* ResultsShareCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResultsShareCard.swift; sourceTree = "<group>"; };
-		FEC0B2BCD1224503A328768D /* GuestClaimView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuestClaimView.swift; sourceTree = "<group>"; };
 		60385FE22F78D12100FBF213 /* ShareCardRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareCardRenderer.swift; sourceTree = "<group>"; };
 		60385FE42F7A167800FBF213 /* SMSInviteSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SMSInviteSheet.swift; sourceTree = "<group>"; };
 		6056B3532F71DA0E00943125 /* Configuration.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; name = Configuration.storekit; path = Carry/Configuration.storekit; sourceTree = "<group>"; };
 		6067A5C62F75E7980055DE9A /* AnalyticsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsService.swift; sourceTree = "<group>"; };
+		608DA91A2F8A35F900B69072 /* CarryTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CarryTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		9E4B1697B91D41F1A81D3762 /* SkinConfettiBurst.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkinConfettiBurst.swift; sourceTree = "<group>"; };
 		A298F2722FC1DED0209E5BB2 /* VenmoLogo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VenmoLogo.swift; sourceTree = "<group>"; };
 		A3B7E2D419CF4FA8B1C60D72 /* PlayerSearchService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerSearchService.swift; sourceTree = "<group>"; };
@@ -138,6 +157,13 @@
 		B20001 /* StoreService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreService.swift; sourceTree = "<group>"; };
 		B20002 /* PaywallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaywallView.swift; sourceTree = "<group>"; };
 		B20003 /* CarryInputModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarryInputModifier.swift; sourceTree = "<group>"; };
+		B20099 /* ScorerAssignmentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScorerAssignmentView.swift; sourceTree = "<group>"; };
+		B20100 /* CarryTextField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarryTextField.swift; sourceTree = "<group>"; };
+		B20101 /* HandicapPickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandicapPickerSheet.swift; sourceTree = "<group>"; };
+		B20102 /* PlayerGroupsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerGroupsSheet.swift; sourceTree = "<group>"; };
+		B20199 /* FinalResultsComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinalResultsComponents.swift; sourceTree = "<group>"; };
+		B20200 /* DisclaimerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisclaimerView.swift; sourceTree = "<group>"; };
+		B20201 /* ImageCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageCache.swift; sourceTree = "<group>"; };
 		D20001 /* AppRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRouter.swift; sourceTree = "<group>"; };
 		D20002 /* GroupInviteParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupInviteParser.swift; sourceTree = "<group>"; };
 		D20005 /* ScoreInputSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoreInputSheet.swift; sourceTree = "<group>"; };
@@ -158,6 +184,7 @@
 		F90002 /* ANDONESI.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = ANDONESI.ttf; sourceTree = "<group>"; };
 		F90004 /* ManageMembersSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManageMembersSheet.swift; sourceTree = "<group>"; };
 		FC29B0CF11FF413AA819A069 /* GolfCourseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GolfCourseService.swift; sourceTree = "<group>"; };
+		FEC0B2BCD1224503A328768D /* GuestClaimView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuestClaimView.swift; sourceTree = "<group>"; };
 		GS0002 /* GroupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupService.swift; sourceTree = "<group>"; };
 		M10001 /* MembershipRadioButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MembershipRadioButton.swift; sourceTree = "<group>"; };
 		N10001 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
@@ -165,7 +192,20 @@
 		SC0001 /* Secrets.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Secrets.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		608DA91B2F8A35F900B69072 /* CarryTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = CarryTests; sourceTree = "<group>"; };
+/* End PBXFileSystemSynchronizedRootGroup section */
+
 /* Begin PBXFrameworksBuildPhase section */
+		608DA9172F8A35F900B69072 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				608DA9462F8A3A0200B69072 /* Supabase in Frameworks */,
+				608DA9452F8A3A0200B69072 /* PostHog in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		D10004 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -191,6 +231,7 @@
 			children = (
 				6056B3532F71DA0E00943125 /* Configuration.storekit */,
 				C10002 /* Carry */,
+				608DA91B2F8A35F900B69072 /* CarryTests */,
 				C10003 /* Products */,
 				6056B3522F70CA1C00943125 /* Recovered References */,
 				602CE33C2F747A2F0028D0AF /* TeeTimePickerSheet.swift */,
@@ -221,6 +262,7 @@
 			isa = PBXGroup;
 			children = (
 				B10020 /* Carry.app */,
+				608DA91A2F8A35F900B69072 /* CarryTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -278,6 +320,12 @@
 				B10032 /* HomeView.swift */,
 				B10100 /* GolfBallLoader.swift */,
 				B20003 /* CarryInputModifier.swift */,
+				B20099 /* ScorerAssignmentView.swift */,
+				B20199 /* FinalResultsComponents.swift */,
+				B20200 /* DisclaimerView.swift */,
+				B20102 /* PlayerGroupsSheet.swift */,
+				B20101 /* HandicapPickerSheet.swift */,
+				B20100 /* CarryTextField.swift */,
 				B20002 /* PaywallView.swift */,
 				B10033 /* MainTabView.swift */,
 				B10034 /* GroupsListView.swift */,
@@ -307,6 +355,7 @@
 				N10001 /* NotificationService.swift */,
 				B10025 /* RoundService.swift */,
 				GS0002 /* GroupService.swift */,
+				B20201 /* ImageCache.swift */,
 				FC29B0CF11FF413AA819A069 /* GolfCourseService.swift */,
 				A3B7E2D419CF4FA8B1C60D72 /* PlayerSearchService.swift */,
 				D20001 /* AppRouter.swift */,
@@ -329,6 +378,29 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		608DA9192F8A35F900B69072 /* CarryTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 608DA9242F8A35F900B69072 /* Build configuration list for PBXNativeTarget "CarryTests" */;
+			buildPhases = (
+				608DA9162F8A35F900B69072 /* Sources */,
+				608DA9172F8A35F900B69072 /* Frameworks */,
+				608DA9182F8A35F900B69072 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				608DA9212F8A35F900B69072 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				608DA91B2F8A35F900B69072 /* CarryTests */,
+			);
+			name = CarryTests;
+			packageProductDependencies = (
+			);
+			productName = CarryTests;
+			productReference = 608DA91A2F8A35F900B69072 /* CarryTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		D10001 /* Carry */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = E10001 /* Build configuration list for PBXNativeTarget "Carry" */;
@@ -357,9 +429,13 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 1500;
-				LastUpgradeCheck = 1500;
+				LastSwiftUpdateCheck = 2640;
+				LastUpgradeCheck = 2640;
 				TargetAttributes = {
+					608DA9192F8A35F900B69072 = {
+						CreatedOnToolsVersion = 26.4;
+						TestTargetID = D10001;
+					};
 					D10001 = {
 						CreatedOnToolsVersion = 15.0;
 					};
@@ -383,11 +459,19 @@
 			projectRoot = "";
 			targets = (
 				D10001 /* Carry */,
+				608DA9192F8A35F900B69072 /* CarryTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		608DA9182F8A35F900B69072 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		D10003 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -400,6 +484,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		608DA9162F8A35F900B69072 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		D10002 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -418,12 +509,19 @@
 				A10021 /* SupabaseManager.swift in Sources */,
 				A10022 /* AuthService.swift in Sources */,
 				A20003 /* CarryInputModifier.swift in Sources */,
+				A20099 /* ScorerAssignmentView.swift in Sources */,
+				A20199 /* FinalResultsComponents.swift in Sources */,
+				A20200 /* DisclaimerView.swift in Sources */,
+				A20102 /* PlayerGroupsSheet.swift in Sources */,
+				A20101 /* HandicapPickerSheet.swift in Sources */,
+				A20100 /* CarryTextField.swift in Sources */,
 				A20001 /* StoreService.swift in Sources */,
 				A20002 /* PaywallView.swift in Sources */,
 				S10002 /* SyncQueue.swift in Sources */,
 				N10002 /* NotificationService.swift in Sources */,
 				A10023 /* RoundService.swift in Sources */,
 				GS0001 /* GroupService.swift in Sources */,
+				A20201 /* ImageCache.swift in Sources */,
 				60385FE12F78D10200FBF213 /* ResultsShareCard.swift in Sources */,
 				7F68AD8196384B3AB96CBCFF /* GuestClaimView.swift in Sources */,
 				A10008 /* ScorecardView.swift in Sources */,
@@ -480,7 +578,73 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		608DA9212F8A35F900B69072 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = D10001 /* Carry */;
+			targetProxy = 608DA9202F8A35F900B69072 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		608DA9222F8A35F900B69072 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.diverseawareness.CarryTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Carry.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Carry";
+				TEST_TARGET_NAME = Carry;
+			};
+			name = Debug;
+		};
+		608DA9232F8A35F900B69072 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.diverseawareness.CarryTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Carry.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Carry";
+				TEST_TARGET_NAME = Carry;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
 		G10001 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -489,8 +653,7 @@
 				CODE_SIGN_ENTITLEMENTS = Carry/Carry.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
-				DEVELOPMENT_TEAM = 4HC6HD76J4;
+				CURRENT_PROJECT_VERSION = 42;
 				INFOPLIST_FILE = Carry/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -506,7 +669,7 @@
 				SDKROOT = iphoneos;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Debug;
 		};
@@ -518,8 +681,7 @@
 				CODE_SIGN_ENTITLEMENTS = Carry/Carry.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
-				DEVELOPMENT_TEAM = 4HC6HD76J4;
+				CURRENT_PROJECT_VERSION = 42;
 				INFOPLIST_FILE = Carry/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -535,7 +697,7 @@
 				SDKROOT = iphoneos;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 				VALIDATE_PRODUCT = YES;
 			};
 			name = Release;
@@ -574,7 +736,9 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 4HC6HD76J4;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -588,6 +752,7 @@
 				);
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
 				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
@@ -595,6 +760,7 @@
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) DEBUG";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
@@ -634,7 +800,9 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 4HC6HD76J4;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -642,12 +810,14 @@
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
 				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 			};
 			name = Release;
@@ -655,6 +825,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		608DA9242F8A35F900B69072 /* Build configuration list for PBXNativeTarget "CarryTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				608DA9222F8A35F900B69072 /* Debug */,
+				608DA9232F8A35F900B69072 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		E10001 /* Build configuration list for PBXNativeTarget "Carry" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -699,6 +878,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 6067A5C32F75E4140055DE9A /* XCRemoteSwiftPackageReference "posthog-ios" */;
 			productName = PostHog;
+		};
+		CT0001 /* PostHog */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 6067A5C32F75E4140055DE9A /* XCRemoteSwiftPackageReference "posthog-ios" */;
+			productName = PostHog;
+		};
+		CT0002 /* Supabase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = P10001 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Supabase;
 		};
 		P10002 /* Supabase */ = {
 			isa = XCSwiftPackageProductDependency;

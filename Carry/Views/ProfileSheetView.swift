@@ -18,8 +18,8 @@ struct ProfileView: View {
     @State private var showCamera = false
     @State private var photoItem: PhotosPickerItem? = nil
     @State private var profileImage: UIImage? = nil
-    @State private var pickerWhole: Int = 0
-    @State private var pickerDecimal: Int = 0
+    @State private var hcPickerValue: Double = 0
+    @State private var hcPickerIsPlus: Bool = false
     @State private var profileError: String?
     @State private var showProfileError = false
     @State private var imageToCrop: UIImage? = nil
@@ -57,46 +57,30 @@ struct ProfileView: View {
     }
 
     var body: some View {
-        ZStack {
-            Color.white.ignoresSafeArea()
+        VStack(spacing: 0) {
 
-            ScrollView {
-                VStack(spacing: 0) {
-                    // MARK: Profile Header (horizontal)
-                    HStack(spacing: 20) {
-                        // Avatar — tappable
-                        Button {
-                            showPhotoOptions = true
-                        } label: {
-                            if let profileImage {
-                                Image(uiImage: profileImage)
+            // MARK: Profile Header (sticky)
+            HStack(spacing: 20) {
+                // Avatar — tappable
+                Button {
+                    showPhotoOptions = true
+                } label: {
+                    if let profileImage {
+                        Image(uiImage: profileImage)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 86, height: 86)
+                            .clipShape(Circle())
+                    } else if let avatarUrl, let url = URL(string: avatarUrl) {
+                        AsyncImage(url: url) { phase in
+                            switch phase {
+                            case .success(let image):
+                                image
                                     .resizable()
                                     .scaledToFill()
                                     .frame(width: 86, height: 86)
                                     .clipShape(Circle())
-                            } else if let avatarUrl, let url = URL(string: avatarUrl) {
-                                AsyncImage(url: url) { phase in
-                                    switch phase {
-                                    case .success(let image):
-                                        image
-                                            .resizable()
-                                            .scaledToFill()
-                                            .frame(width: 86, height: 86)
-                                            .clipShape(Circle())
-                                    default:
-                                        ZStack {
-                                            Circle()
-                                                .fill(Color.mintLight)
-                                            Circle()
-                                                .strokeBorder(Color.mintBright, lineWidth: 1.5)
-                                            Text(initials)
-                                                .font(.custom("ANDONESI-Regular", size: 35))
-                                                .foregroundColor(Color.greenDark)
-                                        }
-                                        .frame(width: 86, height: 86)
-                                    }
-                                }
-                            } else {
+                            default:
                                 ZStack {
                                     Circle()
                                         .fill(Color.mintLight)
@@ -109,35 +93,51 @@ struct ProfileView: View {
                                 .frame(width: 86, height: 86)
                             }
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Profile photo")
-                        .accessibilityHint("Double tap to change your profile photo")
-
-                        // Name + subtitle + stats
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(fullName)
-                                .font(.system(size: 20, weight: .bold))
-                                .foregroundColor(Color(hexString: "171D28"))
-                                .lineLimit(1)
-
-                            Text(profileSubtitle)
-                                .font(.system(size: 15, weight: .medium))
-                                .foregroundColor(Color(hexString: "7A7A7E"))
-                                .lineLimit(1)
-
-                            Text("\(totalGamesPlayed) Games · \(totalSkinsWon) Skins")
-                                .font(.system(size: 15, weight: .medium))
-                                .foregroundColor(Color(hexString: "171D28"))
-                                .padding(.top, 2)
-                                .accessibilityLabel("\(totalGamesPlayed) games played, \(totalSkinsWon) skins won")
+                    } else {
+                        ZStack {
+                            Circle()
+                                .fill(Color.mintLight)
+                            Circle()
+                                .strokeBorder(Color.mintBright, lineWidth: 1.5)
+                            Text(initials)
+                                .font(.custom("ANDONESI-Regular", size: 35))
+                                .foregroundColor(Color.greenDark)
                         }
-
-                        Spacer()
+                        .frame(width: 86, height: 86)
                     }
-                    .padding(.horizontal, 22)
-                    .padding(.top, 16)
-                    .padding(.bottom, 24)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Profile photo")
+                .accessibilityHint("Double tap to change your profile photo")
 
+                // Name + subtitle + stats
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(fullName)
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundColor(Color(hexString: "171D28"))
+                        .lineLimit(1)
+
+                    Text(profileSubtitle)
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundColor(Color(hexString: "7A7A7E"))
+                        .lineLimit(1)
+
+                    Text("\(totalGamesPlayed) Games · \(totalSkinsWon) Skins")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundColor(Color(hexString: "171D28"))
+                        .padding(.top, 2)
+                        .accessibilityLabel("\(totalGamesPlayed) games played, \(totalSkinsWon) skins won")
+                }
+
+                Spacer()
+            }
+            .padding(.horizontal, 22)
+            .padding(.top, 16)
+            .padding(.bottom, 24)
+            .background(.white)
+
+            ScrollView {
+                VStack(spacing: 0) {
                     // MARK: Subscription / Upgrade
                     if storeService.isPremium {
                         capsHeader("SUBSCRIPTION")
@@ -271,26 +271,21 @@ struct ProfileView: View {
                     }
                     .padding(.top, 8)
 
+                    // MARK: Disclaimer
+                    Text("Carry is a scorekeeper only. Dollar amounts are for tracking friendly skins games. No real money is processed, held, or transferred through this app. Players settle up independently and are responsible for complying with local laws.")
+                        .font(.system(size: 12))
+                        .foregroundColor(Color.textDisabled)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 24)
+                        .padding(.top, 24)
+
                     Spacer().frame(height: 40)
                 }
             }
 
-            // Top fade gradient (matches HomeView scroll overlay)
-            VStack {
-                LinearGradient(
-                    colors: [.white, .white.opacity(0)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .frame(height: 50)
-                .allowsHitTesting(false)
-                Spacer()
-            }
-            .ignoresSafeArea(edges: .top)
-            .allowsHitTesting(false)
-
-            // Crop overlay removed — now presented as fullScreenCover below
         }
+        .background(Color.white.ignoresSafeArea())
         .confirmationDialog("Sign out of Carry?", isPresented: $showSignOutConfirm, titleVisibility: .visible) {
             Button("Sign Out", role: .destructive) {
                 Task {
@@ -328,10 +323,24 @@ struct ProfileView: View {
             ShareSheetView(items: [URL(string: "https://carryapp.site")!])
         }
         .sheet(isPresented: $showHandicapPicker) {
-            handicapPickerSheet
-                .presentationDetents([.medium])
-                .presentationDragIndicator(.visible)
-                .presentationBackground(.white)
+            HandicapPickerSheet(
+                handicap: $hcPickerValue,
+                isPlus: $hcPickerIsPlus
+            )
+            .presentationDetents([.height(520)])
+            .presentationDragIndicator(.visible)
+            .onDisappear {
+                let newHandicap = hcPickerValue
+                Task {
+                    do {
+                        try await authService.updateProfile(ProfileUpdate(handicap: newHandicap))
+                        ToastManager.shared.success("Handicap updated")
+                    } catch {
+                        profileError = "Could not update handicap. Please try again."
+                        showProfileError = true
+                    }
+                }
+            }
         }
         .sheet(isPresented: $showEditProfile) {
             EditProfileSheet(parentProfileImage: $profileImage)
@@ -467,66 +476,7 @@ struct ProfileView: View {
 
     // MARK: - Handicap Picker
 
-    private var handicapPickerSheet: some View {
-        VStack(spacing: 0) {
-            Text("Handicap Index")
-                .font(.carry.labelBold)
-                .foregroundColor(Color.textPrimary)
-                .padding(.top, 40)
-
-            Spacer()
-
-            HStack(spacing: 0) {
-                Picker("Whole", selection: $pickerWhole) {
-                    ForEach(-10...54, id: \.self) { n in
-                        Text(n < 0 ? "+\(abs(n))" : "\(n)").tag(n)
-                    }
-                }
-                .pickerStyle(.wheel)
-
-                Text(".")
-                    .font(.system(size: 24, weight: .medium))
-                    .foregroundColor(Color.pureBlack)
-
-                Picker("Decimal", selection: $pickerDecimal) {
-                    ForEach(0...9, id: \.self) { n in
-                        Text("\(n)").tag(n)
-                    }
-                }
-                .pickerStyle(.wheel)
-                .frame(width: 80)
-            }
-            .padding(.horizontal, 40)
-
-            Spacer()
-
-            Button {
-                let newHandicap = Double(pickerWhole) + Double(pickerDecimal) / 10.0
-                Task {
-                    do {
-                        try await authService.updateProfile(ProfileUpdate(handicap: newHandicap))
-                        ToastManager.shared.success("Handicap updated")
-                    } catch {
-                        profileError = "Could not update handicap. Please try again."
-                        showProfileError = true
-                    }
-                }
-                showHandicapPicker = false
-            } label: {
-                Text("Save")
-                    .font(.carry.bodyLGSemibold)
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 48)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(Color.textPrimary)
-                    )
-            }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 8)
-        }
-    }
+    // Old handicapPickerSheet removed — uses shared HandicapPickerSheet component
 
     // MARK: - Components
 
@@ -597,6 +547,9 @@ struct EditProfileSheet: View {
     @State private var firstName: String = ""
     @State private var lastName: String = ""
     @State private var handicap: String = ""
+    @State private var showHCPicker = false
+    @State private var hcPickerValue: Double = 0
+    @State private var hcPickerIsPlus: Bool = false
     enum ProfileField: Hashable { case firstName, lastName, handicap, clubSearch }
     @FocusState private var profileFocused: ProfileField?
     @State private var selectedPhoto: UIImage? = nil
@@ -707,6 +660,8 @@ struct EditProfileSheet: View {
                             }
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("Edit profile photo")
+                        .accessibilityHint("Opens photo picker")
                         Spacer()
                     }
                     .padding(.top, 8)
@@ -760,11 +715,22 @@ struct EditProfileSheet: View {
                             .foregroundColor(Color.textPrimary)
                             .padding(.leading, 4)
 
-                        TextField("e.g. 12.4", text: $handicap)
-                            .font(.system(size: 16))
-                            .focused($profileFocused, equals: .handicap)
-                            .keyboardType(.decimalPad)
-                            .carryInput(focused: profileFocused == .handicap)
+                        Button {
+                            profileFocused = nil
+                            let val: Double = handicap.hasPrefix("+") ? -(Double(String(handicap.dropFirst())) ?? 0) : Double(handicap) ?? 0
+                            hcPickerValue = val
+                            hcPickerIsPlus = val < 0
+                            showHCPicker = true
+                        } label: {
+                            HStack {
+                                Text(handicap.isEmpty ? "e.g. 12.4" : handicap)
+                                    .font(.system(size: 16))
+                                    .foregroundColor(handicap.isEmpty ? Color.textDisabled : Color.textPrimary)
+                                Spacer()
+                            }
+                            .carryInput(focused: false)
+                        }
+                        .buttonStyle(.plain)
                     }
                     .padding(.horizontal, 24)
 
@@ -866,6 +832,7 @@ struct EditProfileSheet: View {
                                             .font(.system(size: 16))
                                             .foregroundColor(Color.textDisabled)
                                     }
+                                    .accessibilityLabel("Clear search")
                                 }
                             }
                             .padding(.horizontal, 16)
@@ -960,6 +927,22 @@ struct EditProfileSheet: View {
             } // ScrollViewReader
         }
         .background(Color.white)
+        .sheet(isPresented: $showHCPicker) {
+            HandicapPickerSheet(
+                handicap: $hcPickerValue,
+                isPlus: $hcPickerIsPlus
+            )
+            .presentationDetents([.height(520)])
+            .presentationDragIndicator(.visible)
+            .onDisappear {
+                let absVal = abs(hcPickerValue)
+                if hcPickerIsPlus || hcPickerValue < 0 {
+                    handicap = "+\(String(format: "%.1f", absVal))"
+                } else {
+                    handicap = String(format: "%.1f", absVal)
+                }
+            }
+        }
         .onAppear {
             firstName = authService.currentUser?.firstName ?? ""
             lastName = authService.currentUser?.lastName ?? ""
@@ -1340,6 +1323,7 @@ struct ClubEditSheet: View {
                                         .font(.system(size: 16))
                                         .foregroundColor(Color.textDisabled)
                                 }
+                                .accessibilityLabel("Clear search")
                             }
                         }
                         .padding(.horizontal, 16)
@@ -1499,8 +1483,9 @@ struct ShareSheetView: UIViewControllerRepresentable {
 
 struct NotificationsSheet: View {
     @Environment(\.dismiss) var dismiss
-    @AppStorage("notif_scoreUpdates") private var scoreUpdates = true
-    @AppStorage("notif_skinsWon") private var skinsWon = true
+    @AppStorage("notif_gameAlerts") private var gameAlerts = true
+    @AppStorage("notif_liveScoring") private var liveScoring = true
+    @AppStorage("notif_groupActivity") private var groupActivity = true
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1510,60 +1495,74 @@ struct NotificationsSheet: View {
                 .padding(.top, 40)
                 .padding(.bottom, 20)
 
-            // Score Updates toggle
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Score Updates")
-                        .font(.carry.body)
-                        .foregroundColor(Color.textPrimary)
-                    Text("When scores are entered in your round")
-                        .font(.carry.caption)
-                        .foregroundColor(Color.textSecondary)
+            // Game Alerts toggle
+            notifToggle(
+                title: "Game Alerts",
+                subtitle: "Invites, round start & end, scorer assignment",
+                isOn: $gameAlerts
+            )
+
+            notifDivider
+
+            // Live Scoring toggle
+            notifToggle(
+                title: "Live Scoring",
+                subtitle: "Skins won during a round, all groups active",
+                isOn: $liveScoring
+            )
+
+            notifDivider
+
+            // Group Activity toggle
+            notifToggle(
+                title: "Group Activity",
+                subtitle: "Members joining or declining, score disputes, tee time reminders",
+                isOn: $groupActivity
+            )
+
+            notifDivider
+
+            Button {
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(url)
                 }
-                Spacer()
-                Toggle("", isOn: $scoreUpdates)
-                    .labelsHidden()
-                    .tint(Color.textPrimary)
+            } label: {
+                Text("Push notifications require permission in ")
+                    + Text("iOS Settings").underline()
             }
+            .font(.carry.caption)
+            .foregroundColor(Color.textSecondary)
+            .padding(.top, 12)
             .padding(.horizontal, 20)
-            .padding(.vertical, 12)
-
-            Rectangle()
-                .fill(Color.bgPrimary)
-                .frame(height: 1)
-                .padding(.horizontal, 20)
-
-            // Skins Won toggle
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Skins Won")
-                        .font(.carry.body)
-                        .foregroundColor(Color.textPrimary)
-                    Text("When someone wins a skin in your game")
-                        .font(.carry.caption)
-                        .foregroundColor(Color.textSecondary)
-                }
-                Spacer()
-                Toggle("", isOn: $skinsWon)
-                    .labelsHidden()
-                    .tint(Color.textPrimary)
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 12)
-
-            Rectangle()
-                .fill(Color.bgPrimary)
-                .frame(height: 1)
-                .padding(.horizontal, 20)
-
-            Text("Push notifications require permission in iOS Settings.")
-                .font(.carry.caption)
-                .foregroundColor(Color.textSecondary)
-                .padding(.top, 12)
-                .padding(.horizontal, 20)
 
             Spacer()
         }
+    }
+
+    private func notifToggle(title: String, subtitle: String, isOn: Binding<Bool>) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.carry.body)
+                    .foregroundColor(Color.textPrimary)
+                Text(subtitle)
+                    .font(.carry.caption)
+                    .foregroundColor(Color.textSecondary)
+            }
+            Spacer()
+            Toggle("", isOn: isOn)
+                .labelsHidden()
+                .tint(Color.textPrimary)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+    }
+
+    private var notifDivider: some View {
+        Rectangle()
+            .fill(Color.bgPrimary)
+            .frame(height: 1)
+            .padding(.horizontal, 20)
     }
 }
 

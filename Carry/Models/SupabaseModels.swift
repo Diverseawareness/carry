@@ -383,6 +383,7 @@ struct SkinsGroupDTO: Codable, Identifiable {
     var scorerIds: [Int]?  // per-group scorer player IDs
     var teeTimeInterval: Int?  // minutes between consecutive tee times (0 or nil = off)
     var lastTeeBoxHolesJson: String?  // per-hole par/hcp data, saved at course selection
+    var winningsDisplay: String?  // 'gross' (default) or 'net' — how winnings are shown
     let createdAt: Date?
     var updatedAt: Date?
 
@@ -411,6 +412,7 @@ struct SkinsGroupDTO: Codable, Identifiable {
         case scorerIds = "scorer_ids"
         case teeTimeInterval = "tee_time_interval"
         case lastTeeBoxHolesJson = "last_tee_box_holes_json"
+        case winningsDisplay = "winnings_display"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
     }
@@ -433,6 +435,8 @@ struct SkinsGroupInsert: Codable {
     var scoringMode: String = "single"
     var isQuickGame: Bool = false
     var teeTimeInterval: Int? = nil
+    var lastTeeBoxHolesJson: String? = nil
+    var winningsDisplay: String = "gross"
 
     enum CodingKeys: String, CodingKey {
         case name
@@ -451,6 +455,8 @@ struct SkinsGroupInsert: Codable {
         case scoringMode = "scoring_mode"
         case isQuickGame = "is_quick_game"
         case teeTimeInterval = "tee_time_interval"
+        case lastTeeBoxHolesJson = "last_tee_box_holes_json"
+        case winningsDisplay = "winnings_display"
     }
 }
 
@@ -473,6 +479,7 @@ struct SkinsGroupUpdate: Codable {
     var scorerIds: [Int]?
     var teeTimeInterval: Int?
     var lastTeeBoxHolesJson: String?
+    var winningsDisplay: String?
 
     enum CodingKeys: String, CodingKey {
         case name
@@ -491,6 +498,7 @@ struct SkinsGroupUpdate: Codable {
         case scorerIds = "scorer_ids"
         case teeTimeInterval = "tee_time_interval"
         case lastTeeBoxHolesJson = "last_tee_box_holes_json"
+        case winningsDisplay = "winnings_display"
     }
 
     func encode(to encoder: Encoder) throws {
@@ -519,6 +527,7 @@ struct SkinsGroupUpdate: Codable {
         if let scorerIds { try container.encode(scorerIds, forKey: .scorerIds) }
         if let teeTimeInterval { try container.encode(teeTimeInterval, forKey: .teeTimeInterval) }
         if let lastTeeBoxHolesJson { try container.encode(lastTeeBoxHolesJson, forKey: .lastTeeBoxHolesJson) }
+        if let winningsDisplay { try container.encode(winningsDisplay, forKey: .winningsDisplay) }
     }
 }
 

@@ -6,28 +6,17 @@ class AppRouter: ObservableObject {
     /// Non-nil while a group-invite deep link is waiting to be consumed by MainTabView.
     @Published var pendingGroupInvite: ParsedInvite? = nil
 
-    // MARK: - Debug Menu Triggers
+    // MARK: - Debug Menu Triggers (gated so they don't exist in release builds)
 
-    /// Set to true from DebugMenuView; MainTabView watches and resets skinGameGroups to demo data.
+    #if DEBUG
     @Published var debugResetGroups: Bool = false
-
-    /// Set to true from DebugMenuView; MainTabView watches and clears all skinGameGroups.
     @Published var debugClearGroups: Bool = false
-
-    /// Set to true from DebugMenuView; GroupsListView watches and shows the "Play again?" recurring prompt.
     @Published var debugShowRecurringPrompt: Bool = false
-
-    /// Set to true from DebugMenuView; GroupsListView watches and shows the quick game limit alert.
     @Published var debugShowQuickGameLimit: Bool = false
-
-    /// Set to true from DebugMenuView; HomeView watches and shows the guest claim picker sheet.
     @Published var debugShowGuestClaim: Bool = false
-
-    /// Set to true from DebugMenuView; shows the Create Group card overlay.
     @Published var debugShowCreateGroupCard: Bool = false
-
-    /// Set to true from DebugMenuView; opens first group and shows invite share sheet.
     @Published var debugShowInviteSheet: Bool = false
+    #endif
 
     /// Set to true after accepting a group invite; MainTabView watches and reloads groups.
     @Published var shouldRefreshGroups: Bool = false

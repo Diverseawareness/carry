@@ -13,11 +13,21 @@ enum AppConfig {
            !key.isEmpty, !key.hasPrefix("$(") {
             return key
         }
-        // Fallback for dev/CI when xcconfig isn't configured
+        // Fallback for dev/CI when xcconfig isn't configured.
+        // ⚠️ Log a loud warning in DEBUG so this doesn't silently break Release builds
+        // where Secrets.xcconfig may not be wired up.
+        #if DEBUG
+        print("⚠️ [Config] GolfCourseAPIKey is empty — Secrets.xcconfig may not be attached to this build configuration. Course search will fail.")
+        #endif
         return ""
     }()
 
     // MARK: - App Store
-    // Replace id000000000 with real App Store ID after submission
-    static let appStoreURL = URL(string: "https://apps.apple.com/app/carry/id000000000")!
+    // ⚠️ PRE-SUBMISSION CHECKLIST:
+    //   1. Replace id000000000 with real App Store ID after first TestFlight upload
+    //      (Apple assigns the ID in App Store Connect → App Information).
+    //   2. In Carry.entitlements, change `aps-environment` from "development" to
+    //      "production" before archiving for TestFlight / App Store. (Dev builds
+    //      from Xcode require "development" — flip back when testing locally again.)
+    static let appStoreURL = URL(string: "https://apps.apple.com/app/carry/id6760993864")!
 }

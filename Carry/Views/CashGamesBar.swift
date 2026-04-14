@@ -35,7 +35,11 @@ struct CashGamesBar: View {
             }
             return total
         }
-        return Int((Double(skinsWon) * viewModel.skinValue).rounded())
+        let gross = Int((Double(skinsWon) * viewModel.skinValue).rounded())
+        if viewModel.config.winningsDisplay == "net" {
+            return gross - viewModel.config.buyIn
+        }
+        return gross
     }
 
     /// All players sorted by: earnings first, then current hole leaders break ties, then original order.
@@ -222,11 +226,13 @@ struct CashGamesBar: View {
     // MARK: - Helpers
 
     private func moneyText(_ amount: Int) -> String {
+        if amount < 0 { return "-$\(-amount)" }
         return "$\(amount)"
     }
 
     private func moneyColor(_ amount: Int) -> Color {
         if amount > 0 { return Color.textPrimary }
+        if amount < 0 { return .red }
         return Color.textSecondary
     }
 }

@@ -10,6 +10,7 @@ private struct PlayerSlot: Identifiable {
     var color: String = "#999999"
     var isPendingInvite: Bool = false
     var phoneNumber: String? = nil
+    var homeClub: String? = nil
 
     var initials: String {
         let parts = name.split(separator: " ")
@@ -34,6 +35,7 @@ private let slotColors = [
 // MARK: - QuickGameSheet
 
 struct QuickGameSheet: View {
+    @EnvironmentObject var storeService: StoreService
     let currentUser: Player
     let recentQuickGames: [SavedGroup]
     let onCreate: (SavedGroup) -> Void
@@ -45,6 +47,11 @@ struct QuickGameSheet: View {
     @State private var groupCount: Int = 1
     @State private var slots: [[PlayerSlot]] = []
     @State private var isCreating = false
+    @State private var showHCPicker = false
+    @State private var hcPickerValue: Double = 0
+    @State private var hcPickerIsPlus: Bool = false
+    @State private var hcPickerGroupIndex: Int = 0
+    @State private var hcPickerSlotIndex: Int = 0
     @State private var showCourseSheet = false
     @State private var showTeeTimePicker = false
     @State private var teeTimeDate: Date = {
@@ -64,15 +71,7 @@ struct QuickGameSheet: View {
     @State private var hasTeeTime = false
     @State private var consecutiveInterval: Int = 10  // default 10 min between groups
 
-    // Scorer search state
-    @State private var scorerSearchText: String = ""
-    @State private var scorerSearchResults: [ProfileDTO] = []
-    @State private var scorerSearchGroupIndex: Int? = nil
-    @State private var isScorerSearching = false
-    @State private var scorerSearchTask: Task<Void, Never>?
-    @State private var showInlinePhoneEntry = false
-    @State private var inlinePhoneText = ""
-    @State private var inlinePhoneName = ""
+    // Scorer search state — now handled by ScorerAssignmentView
 
     // Player name typeahead state
     @State private var playerSearchResults: [ProfileDTO] = []
@@ -86,8 +85,6 @@ struct QuickGameSheet: View {
     private enum SlotField: Hashable {
         case name(group: Int, slot: Int)
         case handicap(group: Int, slot: Int)
-        case scorerSearch(group: Int)
-        case inlinePhone(group: Int)
     }
 
     // MARK: - Computed
@@ -97,7 +94,10 @@ struct QuickGameSheet: View {
     }
 
     private var isFormValid: Bool {
-        guard selectedCourse != nil else { return false }
+        // Course must be set AND have full per-hole data
+        guard let course = selectedCourse,
+              let holes = course.teeBox?.holes,
+              holes.count == 18 else { return false }
         guard groupCount >= 1 else { return false }
         guard filledPlayerCount >= 2 else { return false }
         // Every group with players must have a scorer (slot 0 with profileId)
@@ -113,6 +113,8 @@ struct QuickGameSheet: View {
     private var hasPlayersWithoutHandicap: Bool {
         for g in 0..<groupCount {
             for slot in slots[g] where !slot.isEmpty {
+                // SMS invites don't have HC yet — skip them
+                if slot.isPendingInvite { continue }
                 if slot.handicap.trimmingCharacters(in: .whitespaces).isEmpty { return true }
             }
         }
@@ -136,6 +138,7 @@ struct QuickGameSheet: View {
                     slot.handicap = String(format: "%.1f", currentUser.handicap)
                     slot.existingProfileId = currentUser.profileId
                     slot.color = currentUser.color
+                    slot.homeClub = currentUser.homeClub
                 } else {
                     slot.color = slotColors[(groupIndex * 4 + slotIndex) % slotColors.count]
                 }
@@ -162,9 +165,9 @@ struct QuickGameSheet: View {
                 VStack(alignment: .leading, spacing: 0) {
                     recentSetupsSection
                     courseSection
+                    handicapAllowanceSection
                     teeTimeSection
                     buyInSection
-                    handicapAllowanceSection
                     playerGroupsSection
                     continueButton
                 }
@@ -193,16 +196,17 @@ struct QuickGameSheet: View {
                 guard let field = newField else { return }
                 withAnimation(.easeOut(duration: 0.25)) {
                     switch field {
-                    case .name(let group, let slot), .handicap(let group, let slot):
+                    case .name(let group, let slot):
                         scrollProxy.scrollTo("slot-\(group)-\(slot)", anchor: .center)
-                    case .scorerSearch(let group), .inlinePhone(let group):
-                        scrollProxy.scrollTo("slot-\(group)-0", anchor: .center)
+                    case .handicap:
+                        break // HC uses picker sheet, not keyboard focus
                     }
                 }
             }
             }
         }
         .background(Color.white.ignoresSafeArea())
+        .onTapGesture { focusedField = nil }
         .sheet(isPresented: $showCourseSheet) {
             CourseSelectionView { course in
                 selectedCourse = course
@@ -215,6 +219,22 @@ struct QuickGameSheet: View {
             teeTimePickerSheet
                 .presentationDetents([.height(580)])
                 .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showHCPicker) {
+            HandicapPickerSheet(
+                handicap: $hcPickerValue,
+                isPlus: $hcPickerIsPlus
+            )
+            .presentationDetents([.height(520)])
+            .presentationDragIndicator(.visible)
+            .onDisappear {
+                let absVal = abs(hcPickerValue)
+                if hcPickerIsPlus || hcPickerValue < 0 {
+                    slots[hcPickerGroupIndex][hcPickerSlotIndex].handicap = "+\(String(format: "%.1f", absVal))"
+                } else {
+                    slots[hcPickerGroupIndex][hcPickerSlotIndex].handicap = String(format: "%.1f", absVal)
+                }
+            }
         }
     }
 
@@ -283,8 +303,16 @@ struct QuickGameSheet: View {
     }
 
     private func prefillFromRecentGame(_ game: SavedGroup) {
-        // Course
-        selectedCourse = game.lastCourse
+        // Course — only prefill if the saved course has real per-hole data.
+        // Otherwise force the user to re-pick (which goes through CourseSelectionView's
+        // strict tee filter and guarantees full hole data).
+        if let course = game.lastCourse,
+           let holes = course.teeBox?.holes,
+           holes.count == 18 {
+            selectedCourse = course
+        } else {
+            selectedCourse = nil
+        }
 
         // Buy-in & handicap
         buyInAmount = game.buyInPerPlayer
@@ -327,6 +355,7 @@ struct QuickGameSheet: View {
                         slot.handicap = String(format: "%.1f", currentUser.handicap)
                         slot.existingProfileId = currentUser.profileId
                         slot.color = currentUser.color
+                        slot.homeClub = currentUser.homeClub
                     } else if player.isGuest {
                         // Guest — fill name + HC but no profileId
                         slot.name = player.name
@@ -337,6 +366,7 @@ struct QuickGameSheet: View {
                         slot.handicap = String(format: "%.1f", player.handicap)
                         slot.existingProfileId = profileId
                         slot.color = player.color
+                        slot.homeClub = player.homeClub
                     }
                 }
                 group.append(slot)
@@ -607,13 +637,32 @@ struct QuickGameSheet: View {
                     Text("Handicap Allowance")
                         .font(.carry.bodySMBold)
                         .foregroundColor(Color.textPrimary)
+                    if !storeService.isPremium {
+                        Image(systemName: "lock.fill")
+                            .font(.system(size: 11))
+                            .foregroundColor(Color.textDisabled)
+                    }
                     Spacer()
                     Text("\(Int(handicapPct * 100))%")
                         .font(.carry.captionLGSemibold)
                         .foregroundColor(Color.textPrimary)
                 }
+                if !storeService.isPremium {
+                    HStack(spacing: 4) {
+                        Image("premium-crown")
+                            .renderingMode(.template)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(height: 11)
+                            .foregroundColor(Color.goldDark)
+                        Text("Premium feature")
+                            .font(.carry.caption)
+                            .foregroundColor(Color.textDisabled)
+                    }
+                }
                 Slider(value: $handicapPct, in: 0.1...1.0, step: 0.05)
                     .tint(Color.textPrimary)
+                    .disabled(!storeService.isPremium)
             }
             .padding(.horizontal, 28)
             .padding(.bottom, 20)
@@ -640,7 +689,7 @@ struct QuickGameSheet: View {
             }
 
             // "+ Add Group" button
-            if groupCount < 4 {
+            if groupCount < 5 {
                 addGroupButton(label: "+ Add Group")
             }
         }
@@ -648,10 +697,21 @@ struct QuickGameSheet: View {
         .padding(.bottom, 20)
     }
 
+    private func removeGroup(at index: Int) {
+        guard index > 0, groupCount > 1 else { return }
+        withAnimation(.easeInOut(duration: 0.2)) {
+            // Clear the slots for this group
+            slots[index] = (0..<4).map { s in
+                PlayerSlot(color: slotColors[(index * 4 + s) % slotColors.count])
+            }
+            groupCount -= 1
+        }
+    }
+
     private func addGroupButton(label: String) -> some View {
         Button {
             withAnimation(.easeInOut(duration: 0.2)) {
-                groupCount = min(4, groupCount + 1)
+                groupCount = min(5, groupCount + 1)
             }
         } label: {
             Text(label)
@@ -685,15 +745,15 @@ struct QuickGameSheet: View {
 
             Button {
                 withAnimation(.easeInOut(duration: 0.2)) {
-                    groupCount = min(4, groupCount + 1)
+                    groupCount = min(5, groupCount + 1)
                 }
             } label: {
                 Text("+")
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(groupCount < 4 ? Color.textPrimary : Color.textDisabled)
+                    .foregroundColor(groupCount < 5 ? Color.textPrimary : Color.textDisabled)
                     .frame(width: 32, height: 28)
             }
-            .disabled(groupCount >= 4)
+            .disabled(groupCount >= 5)
         }
     }
 
@@ -702,11 +762,28 @@ struct QuickGameSheet: View {
     private func groupCard(groupIndex: Int) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             if groupCount > 1 {
-                Text("GROUP \(groupIndex + 1)")
-                    .font(.carry.captionSemibold)
-                    .foregroundColor(Color.textDisabled)
-                    .padding(.leading, 4)
-                    .padding(.bottom, 6)
+                HStack {
+                    Text("GROUP \(groupIndex + 1)")
+                        .font(.carry.captionSemibold)
+                        .foregroundColor(Color.textDisabled)
+                    Spacer()
+                    if groupIndex > 0 {
+                        Button {
+                            removeGroup(at: groupIndex)
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "minus")
+                                    .font(.system(size: 12, weight: .bold))
+                                Text("REMOVE")
+                                    .font(.carry.captionSemibold)
+                            }
+                            .foregroundColor(Color.textPrimary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.leading, 4)
+                .padding(.bottom, 6)
             }
 
             VStack(alignment: .leading, spacing: 20) {
@@ -716,13 +793,14 @@ struct QuickGameSheet: View {
                         .font(.carry.bodySMBold)
                         .foregroundColor(Color.textPrimary)
 
-                    if groupIndex == 0 {
-                        scorerConfirmedCreatorRow(groupIndex: 0)
-                            .id("slot-0-0")
-                    } else {
-                        scorerSlotView(groupIndex: groupIndex)
-                            .id("slot-\(groupIndex)-0")
-                    }
+                    ScorerAssignmentView(
+                        scorer: scorerSlotBinding(groupIndex: groupIndex),
+                        excludeProfileIds: scorerExcludeIds(forGroup: groupIndex),
+                        groupLabel: "Group \(groupIndex + 1)",
+                        defaultColor: slotColors[(groupIndex * 4) % slotColors.count],
+                        readOnly: groupIndex == 0
+                    )
+                    .id("slot-\(groupIndex)-0")
                 }
 
                 // Players section
@@ -761,7 +839,7 @@ struct QuickGameSheet: View {
 
     private func playerSlotRow(groupIndex: Int, slotIndex: Int, isReadOnly: Bool) -> some View {
         let isNameFocused = focusedField == .name(group: groupIndex, slot: slotIndex)
-        let isHCFocused = focusedField == .handicap(group: groupIndex, slot: slotIndex)
+        // HC uses picker sheet — no focus state needed
         let slot = slots[groupIndex][slotIndex]
         let isCarryUser = slot.existingProfileId != nil && !slot.isPendingInvite
         let showResults = activePlayerSearchSlot?.group == groupIndex
@@ -774,20 +852,23 @@ struct QuickGameSheet: View {
                 HStack(spacing: 8) {
                     if isCarryUser {
                         PlayerAvatar(player: playerFromSlot(slot), size: 28)
-                    }
 
-                    TextField("Enter name", text: nameBinding(groupIndex: groupIndex, slotIndex: slotIndex))
-                        .font(.carry.bodyLG)
-                        .foregroundColor(Color.textPrimary)
-                        .focused($focusedField, equals: .name(group: groupIndex, slot: slotIndex))
-                        .disabled(isReadOnly || isCarryUser)
-                        .onChange(of: slots[groupIndex][slotIndex].name) { _, newValue in
-                            if isNameFocused && !isCarryUser {
-                                debouncePlayerSearch(query: newValue, groupIndex: groupIndex, slotIndex: slotIndex)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(slot.name)
+                                .font(.carry.bodySemibold)
+                                .foregroundColor(Color.textPrimary)
+                                .lineLimit(1)
+                            let subtitle = [slot.homeClub, !slot.handicap.isEmpty ? slot.handicap : nil]
+                                .compactMap { $0 }.joined(separator: " · ")
+                            if !subtitle.isEmpty {
+                                Text(subtitle)
+                                    .font(.carry.caption)
+                                    .foregroundColor(Color(hexString: "#BFC0C2"))
                             }
                         }
 
-                    if isCarryUser {
+                        Spacer()
+
                         Button {
                             clearPlayerSlot(groupIndex: groupIndex, slotIndex: slotIndex)
                         } label: {
@@ -796,10 +877,22 @@ struct QuickGameSheet: View {
                                 .foregroundColor(Color.textDisabled)
                         }
                         .buttonStyle(.plain)
+                    } else {
+                        TextField("Enter name", text: nameBinding(groupIndex: groupIndex, slotIndex: slotIndex))
+                            .font(.carry.bodyLG)
+                            .foregroundColor(Color.textPrimary)
+                            .focused($focusedField, equals: .name(group: groupIndex, slot: slotIndex))
+                            .disabled(isReadOnly)
+                            .onChange(of: slots[groupIndex][slotIndex].name) { _, newValue in
+                                // Check focus live (not the captured let) so search triggers on typing
+                                if focusedField == .name(group: groupIndex, slot: slotIndex) {
+                                    debouncePlayerSearch(query: newValue, groupIndex: groupIndex, slotIndex: slotIndex)
+                                }
+                            }
                     }
                 }
-                .padding(.horizontal, isCarryUser ? 12 : 21)
-                .frame(height: 50)
+                .padding(.horizontal, 12)
+                .frame(height: 58)
                 .background(RoundedRectangle(cornerRadius: 14).fill(.white))
                 .overlay(
                     RoundedRectangle(cornerRadius: 14)
@@ -809,24 +902,28 @@ struct QuickGameSheet: View {
                         )
                 )
 
-                // HC field
-                TextField("HC", text: handicapBinding(groupIndex: groupIndex, slotIndex: slotIndex))
-                    .font(.carry.bodyLG)
-                    .foregroundColor(Color.textPrimary)
-                    .keyboardType(.decimalPad)
-                    .multilineTextAlignment(.center)
-                    .focused($focusedField, equals: .handicap(group: groupIndex, slot: slotIndex))
-                    .disabled(isReadOnly || isCarryUser)
-                    .padding(.horizontal, 6)
-                    .frame(width: 56, height: 50)
-                    .background(RoundedRectangle(cornerRadius: 14).fill(.white))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14)
-                            .strokeBorder(
-                                isHCFocused ? Color(hexString: "#333333") : Color.borderLight,
-                                lineWidth: isHCFocused ? 1.5 : 1
-                            )
-                    )
+                // HC field — tappable to open picker
+                Button {
+                    guard !isReadOnly, !isCarryUser else { return }
+                    focusedField = nil
+                    let hcStr = slots[groupIndex][slotIndex].handicap
+                    let val: Double = hcStr.hasPrefix("+") ? -(Double(String(hcStr.dropFirst())) ?? 0) : Double(hcStr) ?? 0
+                    hcPickerValue = val
+                    hcPickerIsPlus = val < 0
+                    hcPickerGroupIndex = groupIndex
+                    hcPickerSlotIndex = slotIndex
+                    showHCPicker = true
+                } label: {
+                    let hcStr = slots[groupIndex][slotIndex].handicap
+                    Text(hcStr.isEmpty ? "HC" : hcStr)
+                        .font(.carry.bodyLG)
+                        .foregroundColor(hcStr.isEmpty ? Color.textDisabled : Color.textPrimary)
+                        .frame(width: 56, height: 50)
+                        .background(RoundedRectangle(cornerRadius: 14).fill(.white))
+                        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.borderLight, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .disabled(isReadOnly || isCarryUser)
             }
 
             // Typeahead results (floating overlay)
@@ -844,23 +941,29 @@ struct QuickGameSheet: View {
                 Button {
                     selectPlayerFromSearch(profile: profile, groupIndex: groupIndex, slotIndex: slotIndex)
                 } label: {
-                    HStack(spacing: 8) {
-                        PlayerAvatar(player: playerFromProfile(profile), size: 28)
+                    HStack(spacing: 10) {
+                        PlayerAvatar(player: playerFromProfile(profile), size: 34)
 
-                        Text(profile.displayName)
-                            .font(.carry.bodySemibold)
-                            .foregroundColor(Color.textPrimary)
-
-                        if profile.handicap != 0 {
-                            Text(String(format: "%.1f", profile.handicap))
-                                .font(.carry.bodySM)
-                                .foregroundColor(Color.textTertiary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(profile.firstName) \(profile.lastName)".trimmingCharacters(in: .whitespaces))
+                                .font(.carry.bodySemibold)
+                                .foregroundColor(Color.textPrimary)
+                            let subtitle = [profile.homeClub, profile.handicap != 0 ? String(format: "%.1f", profile.handicap) : nil]
+                                .compactMap { $0 }.joined(separator: " · ")
+                            if !subtitle.isEmpty {
+                                Text(subtitle)
+                                    .font(.carry.bodySM)
+                                    .foregroundColor(Color(hexString: "#BFC0C2"))
+                            }
                         }
 
                         Spacer()
                     }
+                    .padding(.horizontal, 15)
                     .padding(.vertical, 10)
-                    .padding(.horizontal, 12)
+                    .frame(height: 58)
+                    .background(RoundedRectangle(cornerRadius: 14).fill(.white))
+                    .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.borderLight, lineWidth: 1))
                 }
                 .buttonStyle(.plain)
 
@@ -875,354 +978,7 @@ struct QuickGameSheet: View {
         .padding(.top, 4)
     }
 
-    // MARK: - Scorer Slot (Groups 2+)
-
-    // MARK: - Scorer Slot (Groups 2+)
-
-    private func scorerSlotView(groupIndex: Int) -> some View {
-        let slot = slots[groupIndex][0]
-        let hasScorer = slot.existingProfileId != nil && !slot.isPendingInvite
-
-        return VStack(spacing: 5) {
-            if hasScorer {
-                scorerConfirmedRow(slot: slot, groupIndex: groupIndex)
-            } else if slot.isPendingInvite {
-                scorerInvitedRow(slot: slot, groupIndex: groupIndex)
-            } else {
-                scorerSearchField(groupIndex: groupIndex)
-            }
-        }
-    }
-
-    /// Group 1: creator auto-filled as scorer
-    private func scorerConfirmedCreatorRow(groupIndex: Int) -> some View {
-        let slot = slots[groupIndex][0]
-        return HStack(spacing: 6) {
-            PlayerAvatar(player: playerFromSlot(slot), size: 34)
-
-            VStack(alignment: .leading, spacing: 5) {
-                Text(slot.name)
-                    .font(.carry.bodySMSemibold)
-                    .foregroundColor(Color.textPrimary)
-                    .lineLimit(1)
-                if !slot.handicap.isEmpty {
-                    Text(slot.handicap)
-                        .font(.carry.bodySM)
-                        .foregroundColor(Color(hexString: "#BFC0C2"))
-                }
-            }
-
-            Spacer()
-        }
-        .padding(.horizontal, 15)
-        .padding(.vertical, 10)
-        .frame(height: 58)
-        .background(RoundedRectangle(cornerRadius: 14).fill(.white))
-        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.borderLight, lineWidth: 1))
-    }
-
-    /// Carry user selected as scorer
-    private func scorerConfirmedRow(slot: PlayerSlot, groupIndex: Int) -> some View {
-        HStack(spacing: 6) {
-            PlayerAvatar(player: playerFromSlot(slot), size: 34)
-
-            VStack(alignment: .leading, spacing: 5) {
-                Text(slot.name)
-                    .font(.carry.bodySMSemibold)
-                    .foregroundColor(Color.textPrimary)
-                    .lineLimit(1)
-                if !slot.handicap.isEmpty {
-                    Text(slot.handicap)
-                        .font(.carry.bodySM)
-                        .foregroundColor(Color(hexString: "#BFC0C2"))
-                }
-            }
-
-            Spacer()
-
-            Button {
-                clearScorer(groupIndex: groupIndex)
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 20))
-                    .foregroundColor(Color.textDisabled)
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(.horizontal, 15)
-        .padding(.vertical, 10)
-        .frame(height: 58)
-        .background(RoundedRectangle(cornerRadius: 14).fill(.white))
-        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.borderLight, lineWidth: 1))
-    }
-
-    /// SMS-invited scorer (pending)
-    private func scorerInvitedRow(slot: PlayerSlot, groupIndex: Int) -> some View {
-        HStack(spacing: 6) {
-            PlayerAvatar(player: playerFromSlot(slot), size: 34)
-
-            VStack(alignment: .leading, spacing: 5) {
-                Text(slot.name)
-                    .font(.carry.bodySMSemibold)
-                    .foregroundColor(Color.textPrimary)
-                    .lineLimit(1)
-                if let phone = slot.phoneNumber {
-                    Text(phone)
-                        .font(.carry.bodySM)
-                        .foregroundColor(Color.textPrimary)
-                }
-            }
-
-            Spacer()
-
-            // "Invited" badge
-            Text("Invited")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(Color(hexString: "#E38049"))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(Capsule().fill(Color(hexString: "#FFE7CA")))
-                .overlay(Capsule().strokeBorder(Color(hexString: "#FFD4BE"), lineWidth: 0.88))
-        }
-        .padding(.horizontal, 15)
-        .padding(.vertical, 10)
-        .frame(height: 58)
-        .background(RoundedRectangle(cornerRadius: 14).fill(.white))
-        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.borderLight, lineWidth: 1))
-    }
-
-    /// Search field + results/invite cards
-    private func scorerSearchField(groupIndex: Int) -> some View {
-        VStack(spacing: 5) {
-            // Search input
-            HStack(spacing: 10) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 16))
-                    .foregroundColor(Color.textDisabled)
-
-                TextField("Search by name or Invite", text: $scorerSearchText)
-                    .font(.carry.bodyLG)
-                    .foregroundColor(Color.textPrimary)
-                    .focused($focusedField, equals: .scorerSearch(group: groupIndex))
-                    .onChange(of: scorerSearchText) { _, newValue in
-                        scorerSearchGroupIndex = groupIndex
-                        showInlinePhoneEntry = false
-                        debounceScorerSearch(query: newValue)
-                    }
-
-                if !scorerSearchText.isEmpty {
-                    Button {
-                        scorerSearchText = ""
-                        scorerSearchResults = []
-                        showInlinePhoneEntry = false
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 20))
-                            .foregroundColor(Color.textDisabled)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, 16)
-            .frame(height: 50)
-            .background(RoundedRectangle(cornerRadius: 14).fill(.white))
-            .overlay(
-                RoundedRectangle(cornerRadius: 14)
-                    .strokeBorder(
-                        focusedField == .scorerSearch(group: groupIndex) ? Color(hexString: "#333333") : Color.borderLight,
-                        lineWidth: focusedField == .scorerSearch(group: groupIndex) ? 1.5 : 1
-                    )
-            )
-
-            // Results or invite card
-            if scorerSearchGroupIndex == groupIndex {
-                scorerResultsCards(groupIndex: groupIndex)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func scorerResultsCards(groupIndex: Int) -> some View {
-        let hasResults = !scorerSearchResults.isEmpty
-        let showInviteOption = scorerSearchText.count >= 2 && !isScorerSearching
-
-        // Carry user results
-        if hasResults {
-            ForEach(scorerSearchResults.prefix(5)) { profile in
-                Button {
-                    selectScorer(profile: profile, groupIndex: groupIndex)
-                } label: {
-                    HStack(spacing: 10) {
-                        PlayerAvatar(player: playerFromProfile(profile), size: 34)
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(profile.displayName)
-                                .font(.carry.bodySemibold)
-                                .foregroundColor(Color.textPrimary)
-                            if profile.handicap != 0 {
-                                Text(String(format: "%.1f", profile.handicap))
-                                    .font(.carry.bodySM)
-                                    .foregroundColor(Color(hexString: "#BFC0C2"))
-                            }
-                        }
-
-                        Spacer()
-
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 20))
-                            .foregroundColor(Color.textDisabled)
-                            .opacity(0) // placeholder for alignment
-                    }
-                    .padding(.horizontal, 15)
-                    .padding(.vertical, 10)
-                    .frame(height: 58)
-                    .background(RoundedRectangle(cornerRadius: 14).fill(.white))
-                    .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.borderLight, lineWidth: 1))
-                }
-                .buttonStyle(.plain)
-            }
-        }
-
-        // Inline SMS invite with phone input
-        if showInviteOption {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Send Invite to \"\(scorerSearchText)\"")
-                    .font(.carry.bodySMSemibold)
-                    .foregroundColor(Color.textTertiary)
-
-                HStack(spacing: 10) {
-                    Image(systemName: "phone.fill")
-                        .font(.system(size: 14))
-                        .foregroundColor(Color.textDisabled)
-
-                    TextField("Enter Phone Number", text: $inlinePhoneText)
-                        .font(.carry.bodyLG)
-                        .foregroundColor(Color.textPrimary)
-                        .keyboardType(.phonePad)
-                        .focused($focusedField, equals: .inlinePhone(group: groupIndex))
-                        .onAppear {
-                            inlinePhoneName = scorerSearchText
-                            inlinePhoneText = ""
-                        }
-
-                    let digits = inlinePhoneText.filter { $0.isNumber }
-                    Button {
-                        sendInlineInvite(groupIndex: groupIndex)
-                    } label: {
-                        Text("Send")
-                            .font(.carry.bodySMSemibold)
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 16)
-                            .frame(height: 36)
-                            .background(Capsule().fill(digits.count >= 10 ? Color.successGreen : Color.borderSubtle))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(digits.count < 10)
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 16)
-            .background(RoundedRectangle(cornerRadius: 14).fill(.white))
-            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.borderLight, lineWidth: 1))
-        }
-    }
-
-    // MARK: - Scorer Search
-
-    private func debounceScorerSearch(query: String) {
-        scorerSearchTask?.cancel()
-        let trimmed = query.trimmingCharacters(in: .whitespaces)
-        guard trimmed.count >= 2 else {
-            scorerSearchResults = []
-            return
-        }
-        isScorerSearching = true
-        scorerSearchTask = Task {
-            try? await Task.sleep(nanoseconds: 400_000_000)
-            guard !Task.isCancelled else { return }
-            do {
-                let results = try await PlayerSearchService.shared.searchPlayers(query: trimmed)
-                // Filter out creator and already-selected scorers
-                var usedIds = Set(slots.compactMap { $0[0].existingProfileId })
-                if let creatorId = currentUser.profileId {
-                    usedIds.insert(creatorId)
-                }
-                let filtered = results.filter { !usedIds.contains($0.id) }
-                await MainActor.run {
-                    scorerSearchResults = filtered
-                    isScorerSearching = false
-                }
-            } catch {
-                await MainActor.run {
-                    scorerSearchResults = []
-                    isScorerSearching = false
-                }
-            }
-        }
-    }
-
-    private func selectScorer(profile: ProfileDTO, groupIndex: Int) {
-        slots[groupIndex][0] = PlayerSlot(
-            name: profile.displayName,
-            handicap: String(format: "%.1f", profile.handicap),
-            existingProfileId: profile.id,
-            color: profile.color
-        )
-        scorerSearchText = ""
-        scorerSearchResults = []
-        scorerSearchGroupIndex = nil
-        focusedField = nil
-    }
-
-    private func sendInlineInvite(groupIndex: Int) {
-        let digits = inlinePhoneText.filter { $0.isNumber }
-        guard digits.count >= 10 else { return }
-
-        let name = inlinePhoneName.trimmingCharacters(in: .whitespaces)
-
-        slots[groupIndex][0] = PlayerSlot(
-            name: name.isEmpty ? formatPhoneDisplay(digits) : name,
-            isPendingInvite: true,
-            phoneNumber: digits
-        )
-        slots[groupIndex][0].color = slotColors[(groupIndex * 4) % slotColors.count]
-
-        // Open native SMS with invite link
-        let body = "Score our skins game on Carry! Download: https://carryapp.site"
-        let encoded = body.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        if let url = URL(string: "sms:\(digits)&body=\(encoded)") {
-            UIApplication.shared.open(url)
-        }
-
-        // Reset all search state
-        scorerSearchText = ""
-        scorerSearchResults = []
-        scorerSearchGroupIndex = nil
-        showInlinePhoneEntry = false
-        inlinePhoneText = ""
-        inlinePhoneName = ""
-        focusedField = nil
-    }
-
-    private func formatPhoneDisplay(_ digits: String) -> String {
-        guard digits.count >= 10 else { return digits }
-        let last10 = String(digits.suffix(10))
-        let area = last10.prefix(3)
-        let mid = last10.dropFirst(3).prefix(3)
-        let end = last10.suffix(4)
-        return "(\(area)) \(mid)-\(end)"
-    }
-
-    private func clearScorer(groupIndex: Int) {
-        slots[groupIndex][0] = PlayerSlot(
-            color: slotColors[(groupIndex * 4) % slotColors.count]
-        )
-        scorerSearchText = ""
-        scorerSearchResults = []
-        showInlinePhoneEntry = false
-        inlinePhoneText = ""
-        inlinePhoneName = ""
-    }
+    // MARK: - Scorer UI — handled by ScorerAssignmentView
 
     // MARK: - Player Name Typeahead
 
@@ -1263,10 +1019,11 @@ struct QuickGameSheet: View {
 
     private func selectPlayerFromSearch(profile: ProfileDTO, groupIndex: Int, slotIndex: Int) {
         slots[groupIndex][slotIndex] = PlayerSlot(
-            name: profile.displayName,
+            name: "\(profile.firstName) \(profile.lastName)".trimmingCharacters(in: .whitespaces),
             handicap: String(format: "%.1f", profile.handicap),
             existingProfileId: profile.id,
-            color: profile.color
+            color: profile.color,
+            homeClub: profile.homeClub
         )
         playerSearchResults = []
         activePlayerSearchSlot = nil
@@ -1351,13 +1108,26 @@ struct QuickGameSheet: View {
     private var continueHint: String {
         if selectedCourse == nil { return "Select a course to continue" }
         if filledPlayerCount < 2 { return "Add at least 2 players" }
+        if let group = firstGroupMissingScorer { return "Assign a scorer for Group \(group)" }
         if let name = firstPlayerMissingHandicap { return "Missing HC index for \(name)" }
         return ""
+    }
+
+    private var firstGroupMissingScorer: Int? {
+        for g in 0..<groupCount {
+            let hasPlayers = slots[g].contains { !$0.isEmpty }
+            if hasPlayers && slots[g][0].existingProfileId == nil && !slots[g][0].isPendingInvite {
+                return g + 1
+            }
+        }
+        return nil
     }
 
     private var firstPlayerMissingHandicap: String? {
         for g in 0..<groupCount {
             for slot in slots[g] where !slot.isEmpty {
+                // SMS invites can't provide HC — skip validation for them
+                if slot.isPendingInvite { continue }
                 if slot.handicap.trimmingCharacters(in: .whitespaces).isEmpty {
                     return slot.name
                 }
@@ -1381,47 +1151,54 @@ struct QuickGameSheet: View {
         )
     }
 
-    private func handicapBinding(groupIndex: Int, slotIndex: Int) -> Binding<String> {
+    // HC binding removed — uses HandicapPickerSheet instead
+
+    /// Matches OnboardingView/GroupManagerView handicap filter:
+    /// +handicap up to +10.0, regular up to 54.0, one decimal place max.
+    // Uses shared filterHandicapInput() from Player.swift
+
+    // MARK: - Scorer Assignment Bindings
+
+    /// Bridges ScorerSlot ↔ PlayerSlot for ScorerAssignmentView
+    private func scorerSlotBinding(groupIndex: Int) -> Binding<ScorerSlot> {
         Binding(
-            get: { slots[groupIndex][slotIndex].handicap },
+            get: {
+                let slot = slots[groupIndex][0]
+                return ScorerSlot(
+                    name: slot.name,
+                    handicap: slot.handicap,
+                    profileId: slot.existingProfileId,
+                    color: slot.color,
+                    isPendingInvite: slot.isPendingInvite,
+                    phoneNumber: slot.phoneNumber,
+                    homeClub: slot.homeClub
+                )
+            },
             set: { newValue in
-                slots[groupIndex][slotIndex].handicap = filterHandicap(newValue)
+                slots[groupIndex][0] = PlayerSlot(
+                    name: newValue.name,
+                    handicap: newValue.handicap,
+                    existingProfileId: newValue.profileId,
+                    color: newValue.color.isEmpty ? slotColors[(groupIndex * 4) % slotColors.count] : newValue.color,
+                    isPendingInvite: newValue.isPendingInvite,
+                    phoneNumber: newValue.phoneNumber
+                )
             }
         )
     }
 
-    /// Matches OnboardingView/GroupManagerView handicap filter:
-    /// +handicap up to +10.0, regular up to 54.0, one decimal place max.
-    private func filterHandicap(_ input: String) -> String {
-        var filtered = ""
-        var hasDecimal = false
-        var hasPlus = false
-        var decimalDigits = 0
-        for ch in input {
-            if ch == "+" && filtered.isEmpty && !hasPlus {
-                hasPlus = true
-                filtered.append(ch)
-            } else if (ch == "." || ch == ",") && !hasDecimal {
-                hasDecimal = true
-                filtered.append(".")
-            } else if ch.isNumber {
-                if hasDecimal {
-                    guard decimalDigits < 1 else { continue }
-                    filtered.append(ch)
-                    decimalDigits += 1
-                } else {
-                    let wholeDigits = filtered.filter { $0.isNumber }.count
-                    guard wholeDigits < 2 else { continue }
-                    filtered.append(ch)
-                }
+    /// Profile IDs to exclude from scorer search (creator + already-assigned scorers)
+    private func scorerExcludeIds(forGroup groupIndex: Int) -> Set<UUID> {
+        var ids = Set<UUID>()
+        if let creatorId = currentUser.profileId {
+            ids.insert(creatorId)
+        }
+        for g in 0..<groupCount where g != groupIndex {
+            if let pid = slots[g][0].existingProfileId {
+                ids.insert(pid)
             }
         }
-        let numericStr = filtered.hasPrefix("+") ? String(filtered.dropFirst()) : filtered
-        if let value = Double(numericStr) {
-            if hasPlus && value > 10.0 { filtered = "+10.0" }
-            else if !hasPlus && value > 54.0 { filtered = "54.0" }
-        }
-        return filtered
+        return ids
     }
 
     // MARK: - Create Quick Game
@@ -1437,7 +1214,12 @@ struct QuickGameSheet: View {
                 let slot = slots[groupIndex][slotIndex]
                 guard !slot.isEmpty else { continue }
 
-                let handicapValue = Double(slot.handicap) ?? 0
+                let handicapValue: Double = {
+                    if slot.handicap.hasPrefix("+") {
+                        return -(Double(String(slot.handicap.dropFirst())) ?? 0.0)
+                    }
+                    return Double(slot.handicap) ?? 0.0
+                }()
                 let playerId: Int
                 let profileId: UUID?
 

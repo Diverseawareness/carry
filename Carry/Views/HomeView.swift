@@ -32,7 +32,6 @@ struct HomeRound: Identifiable {
     var totalGroups: Int = 1   // total groups in the round
     var completedGroups: Int = 0  // groups that finished all 18 holes
 
-    // Derived from yourSkins × skinValue — always in sync with pot/skins formula
     var yourWinnings: Int { yourSkins * skinValue }
     let startedAt: Date?
     let completedAt: Date?
@@ -45,6 +44,8 @@ struct HomeRound: Identifiable {
     var userGroupComplete: Bool = false  // true when the current user's group has all holes scored
     var scoringMode: ScoringMode = .single  // .single or .everyone
     var skinRules: SkinRules = .default  // actual round settings (net/gross, carries, handicap%)
+    var winningsDisplay: String = "gross"  // "gross" (default) or "net" — how winnings show in UI
+    var isQuickGame: Bool = false
 
     struct PendingHoleLeader: Identifiable {
         let id: Int  // hole number
@@ -375,6 +376,7 @@ struct HomeView: View {
     @State private var guestClaimProfiles: [ProfileDTO] = []
     @State private var guestClaimId: UUID? = nil  // triggers .sheet(item:)
     @State private var pendingClaimRound: HomeRound? = nil
+    @State private var acceptingInviteId: UUID? = nil  // round ID currently being accepted
 
     private let roundService = RoundService()
     @State private var homePoller: Timer?
@@ -401,18 +403,21 @@ struct HomeView: View {
         }
     }
 
-    /// Active rounds — only rounds with status "active" (not concluded/completed)
+    /// Active rounds — includes both `active` and `concluded` rounds.
+    /// Concluded means all groups finished but the user hasn't reviewed/saved results yet,
+    /// so they stay pinned at the top until explicitly dismissed via "Save Round Results".
     private var activeRounds: [HomeRound] {
-        skinGameGroups.compactMap { $0.activeRound }
+        skinGameGroups.flatMap { group -> [HomeRound] in
+            var out: [HomeRound] = []
+            if let active = group.activeRound { out.append(active) }
+            if let concluded = group.concludedRound { out.append(concluded) }
+            return out
+        }
     }
 
-    /// Recent rounds derived from concluded rounds + all groups' round history, sorted newest first
+    /// Recent rounds derived from all groups' round history (NOT concluded — those stay
+    /// in the Active section until the user saves results).
     private var recentRounds: [HomeRound] {
-        let concluded: [HomeRound] = skinGameGroups.compactMap { group in
-            guard var r = group.concludedRound else { return nil }
-            r.roundsPlayed = group.roundHistory.count
-            return r
-        }
         let history: [HomeRound] = skinGameGroups.flatMap { group in
             group.roundHistory.map { round in
                 var r = round
@@ -420,13 +425,9 @@ struct HomeView: View {
                 return r
             }
         }
-        // Deduplicate by round ID (concluded round may also be in roundHistory)
         var seen = Set<UUID>()
-        let all = (concluded + history).filter { round in
-            guard seen.insert(round.id).inserted else { return false }
-            return true
-        }
-        return all.sorted { ($0.completedAt ?? $0.concludedAt ?? .distantPast) > ($1.completedAt ?? $1.concludedAt ?? .distantPast) }
+        let deduped = history.filter { seen.insert($0.id).inserted }
+        return deduped.sorted { ($0.completedAt ?? $0.concludedAt ?? .distantPast) > ($1.completedAt ?? $1.concludedAt ?? .distantPast) }
     }
 
     private var loadingOverlay: some View {
@@ -623,16 +624,10 @@ struct HomeView: View {
                     initialRoundConfig: Self.buildRoundConfig(from: round),
                     roundHistory: skinGameGroups.first(where: { $0.activeRound?.id == round.id || $0.concludedRound?.id == round.id })?.roundHistory ?? [],
                     onExit: {
-                        // Immediately clear active/concluded round so it leaves the Active section
-                        // before the async refresh completes (avoids race condition)
-                        for i in skinGameGroups.indices {
-                            if skinGameGroups[i].activeRound?.id == round.id {
-                                skinGameGroups[i].activeRound = nil
-                            }
-                            if skinGameGroups[i].concludedRound?.id == round.id {
-                                skinGameGroups[i].concludedRound = nil
-                            }
-                        }
+                        // Don't mutate local state on exit — let the async refresh below be
+                        // the single source of truth. Active rounds (incl. multi-group pending
+                        // state) should stay visible until they actually transition state in
+                        // Supabase. Concluded rounds stay pinned until user taps Save.
                         withAnimation(.spring(response: 0.45, dampingFraction: 0.9)) {
                             selectedRound = nil
                         }
@@ -657,7 +652,8 @@ struct HomeView: View {
                             skinGameGroups.removeAll { $0.activeRound?.id == round.id || $0.concludedRound?.id == round.id }
                         }
                     },
-                    isViewer: (round.status == .active || round.status == .concluded) && authService.currentPlayerId != (round.scorerPlayerId ?? round.creatorId) && authService.currentPlayerId != round.creatorId
+                    isViewer: (round.status == .active || round.status == .concluded) && authService.currentPlayerId != (round.scorerPlayerId ?? round.creatorId) && authService.currentPlayerId != round.creatorId,
+                    isQuickGame: skinGameGroups.first(where: { $0.activeRound?.id == round.id || $0.concludedRound?.id == round.id })?.isQuickGame ?? false
                 )
                 .ignoresSafeArea()
                 .transition(.move(edge: .bottom))
@@ -676,7 +672,23 @@ struct HomeView: View {
                 .presentationBackground(.white)
         }
         .sheet(item: $resultsRound) { round in
-            ResultsSheet(round: round, currentUserId: currentUserId)
+            ResultsSheet(
+                round: round,
+                currentUserId: currentUserId,
+                onSaveResults: {
+                    // Mark the round as completed so it moves from active → recent
+                    Task {
+                        try? await RoundService().updateRoundStatus(roundId: round.id, status: "completed")
+                        if let userId = authService.currentUser?.id,
+                           let refreshed = try? await GroupService().loadGroups(userId: userId) {
+                            await MainActor.run {
+                                skinGameGroups = refreshed
+                            }
+                        }
+                    }
+                    resultsRound = nil
+                }
+            )
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
                 .presentationBackground(.white)
@@ -915,7 +927,9 @@ struct HomeView: View {
 
     /// Accept an invite — update Supabase, add group locally, remove from invites.
     private func acceptInvite(_ round: HomeRound, retryCount: Int = 0) {
+        acceptingInviteId = round.id
         Task {
+            defer { Task { @MainActor in acceptingInviteId = nil } }
             do {
                 if round.status == .groupInvite {
                     // Auto-match: if user was phone-invited, try to find their guest profile by name
@@ -1256,11 +1270,12 @@ struct HomeView: View {
     // MARK: - Active Round Card (handles all 4 states)
 
     private func activeRoundCard(_ round: HomeRound) -> some View {
-        // Derive card state from data
-        let isNotStarted = round.currentHole == 0
+        // Derive card state from data. Concluded rounds are never "not started" even
+        // if currentHole is 0 (e.g. on a member device where scores haven't synced yet).
         let isGameDone = round.isGameDone
         let hasPending = round.hasPendingResults
-        let isLiveScoring = round.currentHole > 0 && !isGameDone && !hasPending
+        let isNotStarted = round.currentHole == 0 && round.status != .concluded && !hasPending
+        let isLiveScoring = !isNotStarted && !isGameDone && !hasPending
         let showGlow = !isNotStarted && !isGameDone  // States 2 & 3 only
 
         return Button {
@@ -1537,17 +1552,25 @@ struct HomeView: View {
                 Button {
                     acceptInvite(round)
                 } label: {
-                    Text("Join Game")
-                        .font(.carry.bodySMBold)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 44)
-                        .background(
-                            RoundedRectangle(cornerRadius: 14)
-                                .fill(Color.textPrimary)
-                        )
+                    Group {
+                        if acceptingInviteId == round.id {
+                            ProgressView()
+                                .tint(.white)
+                        } else {
+                            Text("Join Game")
+                                .font(.carry.bodySMBold)
+                        }
+                    }
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 44)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(Color.textPrimary)
+                    )
                 }
                 .buttonStyle(.plain)
+                .disabled(acceptingInviteId == round.id)
                 .accessibilityLabel("Join \(round.groupName)")
                 .accessibilityHint("Accept invite and join the skins game")
 
@@ -1598,11 +1621,6 @@ struct HomeView: View {
                         .foregroundColor(Color.textTertiary)
                 }
                 .padding(.top, 6)
-
-                Text(round.courseName)
-                    .font(.carry.bodySM)
-                    .foregroundColor(Color.textTertiary)
-                    .padding(.top, 2)
             }
 
             Spacer()
@@ -1646,8 +1664,6 @@ struct HomeView: View {
 
     private func swipeToLeaveWrapper<Content: View>(round: HomeRound, @ViewBuilder content: () -> Content) -> some View {
         let threshold: CGFloat = -80
-        let isCreator = round.creatorId == currentUserId
-
         let currentOffset = swipeOffsets[round.id] ?? 0
 
         return ZStack(alignment: .trailing) {
@@ -1739,9 +1755,13 @@ struct LeaderboardSheet: View {
                         .font(Font.system(size: 24, weight: .bold))
                         .foregroundColor(Color.textPrimary)
                         .accessibilityAddTraits(.isHeader)
-                    Text(round.groupName)
-                        .font(Font.system(size: 16, weight: .medium))
-                        .foregroundColor(Color.textSecondary)
+                    let subtitle = [round.groupName, round.courseName.isEmpty ? nil : round.courseName]
+                        .compactMap { $0 }.joined(separator: " · ")
+                    if !subtitle.isEmpty {
+                        Text(subtitle)
+                            .font(Font.system(size: 16, weight: .medium))
+                            .foregroundColor(Color.textSecondary)
+                    }
                 }
                 Spacer()
                 Image(systemName: "chart.bar.fill")
@@ -1753,41 +1773,43 @@ struct LeaderboardSheet: View {
             .padding(.top, 34)
             .padding(.bottom, 24)
 
-            // Last Round | All Time tabs
-            HStack(spacing: 16) {
-                ForEach(Array(["Last Round", "All Time"].enumerated()), id: \.offset) { idx, label in
-                    Button {
-                        if idx == 1 && !storeService.isPremium {
-                            showPaywall = true
-                        } else {
-                            withAnimation(.easeOut(duration: 0.2)) {
-                                selectedTab = idx
-                            }
-                        }
-                    } label: {
-                        HStack(spacing: 4) {
-                            Text(label)
-                                .font(.system(size: 14, weight: .semibold))
+            // Last Round | All Time tabs (skins groups only — quick games have a single round)
+            if !round.isQuickGame {
+                HStack(spacing: 16) {
+                    ForEach(Array(["Last Round", "All Time"].enumerated()), id: \.offset) { idx, label in
+                        Button {
                             if idx == 1 && !storeService.isPremium {
-                                Image(systemName: "lock.fill")
-                                    .font(.system(size: 10))
-                                    .foregroundColor(Color.goldMuted)
+                                showPaywall = true
+                            } else {
+                                withAnimation(.easeOut(duration: 0.2)) {
+                                    selectedTab = idx
+                                }
                             }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text(label)
+                                    .font(.system(size: 14, weight: .semibold))
+                                if idx == 1 && !storeService.isPremium {
+                                    Image(systemName: "lock.fill")
+                                        .font(.system(size: 10))
+                                        .foregroundColor(Color.goldMuted)
+                                }
+                            }
+                            .foregroundColor(selectedTab == idx ? .white : Color.textPrimary)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 36)
+                            .background(
+                                Capsule().fill(selectedTab == idx ? Color.textPrimary : Color.bgPrimary)
+                            )
                         }
-                        .foregroundColor(selectedTab == idx ? .white : Color.textPrimary)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 36)
-                        .background(
-                            Capsule().fill(selectedTab == idx ? Color.textPrimary : Color.bgPrimary)
-                        )
+                        .buttonStyle(.plain)
+                        .accessibilityValue(selectedTab == idx ? "Selected" : "")
+                        .accessibilityAddTraits(selectedTab == idx ? [.isSelected] : [])
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityValue(selectedTab == idx ? "Selected" : "")
-                    .accessibilityAddTraits(selectedTab == idx ? [.isSelected] : [])
                 }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 16)
             }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 16)
 
             // Round summary (only for Last Round tab)
             if selectedTab == 0 {
@@ -1938,111 +1960,95 @@ struct LeaderboardSheet: View {
 struct ResultsSheet: View {
     let round: HomeRound
     var currentUserId: Int = 1
+    var onSaveResults: (() -> Void)? = nil
+    var onShare: (() -> Void)? = nil
 
     private var isFinal: Bool {
         round.isGameDone || round.status == .concluded || round.status == .completed
     }
 
+    /// Show Save Round Results only for concluded rounds the user can still finalize.
+    /// Completed rounds are already saved → no action button. Pending rounds can't be
+    /// saved until all groups finish → button hidden.
+    private var canSaveResults: Bool {
+        round.status == .concluded && onSaveResults != nil
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            // Header
-            VStack(spacing: 5) {
-                Text(isFinal ? "Final Results" : "Pending Results")
-                    .font(Font.system(size: 20, weight: .semibold))
-                    .foregroundColor(Color.textPrimary)
-                VStack(spacing: 2) {
+            // Header — course name (no date), with share button in top-right
+            ZStack(alignment: .topTrailing) {
+                VStack(spacing: 5) {
+                    Text(isFinal ? "Final Results" : "Pending Results")
+                        .font(Font.system(size: 20, weight: .semibold))
+                        .foregroundColor(Color.textPrimary)
                     Text(round.courseName)
                         .font(Font.system(size: 16, weight: .medium))
                         .foregroundColor(Color.textSecondary)
-                    if let date = round.scheduledDate {
-                        Text(date, style: .date)
-                            .font(Font.system(size: 14, weight: .medium))
-                            .foregroundColor(Color.borderSoft)
+                }
+                .frame(maxWidth: .infinity)
+
+                if onShare != nil {
+                    Button { onShare?() } label: {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(Font.system(size: 16, weight: .semibold))
+                            .foregroundColor(Color.textSecondary)
+                            .frame(width: 43, height: 43)
+                            .background(Circle().fill(Color.bgSecondary))
                     }
+                    .padding(.trailing, 24)
+                    .accessibilityLabel("Share results")
                 }
             }
-            .frame(maxWidth: .infinity)
             .padding(.top, 34)
             .padding(.bottom, 14)
 
             // Scrollable content
             ScrollView {
                 VStack(spacing: 0) {
-                    // Hero — current user (matches RoundCompleteView layout)
+                    // Hero — current user (shared component)
                     if let currentPlayer = round.players.first(where: { $0.id == currentUserId }) ?? round.players.first {
-                        let skins = round.playerWonHoles[currentPlayer.id]?.count ?? 0
-                        let winAmount = round.playerWinnings[currentPlayer.id] ?? 0
-                        VStack(spacing: 12) {
-                            PlayerAvatar(player: currentPlayer, size: 86)
-
-                            Text(currentPlayer.name)
-                                .font(Font.system(size: 24, weight: .bold))
-                                .foregroundColor(Color.textPrimary)
-
-                            if skins > 0 {
-                                if isFinal {
-                                    (Text("\(skins) Skin\(skins == 1 ? "" : "s") Won · ")
-                                        .foregroundColor(Color.textPrimary)
-                                    + Text("$\(winAmount)")
-                                        .foregroundColor(Color.goldMuted))
-                                        .font(Font.system(size: 20, weight: .semibold))
-                                } else {
-                                    Text("\(skins) Skin\(skins == 1 ? "" : "s") Won")
-                                        .font(Font.system(size: 20, weight: .semibold))
-                                        .foregroundColor(Color.textPrimary)
-                                }
-                            } else {
-                                Text("No Skins Won")
-                                    .font(Font.system(size: 20, weight: .semibold))
-                                    .foregroundColor(Color.textSecondary)
-                            }
-                        }
+                        FinalResultsHero(
+                            player: currentPlayer,
+                            skinsWon: round.playerWonHoles[currentPlayer.id]?.count ?? 0,
+                            winAmount: round.playerWinnings[currentPlayer.id] ?? 0,
+                            isFinal: isFinal
+                        )
                         .padding(.bottom, 24)
                     }
 
-                    // "Won Skins" section header
-                    let wonHoles = wonHoleRows
-                    if !wonHoles.isEmpty {
-                        Text("\(wonHoles.count) Won Skin\(wonHoles.count == 1 ? "" : "s")")
-                            .font(Font.system(size: 18, weight: .semibold))
-                            .foregroundColor(Color.textPrimary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 24)
-                            .padding(.bottom, 10)
-                    }
+                    if isFinal {
+                        // FINAL — per-player winners list (excludes current user, shown in hero).
+                        // Uses the shared FinalResultsWinnerRow component so RoundCompleteView and
+                        // ResultsSheet render identically.
+                        let winners = otherWinners
+                        ForEach(Array(winners.enumerated()), id: \.element.id) { idx, entry in
+                            FinalResultsWinnerRow(
+                                player: entry.player,
+                                skins: entry.skins,
+                                amount: entry.amount
+                            )
 
-                    // Won holes — one row per hole, matching pending format
-                    ForEach(Array(wonHoles.enumerated()), id: \.element.id) { idx, entry in
-                        wonHoleRow(entry)
-
-                        if idx < wonHoles.count - 1 {
-                            Rectangle()
-                                .fill(Color.borderFaint)
-                                .frame(height: 1)
-                                .padding(.leading, 82)
-                                .padding(.trailing, 24)
+                            if idx < winners.count - 1 {
+                                FinalResultsRowDivider()
+                            }
                         }
-                    }
-
-                    // Venmo buttons hidden until deep link integration is complete
-
-                    // "Pending" section
-                    if !round.pendingHoleLeaders.isEmpty {
-                        HStack(spacing: 7) {
-                            PulsatingDot(color: Color.successGreen)
-                            Text("Pending")
+                    } else {
+                        // PENDING — per-hole won skins + pending leaders
+                        let wonHoles = wonHoleRows
+                        if !wonHoles.isEmpty {
+                            Text("\(wonHoles.count) Won Skin\(wonHoles.count == 1 ? "" : "s")")
                                 .font(Font.system(size: 18, weight: .semibold))
                                 .foregroundColor(Color.textPrimary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 24)
+                                .padding(.bottom, 10)
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 24)
-                        .padding(.top, 35)
-                        .padding(.bottom, 10)
 
-                        ForEach(round.pendingHoleLeaders) { pending in
-                            pendingHoleRow(pending)
+                        ForEach(Array(wonHoles.enumerated()), id: \.element.id) { idx, entry in
+                            wonHoleRow(entry)
 
-                            if pending.holeNum != round.pendingHoleLeaders.last?.holeNum {
+                            if idx < wonHoles.count - 1 {
                                 Rectangle()
                                     .fill(Color.borderFaint)
                                     .frame(height: 1)
@@ -2050,11 +2056,67 @@ struct ResultsSheet: View {
                                     .padding(.trailing, 24)
                             }
                         }
+
+                        if !round.pendingHoleLeaders.isEmpty {
+                            HStack(spacing: 7) {
+                                PulsatingDot(color: Color.successGreen)
+                                Text("Pending")
+                                    .font(Font.system(size: 18, weight: .semibold))
+                                    .foregroundColor(Color.textPrimary)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 24)
+                            .padding(.top, 35)
+                            .padding(.bottom, 10)
+
+                            ForEach(round.pendingHoleLeaders) { pending in
+                                pendingHoleRow(pending)
+
+                                if pending.holeNum != round.pendingHoleLeaders.last?.holeNum {
+                                    Rectangle()
+                                        .fill(Color.borderFaint)
+                                        .frame(height: 1)
+                                        .padding(.leading, 82)
+                                        .padding(.trailing, 24)
+                                }
+                            }
+                        }
                     }
                 }
             }
 
-            Spacer()
+            if canSaveResults {
+                FinalResultsPrimaryButton(title: "Save Round Results") {
+                    onSaveResults?()
+                }
+            } else {
+                Spacer()
+            }
+        }
+    }
+
+    // MARK: - Per-player winners (final state)
+
+    private struct WinnerEntry: Identifiable {
+        let id: Int         // player.id
+        let player: Player
+        let skins: Int
+        let amount: Int
+    }
+
+    /// All players who won at least one skin, excluding the current user (they're the hero).
+    /// Sorted by amount descending, then by name.
+    private var otherWinners: [WinnerEntry] {
+        round.playerWonHoles.compactMap { (playerId, holes) -> WinnerEntry? in
+            guard playerId != currentUserId,
+                  !holes.isEmpty,
+                  let player = round.players.first(where: { $0.id == playerId }) else { return nil }
+            let amount = round.playerWinnings[playerId] ?? 0
+            return WinnerEntry(id: playerId, player: player, skins: holes.count, amount: amount)
+        }
+        .sorted { a, b in
+            if a.amount != b.amount { return a.amount > b.amount }
+            return a.player.name < b.player.name
         }
     }
 

@@ -34,7 +34,7 @@ struct RoundConfig {
     let buyIn: Int
     let gameType: String
     let skinRules: SkinRules
-    let teeBox: TeeBox?  // selected tee box (nil = use simple handicap)
+    var teeBox: TeeBox?  // selected tee box (nil = use simple handicap)
     let groups: [GroupConfig]
     let creatorId: Int?  // player ID of round creator (nil for legacy/demo)
     let groupName: String
@@ -46,6 +46,7 @@ struct RoundConfig {
     var supabaseGroupId: UUID? = nil
     var scorerProfileId: UUID? = nil  // UUID of the designated scorer
     var scoringMode: ScoringMode = .single
+    var winningsDisplay: String = "gross"  // "gross" or "net" — controls scorecard cash bar display
 
     func role(for userId: Int) -> UserRole {
         creatorId == userId ? .creator : .participant

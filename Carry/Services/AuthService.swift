@@ -92,8 +92,11 @@ final class AuthService: ObservableObject {
                     "handicap": profile.handicap
                 ])
             }
-            // Register for push notifications on session restore
-            NotificationService.shared.requestPermissionAndRegister()
+            // Register for push notifications on session restore (only if already onboarded —
+            // new users get the prompt during onboarding's "Enable Notifications" step)
+            if isOnboarded && UserDefaults.standard.bool(forKey: "disclaimerAccepted") {
+                NotificationService.shared.requestPermissionAndRegister()
+            }
         } catch {
             isAuthenticated = false
             #if !DEBUG
@@ -169,8 +172,11 @@ final class AuthService: ObservableObject {
         // even if Apple provided their name
         isOnboarded = isNewUser ? false : hasValidProfile
 
-        // Request notification permission + register for push
-        NotificationService.shared.requestPermissionAndRegister()
+        // Only register for push if already onboarded — new users get
+        // the system prompt during onboarding's "Enable Notifications" step
+        if isOnboarded {
+            NotificationService.shared.requestPermissionAndRegister()
+        }
     }
 
     // MARK: - Dev Skip (bypass auth for testing)
@@ -316,7 +322,9 @@ final class AuthService: ObservableObject {
         do {
             try await client.rpc("delete_user_account").execute()
         } catch {
+            #if DEBUG
             print("[AuthService] deleteAccount failed: \(error)")
+            #endif
             throw error
         }
         // Sign out the session

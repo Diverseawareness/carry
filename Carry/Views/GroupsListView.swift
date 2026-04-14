@@ -66,239 +66,77 @@ struct GroupsListView: View {
     }
 
     var body: some View {
-        ZStack {
-            Color.bgSecondary.ignoresSafeArea()
-
-            VStack(spacing: 0) {
-                // Header
-                HStack {
-                    Text("Skins Games")
-                        .font(.system(size: 28, weight: .bold))
-                        .foregroundColor(Color.pureBlack)
-                        .accessibilityAddTraits(.isHeader)
-                    Spacer()
-                }
-                .overlay(alignment: .trailing) {
-                    // Header buttons — only shown when visible (non-concluded) groups exist
-                    if groups.contains(where: { !$0.isConcludedQuickGame }) {
-                        Button {
-                            showNewGamePicker = true
-                        } label: {
-                            ZStack {
-                                Circle()
-                                    .fill(Color.textPrimary)
-                                Image(systemName: "plus")
-                                    .font(.carry.bodyLGBold)
-                                    .foregroundColor(.white)
-                            }
-                            .frame(width: 40, height: 40)
-                        }
-                        .accessibilityLabel("Create new skins game")
-                    }
-                }
-                .padding(.horizontal, 20)
-                .padding(.top, 16)
-                .padding(.bottom, 24)
-
-                ScrollView {
-                    VStack(spacing: 0) {
-                        // Hide concluded quick games from Games tab (they show on Home as recent rounds)
-                        let visibleGroups = groups.filter { !$0.isConcludedQuickGame }
-
-                        if visibleGroups.isEmpty && isLoadingGroups {
-                            ProgressView()
-                                .padding(.vertical, 60)
-                        } else if visibleGroups.isEmpty {
-                            emptyState
-                        } else {
-                            let myGames = visibleGroups.filter { $0.creatorId == authService.currentPlayerId }
-                            let otherGames = visibleGroups.filter { $0.creatorId != authService.currentPlayerId }
-
-                            if !myGames.isEmpty {
-                                sectionHeader("My Games")
-                                ForEach(myGames) { group in
-                                    groupCard(group)
-                                        .padding(.bottom, 8)
-                                }
-                            }
-
-                            if !otherGames.isEmpty {
-                                sectionHeader("Member Of")
-                                    .padding(.top, myGames.isEmpty ? 0 : 16)
-                                ForEach(otherGames) { group in
-                                    groupCard(group)
-                                        .padding(.bottom, 8)
-                                }
-                            }
+        gamesContentWithAlerts
+            .onChange(of: activeGroup?.id) { _, id in
+                showTabBar = (id == nil)
+            }
+            .onChange(of: pendingActiveGroupId) { _, newId in
+                guard let newId else { return }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    if let group = groups.first(where: { $0.id == newId }) {
+                        withAnimation(.spring(response: 0.45, dampingFraction: 0.9)) {
+                            activeGroup = group
                         }
                     }
-                    .padding(.horizontal, 16)
-                }
-                .scrollBounceBehavior(.always)
-                .refreshable {
-                    if authService.isAuthenticated, let userId = authService.currentUser?.id {
-                        let groupService = GroupService()
-                        if let refreshed = try? await groupService.loadGroups(userId: userId) {
-                            groups = refreshed
-                        }
-                    } else {
-                        try? await Task.sleep(nanoseconds: 300_000_000)
-                    }
+                    pendingActiveGroupId = nil
                 }
             }
-
-            // Top fade gradient under status bar / dynamic island
-            VStack {
-                LinearGradient(
-                    colors: [Color.bgSecondary, Color.bgSecondary.opacity(0)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .frame(height: 50)
-                .allowsHitTesting(false)
-                Spacer()
+            .onReceive(NotificationCenter.default.publisher(for: .showNewGamePicker)) { _ in
+                showNewGamePicker = true
             }
-            .ignoresSafeArea(edges: .top)
-            .allowsHitTesting(false)
-            .sheet(isPresented: $showPaywall) {
-                PaywallView()
-                    .onDisappear {
-                        if storeService.isPremium {
-                            showCreateGroup = true
-                        }
-                    }
+            #if DEBUG
+            .onReceive(appRouter.$debugShowRecurringPrompt) { show in
+                guard show else { return }
+                appRouter.debugShowRecurringPrompt = false
+                completedGroupId = groups.first(where: { $0.isQuickGame })?.id ?? groups.first?.id
+                showRecurringPrompt = true
             }
-        }
-        .sheet(isPresented: $showCreateGroup) {
-            CreateGroupSheet { newGroup in
-                groups.insert(newGroup, at: 0)
-                showCreateGroup = false
+            .onReceive(appRouter.$debugShowCreateGroupCard) { show in
+                guard show else { return }
+                appRouter.debugShowCreateGroupCard = false
+                showDebugCreateGroupCard = true
             }
-            .presentationDetents([.large])
-            .presentationDragIndicator(.visible)
-            .presentationBackground(.white)
-        }
-        .sheet(isPresented: $showQuickStart) {
-            quickStartSheetContent
-        }
-        .sheet(isPresented: $showNewGamePicker) {
-            newGamePickerSheet
-                .presentationDetents([.fraction(0.65)])
-                .presentationDragIndicator(.visible)
-                .presentationBackground(.white)
-        }
-        .overlay {
-            if let group = activeGroup {
-                roundCoordinatorOverlay(group: group)
-            }
-        }
-        .overlay { convertingOverlay }
-        .animation(.easeInOut(duration: 0.2), value: isConvertingGroup)
-        .sheet(isPresented: $showConvertSetupSheet) {
-            convertSetupSheet
-                .presentationDetents([.height(420)])
-                .presentationDragIndicator(.visible)
-                .presentationBackground(.white)
-        }
-        .modifier(GroupsAlertModifiers(
-            showLeaveGroupConfirm: $showLeaveGroupConfirm,
-            showDeleteGroupConfirm: $showDeleteGroupConfirm,
-            showRecurringPrompt: $showRecurringPrompt,
-            showQuickGameLimit: $showQuickGameLimit,
-            contextMenuGroup: $contextMenuGroup,
-            completedGroupId: $completedGroupId,
-            groups: $groups,
-            showPaywall: $showPaywall,
-            onLeaveGroup: { group in
-                if authService.isAuthenticated, let userId = authService.currentUser?.id {
-                    Task {
-                        try? await GroupService().removeMember(groupId: group.id, playerId: userId)
-                    }
-                }
-                withAnimation(.easeOut(duration: 0.25)) {
-                    groups.removeAll { $0.id == group.id }
-                }
-                ToastManager.shared.success("Left \(group.name)")
-            },
-            onDeleteGroup: { group in
-                Task {
-                    try? await GroupService().deleteGroup(groupId: group.id)
-                }
-                withAnimation(.easeOut(duration: 0.25)) {
-                    groups.removeAll { $0.id == group.id }
-                }
-                ToastManager.shared.success("Deleted \(group.name)")
-            },
-            onConvertAndCopy: { groupId in
-                // Show setup sheet for name + tee time
-                let courseName = groups.first(where: { $0.id == groupId })?.lastCourse?.courseName
-                convertGroupName = courseName != nil ? "\(courseName!) Skins" : ""
-                convertHasTeeTime = false
-                let cal = Calendar.current
-                let now = Date()
-                var comps = cal.dateComponents([.year, .month, .day, .hour, .minute], from: now)
-                let minute = comps.minute ?? 0
-                if minute < 30 { comps.minute = 30 } else { comps.minute = 0; comps.hour = (comps.hour ?? 0) + 1 }
-                convertTeeTime = cal.date(from: comps) ?? now
-                completedGroupId = groupId
-                showConvertSetupSheet = true
-            },
-            onConvert: { groupId in convertQuickGame(groupId: groupId) },
-            onDeleteQuickGame: { groupId in
-                // Don't delete from Supabase — round history stays visible on Home tab
-                // The Games tab filter hides concluded quick games automatically
-                completedGroupId = nil
-            }
-        ))
-        .animation(.spring(response: 0.45, dampingFraction: 0.9), value: activeGroup?.id)
-        .onChange(of: activeGroup?.id) { _, id in
-            showTabBar = (id == nil)
-        }
-        .onChange(of: pendingActiveGroupId) { _, newId in
-            guard let newId else { return }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                if let group = groups.first(where: { $0.id == newId }) {
+            .onReceive(appRouter.$debugShowInviteSheet) { show in
+                guard show else { return }
+                appRouter.debugShowInviteSheet = false
+                if let group = groups.first {
+                    justConvertedGroupId = group.id
                     withAnimation(.spring(response: 0.45, dampingFraction: 0.9)) {
                         activeGroup = group
                     }
                 }
-                pendingActiveGroupId = nil
             }
-        }
-        .onReceive(appRouter.$debugShowRecurringPrompt) { show in
-            guard show else { return }
-            appRouter.debugShowRecurringPrompt = false
-            completedGroupId = groups.first(where: { $0.isQuickGame })?.id ?? groups.first?.id
-            showRecurringPrompt = true
-        }
-        .onReceive(appRouter.$debugShowCreateGroupCard) { show in
-            guard show else { return }
-            appRouter.debugShowCreateGroupCard = false
-            showDebugCreateGroupCard = true
-        }
-        .onReceive(appRouter.$debugShowInviteSheet) { show in
-            guard show else { return }
-            appRouter.debugShowInviteSheet = false
-            if let group = groups.first {
-                justConvertedGroupId = group.id
-                withAnimation(.spring(response: 0.45, dampingFraction: 0.9)) {
-                    activeGroup = group
+            .overlay {
+                if showDebugCreateGroupCard {
+                    debugCreateGroupCardOverlay
                 }
             }
-        }
-        .overlay {
-            if showDebugCreateGroupCard {
-                debugCreateGroupCardOverlay
+            .onReceive(appRouter.$debugShowQuickGameLimit) { show in
+                guard show else { return }
+                appRouter.debugShowQuickGameLimit = false
+                showQuickGameLimit = true
             }
-        }
-        .onReceive(appRouter.$debugShowQuickGameLimit) { show in
-            guard show else { return }
-            appRouter.debugShowQuickGameLimit = false
-            showQuickGameLimit = true
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .showNewGamePicker)) { _ in
-            showNewGamePicker = true
-        }
+            #endif
+    }
+
+    private var gamesContentWithAlerts: some View {
+        gamesContentWithSheets
+            .modifier(GroupsAlertModifiers(
+                showLeaveGroupConfirm: $showLeaveGroupConfirm,
+                showDeleteGroupConfirm: $showDeleteGroupConfirm,
+                showRecurringPrompt: $showRecurringPrompt,
+                showQuickGameLimit: $showQuickGameLimit,
+                contextMenuGroup: $contextMenuGroup,
+                completedGroupId: $completedGroupId,
+                groups: $groups,
+                showPaywall: $showPaywall,
+                onLeaveGroup: { leaveGroup($0) },
+                onDeleteGroup: { deleteGroup($0) },
+                onConvertAndCopy: { showConvertSetup(groupId: $0) },
+                onConvert: { convertQuickGame(groupId: $0) },
+                onDeleteQuickGame: { _ in completedGroupId = nil }
+            ))
+            .animation(.spring(response: 0.45, dampingFraction: 0.9), value: activeGroup?.id)
     }
 
     // MARK: - Quick Start
@@ -317,11 +155,13 @@ struct GroupsListView: View {
                 initials: userInitials,
                 color: "#4CAF50",
                 handicap: user.handicap,
-                avatar: user.avatarUrl ?? "",
+                avatar: "",
                 group: 1,
                 ghinNumber: nil,
                 venmoUsername: nil,
-                profileId: user.id
+                avatarUrl: user.avatarUrl,
+                profileId: user.id,
+                homeClub: user.homeClub
             )
             QuickGameSheet(
                 currentUser: currentPlayer,
@@ -343,6 +183,42 @@ struct GroupsListView: View {
             .presentationDragIndicator(.visible)
             .presentationBackground(.white)
         }
+    }
+
+    private func leaveGroup(_ group: SavedGroup) {
+        if authService.isAuthenticated, let userId = authService.currentUser?.id {
+            Task {
+                try? await GroupService().removeMember(groupId: group.id, playerId: userId)
+            }
+        }
+        withAnimation(.easeOut(duration: 0.25)) {
+            groups.removeAll { $0.id == group.id }
+        }
+        ToastManager.shared.success("Left \(group.name)")
+    }
+
+    private func deleteGroup(_ group: SavedGroup) {
+        Task {
+            try? await GroupService().deleteGroup(groupId: group.id)
+        }
+        withAnimation(.easeOut(duration: 0.25)) {
+            groups.removeAll { $0.id == group.id }
+        }
+        ToastManager.shared.success("Deleted \(group.name)")
+    }
+
+    private func showConvertSetup(groupId: UUID) {
+        let courseName = groups.first(where: { $0.id == groupId })?.lastCourse?.courseName
+        convertGroupName = courseName != nil ? "\(courseName!) Skins" : ""
+        convertHasTeeTime = false
+        let cal = Calendar.current
+        let now = Date()
+        var comps = cal.dateComponents([.year, .month, .day, .hour, .minute], from: now)
+        let minute = comps.minute ?? 0
+        if minute < 30 { comps.minute = 30 } else { comps.minute = 0; comps.hour = (comps.hour ?? 0) + 1 }
+        convertTeeTime = cal.date(from: comps) ?? now
+        completedGroupId = groupId
+        showConvertSetupSheet = true
     }
 
     private func convertQuickGame(groupId: UUID) {
@@ -501,6 +377,13 @@ struct GroupsListView: View {
                 let courseClubName = savedGroup.lastCourse?.clubName
                 let teeBox = savedGroup.lastCourse?.teeBox
 
+                // Encode holes JSON so it persists from creation
+                var holesJson: String? = nil
+                if let holes = teeBox?.holes,
+                   let data = try? JSONEncoder().encode(holes) {
+                    holesJson = String(data: data, encoding: .utf8)
+                }
+
                 // 4. Create group — scorers inserted as 'invited' directly (triggers push)
                 let groupDTO = try await groupService.createGroup(
                     name: savedGroup.name,
@@ -520,7 +403,8 @@ struct GroupsListView: View {
                     isQuickGame: true,
                     memberGroupNums: memberGroupNums,
                     teeTimeInterval: savedGroup.teeTimeInterval,
-                    scorerIdsToInvite: scorerIdsToInvite
+                    scorerIdsToInvite: scorerIdsToInvite,
+                    lastTeeBoxHolesJson: holesJson
                 )
 
                 // 5. Create Supabase invite records for SMS-invited scorers
@@ -605,25 +489,7 @@ struct GroupsListView: View {
                 }
                 if authService.isAuthenticated {
                     Task {
-                        // Encode holes JSON for persistent storage
-                        var holesJson: String? = nil
-                        if let holes = updatedCourse.teeBox?.holes,
-                           let data = try? JSONEncoder().encode(holes) {
-                            holesJson = String(data: data, encoding: .utf8)
-                        }
-                        try? await GroupService().updateGroup(
-                            groupId: group.id,
-                            update: SkinsGroupUpdate(
-                                lastCourseName: updatedCourse.courseName,
-                                lastCourseClubName: updatedCourse.clubName,
-                                lastTeeBoxName: updatedCourse.teeBox?.name,
-                                lastTeeBoxColor: updatedCourse.teeBox?.color,
-                                lastTeeBoxCourseRating: updatedCourse.teeBox?.courseRating,
-                                lastTeeBoxSlopeRating: updatedCourse.teeBox?.slopeRating,
-                                lastTeeBoxPar: updatedCourse.teeBox?.par,
-                                lastTeeBoxHolesJson: holesJson
-                            )
-                        )
+                        try? await GroupService().persistCourseSelection(groupId: group.id, course: updatedCourse)
                     }
                 }
             },
@@ -633,9 +499,11 @@ struct GroupsListView: View {
                 }
                 if authService.isAuthenticated {
                     Task {
+                        // Also persist the standard 8-minute interval so other devices
+                        // can reconstruct staggered tee times for multi-group rounds.
                         try? await GroupService().updateGroup(
                             groupId: group.id,
-                            update: SkinsGroupUpdate(scheduledDate: newDate)
+                            update: SkinsGroupUpdate(scheduledDate: newDate, teeTimeInterval: 8)
                         )
                     }
                 }
@@ -665,9 +533,6 @@ struct GroupsListView: View {
             initialRoundConfig: roundConfig,
             roundHistory: group.roundHistory,
             onExit: {
-                let isCreator = group.creatorId == authService.currentPlayerId
-                let liveGroup = groups.first(where: { $0.id == group.id })
-
                 withAnimation(.spring(response: 0.45, dampingFraction: 0.9)) {
                     activeGroup = nil
                 }
@@ -714,7 +579,7 @@ struct GroupsListView: View {
                 }
             },
             onCreateGroup: {
-                // Creator tapped "Yes, Create a Group" from final results
+                // Creator tapped "Create Group" from final results
                 // Mark round as completed so active card disappears
                 if let round = group.activeRound ?? group.concludedRound {
                     Task {
@@ -819,10 +684,12 @@ struct GroupsListView: View {
             VStack(spacing: 0) {
                 if let round = group.activeRound ?? group.concludedRound {
                     // ── ACTIVE / GAME DONE CARD ─────────────────────────
-                    let isNotStarted = round.currentHole == 0
+                    // Concluded rounds and pending rounds should never display as "not started"
+                    // even if currentHole is 0 on this device (scores not yet synced).
                     let isGameDone = round.isGameDone
                     let hasPending = round.hasPendingResults
-                    let isLiveScoring = round.currentHole > 0 && !isGameDone && !hasPending
+                    let isNotStarted = round.currentHole == 0 && round.status != .concluded && !hasPending
+                    let isLiveScoring = !isNotStarted && !isGameDone && !hasPending
 
                     // Top: group name + badge
                     HStack {
@@ -1068,14 +935,14 @@ struct GroupsListView: View {
                     contextMenuGroup = group
                     showDeleteGroupConfirm = true
                 } label: {
-                    Label("Delete Group", systemImage: "trash")
+                    Label(group.isQuickGame ? "Delete Game" : "Delete Group", systemImage: "trash")
                 }
             } else {
                 Button(role: .destructive) {
                     contextMenuGroup = group
                     showLeaveGroupConfirm = true
                 } label: {
-                    Label("Leave Group", systemImage: "rectangle.portrait.and.arrow.right")
+                    Label(group.isQuickGame ? "Leave Game" : "Leave Group", systemImage: "rectangle.portrait.and.arrow.right")
                 }
             }
         }
@@ -1180,6 +1047,159 @@ struct GroupsListView: View {
         }
     }
 
+    // MARK: - Content
+
+    private var gamesContentWithSheets: some View {
+        gamesContent
+            .sheet(isPresented: $showCreateGroup) {
+                CreateGroupSheet { newGroup in
+                    groups.insert(newGroup, at: 0)
+                    showCreateGroup = false
+                }
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(.white)
+            }
+            .sheet(isPresented: $showQuickStart) {
+                quickStartSheetContent
+            }
+            .sheet(isPresented: $showNewGamePicker) {
+                newGamePickerSheet
+                    .presentationDetents([.fraction(0.65)])
+                    .presentationDragIndicator(.visible)
+                    .presentationBackground(.white)
+            }
+            .overlay {
+                if let group = activeGroup {
+                    roundCoordinatorOverlay(group: group)
+                }
+            }
+            .overlay { convertingOverlay }
+            .animation(.easeInOut(duration: 0.2), value: isConvertingGroup)
+            .sheet(isPresented: $showConvertSetupSheet) {
+                convertSetupSheet
+                    .presentationDetents([.height(520)])
+                    .presentationDragIndicator(.visible)
+                    .presentationBackground(.white)
+            }
+    }
+
+    private var gamesContent: some View {
+        ZStack {
+            Color.bgSecondary.ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                gamesHeader
+                gamesList
+            }
+
+            topFadeGradient
+        }
+    }
+
+    private var topFadeGradient: some View {
+        VStack {
+            LinearGradient(
+                colors: [Color.bgSecondary, Color.bgSecondary.opacity(0)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 50)
+            .allowsHitTesting(false)
+            Spacer()
+        }
+        .ignoresSafeArea(edges: .top)
+        .allowsHitTesting(false)
+        .sheet(isPresented: $showPaywall) {
+            PaywallView()
+                .onDisappear {
+                    if storeService.isPremium {
+                        showCreateGroup = true
+                    }
+                }
+        }
+    }
+
+    // MARK: - Header
+
+    private var gamesHeader: some View {
+        HStack {
+            Text("Skins Games")
+                .font(.system(size: 28, weight: .bold))
+                .foregroundColor(Color.pureBlack)
+                .accessibilityAddTraits(.isHeader)
+            Spacer()
+        }
+        .overlay(alignment: .trailing) {
+            Button {
+                showNewGamePicker = true
+            } label: {
+                ZStack {
+                    Circle()
+                        .fill(Color.textPrimary)
+                    Image(systemName: "plus")
+                        .font(.carry.bodyLGBold)
+                        .foregroundColor(.white)
+                }
+                .frame(width: 40, height: 40)
+            }
+            .accessibilityLabel("Create new skins game")
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 16)
+        .padding(.bottom, 24)
+    }
+
+    // MARK: - Games List
+
+    private var gamesList: some View {
+        ScrollView {
+            VStack(spacing: 0) {
+                let visibleGroups = groups.filter { !$0.isConcludedQuickGame }
+
+                if visibleGroups.isEmpty && isLoadingGroups {
+                    ProgressView()
+                        .padding(.vertical, 60)
+                } else if visibleGroups.isEmpty {
+                    emptyState
+                } else {
+                    let currentId = authService.currentPlayerId
+                    let myGames = visibleGroups.filter { $0.creatorId == currentId }
+                    let otherGames = visibleGroups.filter { $0.creatorId != currentId }
+
+                    if !myGames.isEmpty {
+                        sectionHeader("My Games")
+                        ForEach(myGames) { group in
+                            groupCard(group)
+                                .padding(.bottom, 8)
+                        }
+                    }
+
+                    if !otherGames.isEmpty {
+                        sectionHeader("Member Of")
+                            .padding(.top, myGames.isEmpty ? 0 : 16)
+                        ForEach(otherGames) { group in
+                            groupCard(group)
+                                .padding(.bottom, 8)
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+        .scrollBounceBehavior(.always)
+        .refreshable {
+            if authService.isAuthenticated, let userId = authService.currentUser?.id {
+                let groupService = GroupService()
+                if let refreshed = try? await groupService.loadGroups(userId: userId) {
+                    groups = refreshed
+                }
+            } else {
+                try? await Task.sleep(nanoseconds: 300_000_000)
+            }
+        }
+    }
+
     // MARK: - New Game Picker Sheet
 
     private var newGamePickerSheet: some View {
@@ -1205,6 +1225,7 @@ struct GroupsListView: View {
                         .font(.system(size: 18, weight: .regular))
                         .foregroundColor(Color(hexString: "#3E3E3E"))
                         .lineSpacing(4)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 24)
@@ -1250,10 +1271,11 @@ struct GroupsListView: View {
                         .scaledToFit()
                         .frame(height: 120)
 
-                    Text("Start a skins game in seconds\n— only one account per group.")
+                    Text("Start a skins game in seconds\n— only scorers need the app.")
                         .font(.system(size: 18, weight: .regular))
                         .foregroundColor(Color(hexString: "#3E3E3E"))
                         .lineSpacing(4)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 24)
@@ -1264,7 +1286,7 @@ struct GroupsListView: View {
             .buttonStyle(.plain)
         }
         .padding(.horizontal, 20)
-        .padding(.top, 16)
+        .padding(.top, 28)
     }
 
     // MARK: - Empty State
@@ -1293,7 +1315,7 @@ struct GroupsListView: View {
                     .padding(.bottom, 24)
 
                 VStack(alignment: .leading, spacing: 16) {
-                    debugBenefitRow("Turn this into your skins group")
+                    debugBenefitRow("Manage players & who's playing today")
                     debugBenefitRow("Set up recurring tee times")
                     debugBenefitRow("Track stats over time")
                 }
@@ -1310,7 +1332,7 @@ struct GroupsListView: View {
                             showPaywall = true
                         }
                     } label: {
-                        Text("Yes, Create a Group")
+                        Text("Create Group")
                             .font(.system(size: 18, weight: .semibold))
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
@@ -1323,7 +1345,7 @@ struct GroupsListView: View {
                         showDebugCreateGroupCard = false
                         ToastManager.shared.success("Single Game tapped")
                     } label: {
-                        Text("No, This Was a Single Game")
+                        Text("Skip")
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundColor(Color.systemRedColor)
                             .frame(maxWidth: .infinity)
@@ -1510,7 +1532,10 @@ private struct GroupsAlertModifiers: ViewModifier {
             } message: {
                 Text("You'll be removed from \(contextMenuGroup?.name ?? "this group") and future games.")
             }
-            .alert("Delete Group?", isPresented: $showDeleteGroupConfirm) {
+            .alert(
+                contextMenuGroup?.isQuickGame == true ? "Delete Game?" : "Delete Group?",
+                isPresented: $showDeleteGroupConfirm
+            ) {
                 Button("Cancel", role: .cancel) {}
                 Button("Delete", role: .destructive) {
                     if let group = contextMenuGroup {
@@ -1519,7 +1544,8 @@ private struct GroupsAlertModifiers: ViewModifier {
                     contextMenuGroup = nil
                 }
             } message: {
-                Text("This will remove \(contextMenuGroup?.name ?? "this group") for all members. This can't be undone.")
+                let label = contextMenuGroup?.isQuickGame == true ? "game" : "group"
+                Text("This will remove \(contextMenuGroup?.name ?? "this \(label)") for all members. This can't be undone.")
             }
             .alert("Play again?", isPresented: $showRecurringPrompt) {
                 Button("Make it a group") {
@@ -1586,6 +1612,7 @@ struct SavedGroup: Identifiable, Equatable {
     var scorerIds: [Int]? = nil // per-group scorer player IDs from Supabase
     var teeTimes: [Date?]? = nil // per-group tee times (Quick Game consecutive)
     var teeTimeInterval: Int? = nil // minutes between consecutive tee times
+    var winningsDisplay: String = "gross" // "gross" or "net" — how winnings are shown
 
     /// Human-readable scheduled date, e.g. "Every Friday · 8:00 AM" or "Sat, Mar 14 · 8:24 AM"
     var scheduledLabel: String? {
@@ -1852,10 +1879,8 @@ struct CreateGroupSheet: View {
     @State private var memberSearchTask: Task<Void, Never>?
     @State private var selectedMembers: [Player] = []
 
-    // Phone invite
-    @State private var showGuestEntry = false
-    @State private var guestPhone = ""
-    @State private var inviteSent = false
+    // Phone invite (inline below search results)
+    @State private var phoneText = ""
     @State private var guests: [Player] = []
     @State private var nextGuestID = 100
     private var isFormValid: Bool {
@@ -1866,7 +1891,7 @@ struct CreateGroupSheet: View {
             && scheduledDate != nil
     }
 
-    enum InputField: Hashable { case groupName, memberSearch, guestPhone, guestName, guestHandicap, invitePhone }
+    enum InputField: Hashable { case groupName, memberSearch, inlinePhone }
     @FocusState private var focusedField: InputField?
 
     private var creatorPlayer: Player? {
@@ -1879,7 +1904,7 @@ struct CreateGroupSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             // Header
-            Text("New Skins Game")
+            Text("Skins Group")
                 .font(.carry.sectionTitle)
                 .foregroundColor(Color.pureBlack)
                 .padding(.top, 40)
@@ -1929,8 +1954,13 @@ struct CreateGroupSheet: View {
                     .padding(.horizontal, 24)
                     .padding(.bottom, 8)
 
-                // Selected member chips (horizontal scroll)
-                if !selectedMembers.isEmpty || !guests.isEmpty {
+                // Search results (shown when typing — pills hidden so results sit right below search bar)
+                if !memberSearchText.isEmpty {
+                    memberSearchResultsList
+                        .padding(.horizontal, 24)
+                        .padding(.bottom, 8)
+                } else if !selectedMembers.isEmpty || !guests.isEmpty {
+                    // Selected member chips (shown when not searching)
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
                             ForEach(selectedMembers) { player in
@@ -1943,21 +1973,8 @@ struct CreateGroupSheet: View {
                         .padding(.horizontal, 24)
                     }
                     .padding(.top, 4)
-                    .padding(.bottom, 6)
+                    .padding(.bottom, 18)
                 }
-
-                // Search results or invite button
-                if !memberSearchText.isEmpty {
-                    memberSearchResultsList
-                        .padding(.horizontal, 24)
-                        .padding(.bottom, 8)
-                }
-
-                // Invite a friend button
-                invitePlayerButton
-                    .padding(.horizontal, 24)
-                    .padding(.top, 6)
-                    .padding(.bottom, 16)
 
                 // Tee Time section
                 VStack(alignment: .leading, spacing: 6) {
@@ -1965,6 +1982,7 @@ struct CreateGroupSheet: View {
                         Text("Tee Time")
                             .font(.carry.bodySMBold)
                             .foregroundColor(Color.textPrimary)
+                        Spacer()
                         Text("Tee times can be updated")
                             .font(.system(size: 12, weight: .medium))
                             .foregroundColor(Color.textSecondary)
@@ -2239,6 +2257,13 @@ struct CreateGroupSheet: View {
                         Task {
                             do {
                                 let groupService = GroupService()
+                                // Encode holes JSON so par/hcp data survives across devices
+                                var holesJson: String? = nil
+                                if let holes = selectedCourse?.teeBox?.holes,
+                                   !holes.isEmpty,
+                                   let data = try? JSONEncoder().encode(holes) {
+                                    holesJson = String(data: data, encoding: .utf8)
+                                }
                                 let dto = try await groupService.createGroup(
                                     name: trimmedName,
                                     createdBy: userId,
@@ -2253,7 +2278,8 @@ struct CreateGroupSheet: View {
                                     teeBoxCourseRating: selectedCourse?.teeBox?.courseRating,
                                     teeBoxSlopeRating: selectedCourse?.teeBox?.slopeRating,
                                     teeBoxPar: selectedCourse?.teeBox?.par,
-                                    handicapPercentage: handicapPct
+                                    handicapPercentage: handicapPct,
+                                    lastTeeBoxHolesJson: holesJson
                                 )
                                 // Replace temp group with real Supabase group on next refresh
                                 #if DEBUG
@@ -2301,7 +2327,7 @@ struct CreateGroupSheet: View {
                         ToastManager.shared.success("Skins game created!")
                     }
                 } label: {
-                    Text("Create Skins Game")
+                    Text("Continue")
                         .font(.carry.headlineBold)
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
@@ -2357,13 +2383,6 @@ struct CreateGroupSheet: View {
             .presentationDragIndicator(.visible)
             .presentationBackground(.white)
         }
-        .overlay {
-            if showGuestEntry {
-                guestInviteOverlay
-                    .transition(.opacity)
-                    .zIndex(1)
-            }
-        }
         .sheet(isPresented: $showDatePicker) {
             teeTimeSheetContent
                 .presentationDetents([.large])
@@ -2413,217 +2432,7 @@ struct CreateGroupSheet: View {
 
     /// Filter handicap/index input: digits + one decimal, max 1 decimal place, capped at 54.0
     /// Allows 0…54.0 or +0.1…+10.0 (plus handicap) with one decimal place.
-    private func filterHandicapInput(_ input: String) -> String {
-        var filtered = ""
-        var hasDecimal = false
-        var hasPlus = false
-        var decimalDigits = 0
-        for ch in input {
-            if ch == "+" && filtered.isEmpty && !hasPlus {
-                hasPlus = true
-                filtered.append(ch)
-            } else if ch == "." && !hasDecimal {
-                hasDecimal = true
-                filtered.append(ch)
-            } else if ch.isNumber {
-                if hasDecimal {
-                    guard decimalDigits < 1 else { continue }
-                    filtered.append(ch)
-                    decimalDigits += 1
-                } else {
-                    filtered.append(ch)
-                }
-            }
-        }
-        let numericStr = filtered.hasPrefix("+") ? String(filtered.dropFirst()) : filtered
-        if let value = Double(numericStr) {
-            if hasPlus && value > 10.0 { filtered = "+10.0" }
-            else if !hasPlus && value > 54.0 { filtered = "54.0" }
-        }
-        return filtered
-    }
-
-    // MARK: - Guest Invite Overlay (center card modal)
-
-    private var guestInviteOverlay: some View {
-        let digits = guestPhone.filter { $0.isNumber }
-        let canSend = digits.count >= 10
-
-        return ZStack {
-            Color.white.opacity(0.92)
-                .ignoresSafeArea()
-                .onTapGesture {
-                    withAnimation(.easeOut(duration: 0.25)) {
-                        showGuestEntry = false
-                    }
-                }
-
-            VStack(spacing: 0) {
-                // Close button
-                HStack {
-                    Spacer()
-                    Button {
-                        withAnimation(.easeOut(duration: 0.2)) {
-                            showGuestEntry = false
-                        }
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(Color.textSecondary)
-                            .frame(width: 30, height: 30)
-                            .background(Circle().fill(Color.bgPrimary))
-                    }
-                }
-                .padding(.top, 16)
-                .padding(.trailing, 16)
-
-                if inviteSent {
-                    // Success state
-                    VStack(spacing: 16) {
-                        ZStack {
-                            Circle()
-                                .fill(Color.textPrimary)
-                                .frame(width: 72, height: 72)
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 28, weight: .bold))
-                                .foregroundColor(.white)
-                        }
-
-                        Text("Invite Sent!")
-                            .font(.system(size: 20, weight: .semibold))
-                            .foregroundColor(Color.textPrimary)
-
-                        Text("We texted \(formatPhone(guestPhone)) a link to join on Carry.")
-                            .font(.system(size: 15))
-                            .foregroundColor(Color.textTertiary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 20)
-                    }
-                    .padding(.vertical, 20)
-                    .padding(.bottom, 8)
-
-                    Button {
-                        withAnimation(.easeOut(duration: 0.2)) {
-                            inviteSent = false
-                            guestPhone = ""
-                            showGuestEntry = false
-                        }
-                    } label: {
-                        Text("Done")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 48)
-                            .background(RoundedRectangle(cornerRadius: 12).fill(Color.textPrimary))
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 20)
-                } else {
-                    // Input state
-                    Text("Invite Player")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(Color.textPrimary)
-                        .padding(.bottom, 4)
-
-                    Text("They\u{2019}ll get a text with a link to download Carry and join your game.")
-                        .font(.system(size: 14))
-                        .foregroundColor(Color.textTertiary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 24)
-                        .padding(.bottom, 20)
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Phone Number")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(Color.textPrimary)
-                            .padding(.leading, 4)
-
-                        TextField("(555) 123-4567", text: $guestPhone)
-                            .font(.system(size: 16))
-                            .focused($focusedField, equals: .guestPhone)
-                            .keyboardType(.phonePad)
-                            .carryInput(focused: focusedField == .guestPhone, cornerRadius: 10)
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 20)
-
-                    Button {
-                        sendGuestInvite()
-                    } label: {
-                        Text("Send Invite")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 48)
-                            .background(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .fill(canSend ? Color.textPrimary : Color.borderSubtle)
-                            )
-                    }
-                    .disabled(!canSend)
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 20)
-                }
-            }
-            .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(.white)
-                    .shadow(color: .black.opacity(0.15), radius: 20, y: 10)
-            )
-            .padding(.horizontal, 32)
-            .transition(.opacity.combined(with: .scale(scale: 0.96)))
-            .animation(.easeOut(duration: 0.25), value: inviteSent)
-        }
-    }
-
-    private func formatPhone(_ phone: String) -> String {
-        let digits = phone.filter { $0.isNumber }
-        guard digits.count == 10 else { return phone }
-        let area = digits.prefix(3)
-        let mid = digits.dropFirst(3).prefix(3)
-        let last = digits.suffix(4)
-        return "(\(area)) \(mid)-\(last)"
-    }
-
-    // MARK: - Send Guest Invite Logic
-
-    private func sendGuestInvite() {
-        let trimmedPhone = guestPhone.trimmingCharacters(in: .whitespaces)
-        guard trimmedPhone.count >= 10 else { return }
-
-        let guestColors = ["#E67E22", "#9B59B6", "#1ABC9C", "#C0392B", "#2980B9", "#27AE60"]
-        let colorIdx = (nextGuestID - 100) % guestColors.count
-
-        let guest = Player(
-            id: nextGuestID,
-            name: "Invited",
-            initials: "✉️",
-            color: guestColors[colorIdx],
-            handicap: 0,
-            avatar: "✉️",
-            group: 1,
-            ghinNumber: nil,
-            venmoUsername: nil,
-            phoneNumber: trimmedPhone,
-            isPendingInvite: true
-        )
-
-        guests.append(guest)
-        nextGuestID += 1
-
-        // Show success state
-        withAnimation {
-            inviteSent = true
-        }
-
-        // Open native SMS compose with invite message
-        if let smsURL = URL(string: "sms:\(trimmedPhone)&body=Join%20my%20skins%20game%20on%20Carry!%20Download%20here%3A%20https%3A%2F%2Fcarryapp.site") {
-            UIApplication.shared.open(smsURL)
-        }
-        #if DEBUG
-        print("[Carry] Invite SMS sent to \(formatPhone(trimmedPhone))")
-        #endif
-    }
+    // Uses shared filterHandicapInput() from Player.swift
 
     // MARK: - Member Search Bar
 
@@ -2665,7 +2474,7 @@ struct CreateGroupSheet: View {
     // MARK: - Search Results
 
     private var memberSearchResultsList: some View {
-        VStack(spacing: 0) {
+        VStack(spacing: 8) {
             if isMemberSearching {
                 HStack(spacing: 8) {
                     ProgressView()
@@ -2676,23 +2485,101 @@ struct CreateGroupSheet: View {
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 20)
-            } else if memberSearchResults.isEmpty && memberSearchText.count >= 2 {
-                VStack(spacing: 4) {
-                    Text("No users found")
-                        .font(.carry.bodySM)
-                        .foregroundColor(Color.textDisabled)
-                    Text("Invite them via text message instead")
-                        .font(.carry.caption)
-                        .foregroundColor(Color.borderLight)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
             } else {
+                // Carry user results
                 ForEach(memberSearchResults, id: \.id) { profile in
                     memberSearchResultRow(profile)
                 }
+
+                // Inline phone invite — shows when 2+ chars typed
+                if memberSearchText.count >= 2 && !isMemberSearching {
+                    inlinePhoneInvite
+                }
             }
         }
+    }
+
+    private var inlinePhoneInvite: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Send Invite to \"\(memberSearchText)\"")
+                .font(.carry.bodySMSemibold)
+                .foregroundColor(Color.textTertiary)
+
+            HStack(spacing: 10) {
+                Image(systemName: "iphone")
+                    .font(.system(size: 14))
+                    .foregroundColor(Color.textDisabled)
+
+                TextField("Enter Phone Number", text: $phoneText)
+                    .font(.carry.bodyLG)
+                    .foregroundColor(Color.textPrimary)
+                    .keyboardType(.phonePad)
+                    .focused($focusedField, equals: .inlinePhone)
+                    .onChange(of: phoneText) { _, newValue in
+                        let digits = newValue.filter { $0.isNumber }
+                        if digits.count > 10 {
+                            phoneText = String(digits.prefix(10))
+                        }
+                    }
+
+                let digits = phoneText.filter { $0.isNumber }
+                Button {
+                    sendInlineInvite()
+                } label: {
+                    Text("Send")
+                        .font(.carry.bodySMSemibold)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 16)
+                        .frame(height: 36)
+                        .background(Capsule().fill(digits.count >= 10 ? Color.textPrimary : Color.borderSubtle))
+                }
+                .buttonStyle(.plain)
+                .disabled(digits.count < 10)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 16)
+        .background(RoundedRectangle(cornerRadius: 14).fill(.white))
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.borderLight, lineWidth: 1))
+    }
+
+    private func sendInlineInvite() {
+        let digits = phoneText.filter { $0.isNumber }
+        guard digits.count >= 10 else { return }
+        let name = memberSearchText.trimmingCharacters(in: .whitespaces)
+
+        let guestColors = ["#E67E22", "#9B59B6", "#1ABC9C", "#C0392B", "#2980B9", "#27AE60"]
+        let colorIdx = (nextGuestID - 100) % guestColors.count
+        let guest = Player(
+            id: nextGuestID,
+            name: name.isEmpty ? ScorerAssignmentView.formatPhone(digits) : name,
+            initials: "✉️",
+            color: guestColors[colorIdx],
+            handicap: 0,
+            avatar: "✉️",
+            group: 1,
+            ghinNumber: nil,
+            venmoUsername: nil,
+            phoneNumber: digits,
+            isPendingInvite: true
+        )
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            guests.append(guest)
+        }
+        nextGuestID += 1
+
+        // Open native SMS
+        let body = "Join my skins game on Carry! Download here: https://carryapp.site"
+        let encoded = body.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        if let url = URL(string: "sms:\(digits)&body=\(encoded)") {
+            UIApplication.shared.open(url)
+        }
+
+        // Reset
+        memberSearchText = ""
+        memberSearchResults = []
+        phoneText = ""
+        focusedField = nil
     }
 
     private func memberSearchResultRow(_ profile: ProfileDTO) -> some View {
@@ -2708,21 +2595,12 @@ struct CreateGroupSheet: View {
             memberSearchText = ""
             memberSearchResults = []
         } label: {
-            HStack(spacing: 12) {
-                ZStack {
-                    Circle()
-                        .fill(Color.pendingBg)
-                    Circle()
-                        .strokeBorder(Color.pendingBorder, lineWidth: 1.5)
-                    Text(profile.initials)
-                        .font(.custom("ANDONESI-Regular", size: 17))
-                        .foregroundColor(Color.pendingFill)
-                }
-                .frame(width: 40, height: 40)
+            HStack(spacing: 10) {
+                PlayerAvatar(player: Player(from: profile), size: 34)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("\(profile.firstName) \(profile.lastName)")
-                        .font(.carry.body)
+                    Text("\(profile.firstName) \(profile.lastName)".trimmingCharacters(in: .whitespaces))
+                        .font(.carry.bodySemibold)
                         .foregroundColor(Color.textPrimary)
 
                     let subtitle = [profile.homeClub, profile.handicap != 0 ? String(format: "%.1f", profile.handicap) : nil]
@@ -2730,35 +2608,24 @@ struct CreateGroupSheet: View {
                         .joined(separator: " · ")
                     if !subtitle.isEmpty {
                         Text(subtitle)
-                            .font(.system(size: 13))
-                            .foregroundColor(Color.textSecondary)
+                            .font(.carry.bodySM)
+                            .foregroundColor(Color(hexString: "#BFC0C2"))
                     }
                 }
 
                 Spacer()
 
                 if isAlreadyAdded {
-                    Text("Pending")
+                    Text("Added")
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(Color.pendingFill)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 4)
-                        .background(
-                            Capsule().fill(Color.pendingBg)
-                                .overlay(Capsule().strokeBorder(Color.pendingBorder, lineWidth: 1))
-                        )
-                } else {
-                    Image(systemName: "plus.circle")
-                        .font(.carry.label)
                         .foregroundColor(Color.textDisabled)
                 }
             }
+            .padding(.horizontal, 15)
             .padding(.vertical, 10)
-            .padding(.horizontal, 14)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(isAlreadyAdded ? Color.bgSecondary : .white)
-            )
+            .frame(height: 58)
+            .background(RoundedRectangle(cornerRadius: 14).fill(isAlreadyAdded ? Color.bgSecondary : .white))
+            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.borderLight, lineWidth: 1))
         }
         .buttonStyle(.plain)
         .disabled(isAlreadyAdded)
@@ -2775,7 +2642,7 @@ struct CreateGroupSheet: View {
                         .fill(Color.pendingBg)
                     Circle()
                         .strokeBorder(Color.pendingBorder, lineWidth: 1)
-                    Image(systemName: "message.fill")
+                    Image(systemName: "iphone")
                         .font(.system(size: 10, weight: .medium))
                         .foregroundColor(Color.pendingFill)
                 }
@@ -2784,7 +2651,7 @@ struct CreateGroupSheet: View {
                 PlayerAvatar(player: player, size: 24)
             }
 
-            Text(player.isPendingInvite ? formatPhone(player.phoneNumber ?? "Invited") : player.shortName)
+            Text(player.isPendingInvite ? ScorerAssignmentView.formatPhone(player.phoneNumber ?? "Invited") : player.shortName)
                 .font(.carry.captionLG)
                 .foregroundColor(Color.textPrimary)
                 .lineLimit(1)
@@ -2815,50 +2682,7 @@ struct CreateGroupSheet: View {
         .overlay(Capsule().strokeBorder(Color.borderSubtle, lineWidth: 0.5))
     }
 
-    // MARK: - Invite Player Button
-
-    private var invitePlayerButton: some View {
-        Button {
-            showGuestEntry = true
-        } label: {
-            HStack(spacing: 12) {
-                ZStack {
-                    Circle()
-                        .fill(Color.bgPrimary)
-                    Image(systemName: "person.badge.plus")
-                        .font(.carry.bodyLG)
-                        .foregroundColor(Color.textPrimary)
-                }
-                .frame(width: 40, height: 40)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Invite via SMS")
-                        .font(.carry.body)
-                        .foregroundColor(Color.textPrimary)
-                    Text("Send a link to download the app")
-                        .font(.carry.caption)
-                        .foregroundColor(Color.textTertiary)
-                }
-
-                Spacer()
-
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(Color.borderMedium)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(.white)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .strokeBorder(Color.borderSubtle, lineWidth: 1)
-            )
-        }
-        .buttonStyle(.plain)
-    }
+    // Invite Player Button removed — inline phone invite integrated into search results
 
     // MARK: - Debounced Search
 

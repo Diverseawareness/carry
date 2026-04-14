@@ -27,6 +27,7 @@ html {
     scroll-behavior: smooth;
     -webkit-font-smoothing: antialiased;
     overflow-x: hidden;
+    background: #2B2E1D;
 }
 
 body {
@@ -151,6 +152,17 @@ a:not(.cta-button):not(.nav-link) {
     color: rgba(255, 255, 255, 0.4);
     margin-top: 14px;
     letter-spacing: 0.3px;
+}
+
+.scroll-hint {
+    margin-top: 32px;
+    opacity: 0.5;
+    animation: bounce 2s ease-in-out infinite;
+}
+
+@keyframes bounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(6px); }
 }
 
 /* ============================================
@@ -291,14 +303,17 @@ a:not(.cta-button):not(.nav-link) {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 28px;
+    font-size: 32px;
     font-weight: 800;
     color: var(--white);
     letter-spacing: -0.5px;
+    line-height: 1.2;
+    text-align: center;
     opacity: 0;
     transition: opacity 0.5s ease;
     pointer-events: none;
 }
+
 
 .gallery-headline.active {
     opacity: 1;
@@ -635,12 +650,20 @@ footer {
     }
 
     .gallery-headline {
-        font-size: 20px;
+        font-size: 28px;
         padding: 0 16px;
     }
 
+    .gallery-headline span {
+        text-align: center;
+    }
+
+    .gallery-headline em {
+        display: block;
+    }
+
     .gallery-headlines {
-        height: 56px;
+        height: 72px;
         margin-bottom: 20px;
     }
 

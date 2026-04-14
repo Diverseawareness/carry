@@ -8,6 +8,34 @@ final class NotificationService {
     static let shared = NotificationService()
     private init() {}
 
+    // MARK: - Preference Helpers
+
+    /// Check if a notification preference is enabled (defaults to true if never set).
+    private func prefEnabled(_ key: String) -> Bool {
+        UserDefaults.standard.object(forKey: key) == nil || UserDefaults.standard.bool(forKey: key)
+    }
+
+    var gameAlertsEnabled: Bool { prefEnabled("notif_gameAlerts") }
+    var liveScoringEnabled: Bool { prefEnabled("notif_liveScoring") }
+    var groupActivityEnabled: Bool { prefEnabled("notif_groupActivity") }
+
+    /// Returns whether a push notification with the given type should be displayed.
+    func shouldShowPush(type: String) -> Bool {
+        switch type {
+        // Game Alerts: invites, round start/end, scorer assignment
+        case "groupInvite", "roundStarted", "roundEnded":
+            return gameAlertsEnabled
+        // Live Scoring: skins won, all groups active
+        case "skinWon", "allGroupsActive":
+            return liveScoringEnabled
+        // Group Activity: member joined/declined, score disputes, tee time
+        case "memberJoined", "memberDeclined", "scoreDispute", "teeTimeReminder":
+            return groupActivityEnabled
+        default:
+            return true
+        }
+    }
+
     // MARK: - Permission & Registration
 
     /// Request notification permission and register for remote (push) notifications.
@@ -55,6 +83,7 @@ final class NotificationService {
     /// Schedules a local notification 5 minutes before the tee time.
     /// Call this whenever a tee time is set or changed.
     func scheduleTeeTimeReminder(groupId: UUID, groupName: String, teeTime: Date) {
+        guard groupActivityEnabled else { return }
         // Remove any existing reminder for this group first
         removeTeeTimeReminder(groupId: groupId)
 
@@ -98,6 +127,7 @@ final class NotificationService {
     /// Sends a local notification when a player from another group wins a skin.
     /// Triggered by the polling timer detecting a new skin win from Supabase data.
     func notifySkinWon(playerName: String, holeNum: Int) {
+        guard liveScoringEnabled else { return }
         let content = UNMutableNotificationContent()
         content.title = "Skin Won \u{2014} Hole \(holeNum)"
         content.body = "\(playerName) won a skin on Hole \(holeNum)"
@@ -126,6 +156,7 @@ final class NotificationService {
     /// Sends a local notification that the game is live (for players on this device).
     /// In production, this would be a push notification via Supabase to all group members.
     func notifyGameStarted(groupName: String, courseName: String) {
+        guard gameAlertsEnabled else { return }
         let content = UNMutableNotificationContent()
         content.title = "\(groupName) is live"
         content.body = "Open your scorecard"

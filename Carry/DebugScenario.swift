@@ -24,10 +24,13 @@ enum DebugScenario: String, CaseIterable, Identifiable {
     case pendingResults    // Pending results — some groups still out
     case roundComplete     // All 18 done, results screen
     case onboarding        // Auth → onboarding → home flow
+    case onboarding3Step   // Onboarding with Apple name (3 steps: Profile → Notif → Disclaimer)
+    case onboarding4Step   // Onboarding without name (4 steps: Name → Profile → Notif → Disclaimer)
     case welcome           // Sign-in / auth screen
     case inviteOverlay     // Full-screen invite overlay
     case paywall           // Paywall / subscription screen
     case createGroup       // Create new skins game sheet
+    case disclaimer        // Scorekeeper disclaimer screen
 
     var id: String { rawValue }
 
@@ -50,10 +53,13 @@ enum DebugScenario: String, CaseIterable, Identifiable {
         case .pendingResults:  return "Pending Results"
         case .roundComplete:   return "Round Complete (Final)"
         case .onboarding:      return "Onboarding Flow"
+        case .onboarding3Step: return "Onboarding (3-Step)"
+        case .onboarding4Step: return "Onboarding (4-Step)"
         case .welcome:         return "Welcome / Auth"
         case .inviteOverlay:   return "Invite Overlay"
         case .paywall:         return "Paywall"
         case .createGroup:     return "Create Skins Game"
+        case .disclaimer:      return "Disclaimer"
         }
     }
 
@@ -76,10 +82,13 @@ enum DebugScenario: String, CaseIterable, Identifiable {
         case .pendingResults:  return "clock.badge.checkmark"
         case .roundComplete:   return "flag.checkered"
         case .onboarding:      return "person.badge.plus"
+        case .onboarding3Step: return "3.circle"
+        case .onboarding4Step: return "4.circle"
         case .welcome:         return "key"
         case .inviteOverlay:   return "envelope.open"
         case .paywall:         return "crown"
         case .createGroup:     return "plus.circle"
+        case .disclaimer:      return "exclamationmark.triangle"
         }
     }
 
@@ -89,7 +98,7 @@ enum DebugScenario: String, CaseIterable, Identifiable {
         case .groupCreator, .groupMember, .createGroup:            return .navigation
         case .homeFree, .homePremium, .paywall:                    return .subscription
         case .scorecardViewer, .scorecardEmpty, .scorecardMid, .scorecardLate, .scorecardCarries, .confettiTest, .pendingResults, .roundComplete: return .scorecard
-        case .onboarding, .welcome, .inviteOverlay:                return .auth
+        case .onboarding, .onboarding3Step, .onboarding4Step, .welcome, .inviteOverlay, .disclaimer:    return .auth
         }
     }
 
@@ -128,6 +137,8 @@ enum DebugStartScreen {
     case groupSetup
     case scorecard
     case onboarding
+    case onboarding3Step
+    case onboarding4Step
     case welcome
     case inviteOverlay
     case paywall
@@ -413,6 +424,32 @@ extension DebugScenario {
                 isCreator: true
             )
 
+        case .onboarding3Step:
+            return DebugWorldState(
+                currentUserId: 1,
+                creatorId: 1,
+                players: Player.allPlayers,
+                roundConfig: .default,
+                demoMode: .none,
+                course: Self.demoCourse,
+                groups: [],
+                startScreen: .onboarding3Step,
+                isCreator: true
+            )
+
+        case .onboarding4Step:
+            return DebugWorldState(
+                currentUserId: 1,
+                creatorId: 1,
+                players: Player.allPlayers,
+                roundConfig: .default,
+                demoMode: .none,
+                course: Self.demoCourse,
+                groups: [],
+                startScreen: .onboarding4Step,
+                isCreator: true
+            )
+
         case .welcome:
             return DebugWorldState(
                 currentUserId: 1,
@@ -462,6 +499,19 @@ extension DebugScenario {
                 course: Self.demoCourse,
                 groups: [],
                 startScreen: .createGroup,
+                isCreator: true
+            )
+
+        case .disclaimer:
+            return DebugWorldState(
+                currentUserId: 1,
+                creatorId: 1,
+                players: Player.allPlayers,
+                roundConfig: .default,
+                demoMode: .none,
+                course: Self.demoCourse,
+                groups: [],
+                startScreen: .homeEmpty,
                 isCreator: true
             )
         }

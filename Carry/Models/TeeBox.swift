@@ -37,14 +37,24 @@ struct TeeBox: Identifiable, Hashable {
 
     /// USGA stroke allocation for a specific hole.
     /// Distributes `playingHandicap` strokes across 18 holes by hole difficulty (hcp ranking).
+    /// Plus handicaps (negative values) give strokes back — allocated to easiest holes first.
     static func strokesOnHole(playingHandicap: Int, holeHcp: Int) -> Int {
-        if playingHandicap <= 0 { return 0 }
-        // Full rounds of strokes (everyone gets this many on every hole)
-        let fullRounds = playingHandicap / 18
-        // Remaining strokes go to the hardest holes (lowest hcp numbers)
-        let remainder = playingHandicap % 18
-        let bonus = holeHcp <= remainder ? 1 : 0
-        return fullRounds + bonus
+        if playingHandicap == 0 { return 0 }
+        if playingHandicap > 0 {
+            // Regular handicap — receives strokes on hardest holes
+            let fullRounds = playingHandicap / 18
+            let remainder = playingHandicap % 18
+            let bonus = holeHcp <= remainder ? 1 : 0
+            return fullRounds + bonus
+        } else {
+            // Plus handicap — gives strokes back on easiest holes (highest hcp numbers)
+            let absHcp = abs(playingHandicap)
+            let fullRounds = absHcp / 18
+            let remainder = absHcp % 18
+            // Easiest holes = highest hcp numbers (19 - holeHcp inverts the ranking)
+            let penalty = (19 - holeHcp) <= remainder ? 1 : 0
+            return -(fullRounds + penalty)
+        }
     }
 
     // MARK: - Memberwise init (explicit because custom init below removes auto-generated one)
@@ -81,17 +91,18 @@ struct TeeBox: Identifiable, Hashable {
         }
     }
 
-    // Demo tee boxes for Blackhawk CC
+    // Demo tee boxes for Blackhawk CC — include Hole.allHoles so debug
+    // scorecards pass the strict holes guard and don't show "reselect course".
     static let demo: [TeeBox] = [
         TeeBox(id: "t1", courseId: "c1", name: "Black", color: "#1A1A1A",
-               courseRating: 73.8, slopeRating: 142, par: 72),
+               courseRating: 73.8, slopeRating: 142, par: 72, holes: Hole.allHoles),
         TeeBox(id: "t2", courseId: "c1", name: "Blue", color: "#2563EB",
-               courseRating: 71.5, slopeRating: 134, par: 72),
+               courseRating: 71.5, slopeRating: 134, par: 72, holes: Hole.allHoles),
         TeeBox(id: "t3", courseId: "c1", name: "White", color: "#F5F5F5",
-               courseRating: 69.2, slopeRating: 126, par: 72),
+               courseRating: 69.2, slopeRating: 126, par: 72, holes: Hole.allHoles),
         TeeBox(id: "t4", courseId: "c1", name: "Gold", color: "#D4A017",
-               courseRating: 66.8, slopeRating: 117, par: 72),
+               courseRating: 66.8, slopeRating: 117, par: 72, holes: Hole.allHoles),
         TeeBox(id: "t5", courseId: "c1", name: "Red", color: "#E05555",
-               courseRating: 64.1, slopeRating: 110, par: 72),
+               courseRating: 64.1, slopeRating: 110, par: 72, holes: Hole.allHoles),
     ]
 }

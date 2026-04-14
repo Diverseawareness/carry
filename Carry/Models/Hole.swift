@@ -39,41 +39,43 @@ struct Hole: Identifiable, Hashable, Codable {
     // MARK: - Build holes from Golf Course API data
 
     /// Convert API hole data to 18 `Hole` objects.
-    /// Falls back to `Hole.allHoles` defaults for any missing or incomplete data.
+    /// STRICT: every par must be present and > 0. Refuses (returns []) if any par is missing,
+    /// any par is 0, or fewer than 18 holes were provided. Output is always 18 holes numbered 1-18.
+    /// (The API doesn't always return holes in order — par values are taken positionally from
+    /// the first 18 entries, since the API has no `num` field per hole.)
     static func fromAPI(_ apiHoles: [GolfCourseHole]) -> [Hole] {
-        // Need exactly 18 holes worth of data to be useful
-        guard !apiHoles.isEmpty else {
+        guard apiHoles.count >= 18 else {
             #if DEBUG
-            print("[Hole.fromAPI] No API holes provided, using defaults")
+            print("[Hole.fromAPI] ❌ Only \(apiHoles.count) holes from API — refusing to build (need 18)")
             #endif
-            return allHoles
+            return []
         }
-
-        let defaults = allHoles
+        // Validate first 18: every par non-nil AND > 0
+        let first18 = Array(apiHoles.prefix(18))
+        let allValid = first18.allSatisfy { hole in
+            guard let par = hole.par, par > 0 else { return false }
+            return true
+        }
+        guard allValid else {
+            #if DEBUG
+            let missing = first18.enumerated().compactMap { (i, h) -> Int? in
+                (h.par == nil || h.par == 0) ? (i + 1) : nil
+            }
+            print("[Hole.fromAPI] ❌ Holes with missing/zero par: \(missing) — refusing to build")
+            #endif
+            return []
+        }
         var result: [Hole] = []
-
         for i in 0..<18 {
             let holeNum = i + 1
-            let defaultHole = defaults[i]
-
-            if i < apiHoles.count {
-                let apiHole = apiHoles[i]
-                let par = apiHole.par ?? defaultHole.par
-                let hcp = apiHole.handicap ?? defaultHole.hcp
-                result.append(Hole(id: holeNum, num: holeNum, par: par, hcp: hcp))
-            } else {
-                // API didn't provide this hole — use default
-                result.append(defaultHole)
-            }
+            let apiHole = first18[i]
+            let par = apiHole.par!
+            let hcp = apiHole.handicap ?? holeNum
+            result.append(Hole(id: holeNum, num: holeNum, par: par, hcp: hcp))
         }
-
         #if DEBUG
-        let apiCount = min(apiHoles.count, 18)
-        let withPar = apiHoles.prefix(18).filter { $0.par != nil }.count
-        let withHcp = apiHoles.prefix(18).filter { $0.handicap != nil }.count
-        print("[Hole.fromAPI] Built \(result.count) holes from API: \(apiCount) provided, \(withPar) with par, \(withHcp) with handicap")
+        print("[Hole.fromAPI] ✅ Built 18 holes from API")
         #endif
-
         return result
     }
 }

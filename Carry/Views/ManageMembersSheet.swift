@@ -129,77 +129,74 @@ struct ManageMembersSheet: View {
                         }
                         .padding(.bottom, 9)
 
-                        // Online search results
+                        // Online search results + inline SMS invite
                         if !memberSearchText.isEmpty {
-                            VStack(spacing: 0) {
+                            VStack(spacing: 8) {
                                 if isSearchingOnline {
                                     HStack(spacing: 8) {
                                         ProgressView().scaleEffect(0.8)
                                         Text("Searching...")
-                                            .font(.system(size: 14))
+                                            .font(.carry.captionLG)
                                             .foregroundColor(Color.textDisabled)
-                                    }
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 16)
-                                } else if onlineSearchResults.isEmpty && memberSearchText.count >= 2 {
-                                    VStack(spacing: 4) {
-                                        Text("No users found")
-                                            .font(.system(size: 14))
-                                            .foregroundColor(Color.textDisabled)
-                                        Text("Invite them via text message instead")
-                                            .font(.system(size: 12))
-                                            .foregroundColor(Color.borderLight)
                                     }
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 16)
                                 } else {
+                                    // Carry user results
                                     ForEach(onlineSearchResults, id: \.id) { profile in
                                         onlineSearchResultRow(profile)
+                                    }
+
+                                    // Inline SMS invite — same pattern as ScorerAssignmentView
+                                    if memberSearchText.count >= 2 && !isSearchingOnline {
+                                        VStack(alignment: .leading, spacing: 12) {
+                                            Text("Send Invite to \"\(memberSearchText)\"")
+                                                .font(.carry.bodySMSemibold)
+                                                .foregroundColor(Color.textTertiary)
+
+                                            HStack(spacing: 10) {
+                                                Image(systemName: "iphone")
+                                                    .font(.system(size: 14))
+                                                    .foregroundColor(Color.textDisabled)
+
+                                                TextField("Enter Phone Number", text: $invitePhone)
+                                                    .font(.carry.bodyLG)
+                                                    .foregroundColor(Color.textPrimary)
+                                                    .keyboardType(.phonePad)
+                                                    .focused($focused, equals: .invitePhone)
+                                                    .onChange(of: invitePhone) { _, newValue in
+                                                        let digits = newValue.filter { $0.isNumber }
+                                                        if digits.count > 10 {
+                                                            invitePhone = String(digits.prefix(10))
+                                                        }
+                                                    }
+
+                                                let digits = invitePhone.filter { $0.isNumber }
+                                                Button {
+                                                    sendInvite()
+                                                    memberSearchText = ""
+                                                    invitePhone = ""
+                                                } label: {
+                                                    Text("Send")
+                                                        .font(.carry.bodySMSemibold)
+                                                        .foregroundColor(.white)
+                                                        .padding(.horizontal, 16)
+                                                        .frame(height: 36)
+                                                        .background(Capsule().fill(digits.count >= 10 ? Color.textPrimary : Color.borderSubtle))
+                                                }
+                                                .buttonStyle(.plain)
+                                                .disabled(digits.count < 10)
+                                            }
+                                        }
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 16)
+                                        .background(RoundedRectangle(cornerRadius: 14).fill(.white))
+                                        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.borderLight, lineWidth: 1))
                                     }
                                 }
                             }
                             .padding(.bottom, 9)
                         }
-
-                        // Invite a Friend row
-                        Button {
-                            invitePhone = ""
-                            inviteSent = false
-                            withAnimation(.easeOut(duration: 0.25)) {
-                                showInviteModal = true
-                            }
-                        } label: {
-                            HStack(spacing: 12) {
-                                ZStack {
-                                    Circle().fill(Color.bgPrimary)
-                                    Image(systemName: "person.badge.plus")
-                                        .font(.system(size: 18))
-                                        .foregroundColor(Color.textPrimary)
-                                }
-                                .frame(width: 42, height: 42)
-
-                                VStack(alignment: .leading, spacing: 0) {
-                                    Text("Invite via SMS")
-                                        .font(.system(size: 16, weight: .semibold))
-                                        .foregroundColor(Color.deepNavy)
-                                    Text("Send a link to download the app")
-                                        .font(.system(size: 13, weight: .medium))
-                                        .foregroundColor(Color(hexString: "#858589"))
-                                }
-                                Spacer()
-                                Image(systemName: "chevron.up.chevron.down")
-                                    .font(.system(size: 11, weight: .medium))
-                                    .foregroundColor(Color.borderMedium)
-                            }
-                            .padding(.horizontal, 13.5)
-                            .padding(.vertical, 13)
-                        }
-                        .buttonStyle(.plain)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12)
-                                .strokeBorder(Color(hexString: "#DDDDE1"), lineWidth: 1)
-                        )
-                        .padding(.bottom, 9)
 
                         // Green hint banner (dismissible)
                         if showMembersTip {
@@ -218,6 +215,7 @@ struct ManageMembersSheet: View {
                                             .foregroundColor(Color.successGreen)
                                     }
                                     .buttonStyle(.plain)
+                                    .accessibilityLabel("Dismiss tip")
                                 }
                                 .padding(.horizontal, 16)
                                 .padding(.vertical, 10)
@@ -234,11 +232,11 @@ struct ManageMembersSheet: View {
                         let playingMembers = localAllAvailable.filter { selectedIDs.contains($0.id) && !$0.isPendingInvite && !$0.isPendingAccept }
 
                         VStack(alignment: .leading, spacing: 0) {
-                            Text("Playing today")
+                            Text("Playing")
                                 .font(.system(size: 16, weight: .bold))
                                 .foregroundColor(Color.deepNavy)
                                 .frame(height: 32, alignment: .leading)
-                            Text("\(playingMembers.count) players in todays game")
+                            Text("\(playingMembers.count) playing in upcoming game")
                                 .font(.system(size: 14))
                                 .foregroundColor(Color.textDark)
                         }
@@ -378,7 +376,7 @@ struct ManageMembersSheet: View {
                                                 ZStack {
                                                     Circle().fill(Color.pendingBg)
                                                     Circle().strokeBorder(Color.pendingBorder, lineWidth: 1.5)
-                                                    Image(systemName: "message.fill")
+                                                    Image(systemName: "iphone")
                                                         .font(.system(size: 20, weight: .medium))
                                                         .foregroundColor(Color.pendingFill)
                                                 }
@@ -404,158 +402,15 @@ struct ManageMembersSheet: View {
                     .padding(.horizontal, 16)
                 }
             }
-            .safeAreaInset(edge: .bottom) {
-                if isSearchFocused {
-                    Button {
-                        focused = nil
-                    } label: {
-                        Text("Done")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 51)
-                            .background(RoundedRectangle(cornerRadius: 12).fill(Color.textPrimary))
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                    .background(.white)
-                }
-            }
+            .scrollDismissesKeyboard(.interactively)
             .onTapGesture {
-                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                focused = nil
             }
-            .allowsHitTesting(!showInviteModal)
 
-            if showInviteModal {
-                inviteOverlay.transition(.opacity).zIndex(1)
-            }
         }
     }
 
-    // MARK: - Invite Overlay
-
-    private var inviteOverlay: some View {
-        let digits = invitePhone.filter { $0.isNumber }
-        let canSend = digits.count >= 10
-
-        return ZStack {
-            Color.white.opacity(0.92)
-                .ignoresSafeArea()
-                .onTapGesture {
-                    withAnimation(.easeOut(duration: 0.25)) { showInviteModal = false }
-                }
-
-            VStack(spacing: 0) {
-                HStack {
-                    Spacer()
-                    Button {
-                        withAnimation(.easeOut(duration: 0.2)) { showInviteModal = false }
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(Color.textSecondary)
-                            .frame(width: 30, height: 30)
-                            .background(Circle().fill(Color.bgPrimary))
-                    }
-                }
-                .padding(.top, 16)
-                .padding(.trailing, 16)
-
-                if inviteSent {
-                    VStack(spacing: 16) {
-                        ZStack {
-                            Circle().fill(Color.textPrimary).frame(width: 72, height: 72)
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 28, weight: .bold))
-                                .foregroundColor(.white)
-                        }
-                        Text("Invite Sent!")
-                            .font(.system(size: 20, weight: .semibold))
-                            .foregroundColor(Color.textPrimary)
-                        Text("We texted \(formatPhoneDisplay(digits)) a link to join on Carry.")
-                            .font(.system(size: 15))
-                            .foregroundColor(Color.textTertiary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 20)
-                    }
-                    .padding(.vertical, 20)
-                    .padding(.bottom, 8)
-
-                    Button {
-                        withAnimation(.easeOut(duration: 0.2)) {
-                            inviteSent = false
-                            invitePhone = ""
-                            showInviteModal = false
-                        }
-                    } label: {
-                        Text("Done")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 48)
-                            .background(RoundedRectangle(cornerRadius: 12).fill(Color.textPrimary))
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 20)
-                } else {
-                    Text("Invite Player")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(Color.textPrimary)
-                        .padding(.bottom, 4)
-
-                    Text("They\u{2019}ll get a text with a link to download Carry and join your game.")
-                        .font(.system(size: 14))
-                        .foregroundColor(Color.textTertiary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 24)
-                        .padding(.bottom, 20)
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Phone Number")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(Color.textPrimary)
-                            .padding(.leading, 4)
-
-                        TextField("(555) 123-4567", text: $invitePhone)
-                            .font(.system(size: 16))
-                            .focused($focused, equals: .invitePhone)
-                            .keyboardType(.phonePad)
-                            .onChange(of: invitePhone) {
-                                invitePhone = invitePhone.filter { $0.isNumber || $0 == "+" }
-                            }
-                            .carryInput(focused: focused == .invitePhone, cornerRadius: 10)
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 20)
-
-                    Button {
-                        sendInvite()
-                    } label: {
-                        Text("Send Invite")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 48)
-                            .background(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .fill(canSend ? Color.textPrimary : Color.borderSubtle)
-                            )
-                    }
-                    .disabled(!canSend)
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 20)
-                }
-            }
-            .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(.white)
-                    .shadow(color: .black.opacity(0.15), radius: 20, y: 10)
-            )
-            .padding(.horizontal, 32)
-            .transition(.opacity.combined(with: .scale(scale: 0.96)))
-            .animation(.easeOut(duration: 0.25), value: inviteSent)
-        }
-    }
+    // Invite overlay removed — SMS invite is now inline below search results
 
     // MARK: - Online Search
 
@@ -607,25 +462,18 @@ struct ManageMembersSheet: View {
             onlineSearchResults = []
         } label: {
             HStack(spacing: 12) {
-                ZStack {
-                    Circle().fill(Color.pendingBg)
-                    Circle().strokeBorder(Color.pendingBorder, lineWidth: 1.5)
-                    Text(profile.initials)
-                        .font(.custom("ANDONESI-Regular", size: 17))
-                        .foregroundColor(Color.pendingFill)
-                }
-                .frame(width: 40, height: 40)
+                PlayerAvatar(player: Player(from: profile), size: 34)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("\(profile.firstName) \(profile.lastName)")
-                        .font(.system(size: 16))
+                    Text("\(profile.firstName) \(profile.lastName)".trimmingCharacters(in: .whitespaces))
+                        .font(.carry.bodySemibold)
                         .foregroundColor(Color.textPrimary)
                     let subtitle = [profile.homeClub, profile.handicap != 0 ? String(format: "%.1f", profile.handicap) : nil]
-                        .compactMap { $0 }.joined(separator: " \u{00B7} ")
+                        .compactMap { $0 }.joined(separator: " · ")
                     if !subtitle.isEmpty {
                         Text(subtitle)
-                            .font(.system(size: 13))
-                            .foregroundColor(Color.textSecondary)
+                            .font(.carry.bodySM)
+                            .foregroundColor(Color(hexString: "#BFC0C2"))
                     }
                 }
                 Spacer()
@@ -639,15 +487,13 @@ struct ManageMembersSheet: View {
                             Capsule().fill(Color.pendingBg)
                                 .overlay(Capsule().strokeBorder(Color.pendingBorder, lineWidth: 1))
                         )
-                } else {
-                    Image(systemName: "plus.circle")
-                        .font(.system(size: 18))
-                        .foregroundColor(Color.textDisabled)
                 }
             }
+            .padding(.horizontal, 15)
             .padding(.vertical, 10)
-            .padding(.horizontal, 14)
-            .background(RoundedRectangle(cornerRadius: 12).fill(isAlreadyAdded ? Color.bgSecondary : .white))
+            .frame(height: 58)
+            .background(RoundedRectangle(cornerRadius: 14).fill(isAlreadyAdded ? Color.bgSecondary : .white))
+            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.borderLight, lineWidth: 1))
         }
         .buttonStyle(.plain)
         .disabled(isAlreadyAdded)

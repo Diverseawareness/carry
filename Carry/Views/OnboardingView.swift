@@ -12,18 +12,17 @@ struct OnboardingView: View {
     // username fields removed — hidden for now
     @State private var ghinNumber = ""
     @State private var handicapText = ""
+    @State private var showHCPicker = false
+    @State private var hcPickerValue: Double = 0
+    @State private var hcPickerIsPlus: Bool = false
     enum OBField: Hashable { case firstName, lastName, clubSearch, ghinNumber, handicap }
     @FocusState private var obFocused: OBField?
     @State private var didPreFill = false
     @State private var hasAppleName = false
     @State private var progressReady = false
+    @State private var notificationRequested = false
 
-    // Photo picker
-    @State private var selectedPhoto: UIImage? = nil
-    @State private var photoItem: PhotosPickerItem? = nil
-    @State private var photoCropImage: UIImage? = nil  // image awaiting crop
-    @State private var showPhotoOptions = false
-    @State private var showCamera = false
+    // Photo picker removed — users add photo from profile settings
 
     // Golf club
     @State private var clubSearchText = ""
@@ -33,44 +32,13 @@ struct OnboardingView: View {
     @State private var selectedClub: GolfCourseResult? = nil
     @State private var isClubMember = true   // default: Club Member selected
 
-    private var totalSteps: Int { hasAppleName ? 2 : 3 }
+    private var totalSteps: Int { hasAppleName ? 3 : 4 }
     private var isGolfProfileStep: Bool {
         hasAppleName ? step == 0 : step == 1
     }
 
 
-    /// Filter handicap text: digits + one decimal, max 1 decimal place, capped at 54.0
-    /// Allows 0…54.0 or +0.1…+10.0 (plus handicap) with one decimal place.
-    /// In golf, "+2.5" means better-than-scratch — stored as -2.5 internally.
-    private func filterHandicap(_ input: String) -> String {
-        var filtered = ""
-        var hasDecimal = false
-        var hasPlus = false
-        var decimalDigits = 0
-        for ch in input {
-            if ch == "+" && filtered.isEmpty && !hasPlus {
-                hasPlus = true
-                filtered.append(ch)
-            } else if (ch == "." || ch == ",") && !hasDecimal {
-                hasDecimal = true
-                filtered.append(".")  // normalize comma to dot
-            } else if ch.isNumber {
-                if hasDecimal {
-                    guard decimalDigits < 1 else { continue }
-                    filtered.append(ch)
-                    decimalDigits += 1
-                } else {
-                    filtered.append(ch)
-                }
-            }
-        }
-        let numericStr = filtered.hasPrefix("+") ? String(filtered.dropFirst()) : filtered
-        if let value = Double(numericStr) {
-            if hasPlus && value > 10.0 { filtered = "+10.0" }
-            else if !hasPlus && value > 54.0 { filtered = "54.0" }
-        }
-        return filtered
-    }
+    // Uses shared filterHandicapInput() from Player.swift
 
     /// Parses handicap text to Double. "+5.2" → -5.2 (plus handicap stored negative).
     private func parseHandicap(_ text: String) -> Double {
@@ -111,6 +79,7 @@ struct OnboardingView: View {
                         switch step {
                         case 0: golfProfileStep
                         case 1: notificationStep
+                        case 2: disclaimerStep
                         default: EmptyView()
                         }
                     } else {
@@ -119,6 +88,7 @@ struct OnboardingView: View {
                         case 0: nameStep
                         case 1: golfProfileStep
                         case 2: notificationStep
+                        case 3: disclaimerStep
                         default: EmptyView()
                         }
                     }
@@ -137,26 +107,6 @@ struct OnboardingView: View {
                 }
             }
 
-            // Full-screen crop overlay
-            if let cropImage = photoCropImage {
-                ImageCropView(
-                    image: cropImage,
-                    onSave: { cropped in
-                        selectedPhoto = cropped
-                        withAnimation(.easeOut(duration: 0.2)) {
-                            photoCropImage = nil
-                        }
-                    },
-                    onCancel: {
-                        photoItem = nil
-                        withAnimation(.easeOut(duration: 0.2)) {
-                            photoCropImage = nil
-                        }
-                    }
-                )
-                .transition(.opacity)
-                .ignoresSafeArea()
-            }
         }
         .onAppear {
             guard !didPreFill else { return }
@@ -182,6 +132,22 @@ struct OnboardingView: View {
                 progressReady = true
             }
         }
+        .sheet(isPresented: $showHCPicker) {
+            HandicapPickerSheet(
+                handicap: $hcPickerValue,
+                isPlus: $hcPickerIsPlus
+            )
+            .presentationDetents([.height(520)])
+            .presentationDragIndicator(.visible)
+            .onDisappear {
+                let absVal = abs(hcPickerValue)
+                if hcPickerIsPlus || hcPickerValue < 0 {
+                    handicapText = "+\(String(format: "%.1f", absVal))"
+                } else {
+                    handicapText = String(format: "%.1f", absVal)
+                }
+            }
+        }
     }
 
     // MARK: - Button Bar
@@ -191,8 +157,9 @@ struct OnboardingView: View {
     private var buttonBar: some View {
         HStack(spacing: 12) {
             // Left button (Skip / Back)
-            if step == 0 || step == totalSteps - 1 {
-                // First step and notification step — no back needed
+            let isNotifStep = hasAppleName ? step == 1 : step == 2
+            if step == 0 || step == totalSteps - 1 || isNotifStep {
+                // First step, notification step, and disclaimer step — no back, full-width button
                 EmptyView()
             } else {
                 // Back button
@@ -209,20 +176,24 @@ struct OnboardingView: View {
                 }
             }
 
-            // Right button (Next / Enable Notifications)
+            // Right button (Next / Enable Notifications / I Understand)
             Button {
-                if step == totalSteps - 1 {
-                    // Request permission — auto-advance when alert is dismissed
+                let isNotifStep = hasAppleName ? step == 1 : step == 2
+                if isNotifStep && !notificationRequested {
+                    // First tap: request permission, then change button to "Continue"
                     UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in
                         DispatchQueue.main.async {
-                            advance()
+                            notificationRequested = true
                         }
                     }
                 } else {
                     advance()
                 }
             } label: {
-                Text(step == totalSteps - 1 ? "Enable Notifications" : "Next")
+                let isNotifStep = hasAppleName ? step == 1 : step == 2
+                let isDisclaimerStep = step == totalSteps - 1
+                let label = isDisclaimerStep ? "I Understand" : isNotifStep ? (notificationRequested ? "Continue" : "Enable Notifications") : "Next"
+                Text(label)
                     .font(.carry.headlineBold)
                     .foregroundColor(continueEnabled ? .white : Color.textDisabled)
                     .frame(maxWidth: .infinity)
@@ -276,13 +247,16 @@ struct OnboardingView: View {
     }
 
     private func finishOnboarding() {
+        // Mark disclaimer as accepted (it's the last onboarding step now)
+        UserDefaults.standard.set(true, forKey: "disclaimerAccepted")
+
         authService.completeOnboarding(
             firstName: firstName.trimmingCharacters(in: .whitespaces),
             lastName: lastName.trimmingCharacters(in: .whitespaces),
             username: nil,
             ghinNumber: ghinNumber.isEmpty ? nil : ghinNumber,
             handicap: parseHandicap(handicapText),
-            photo: selectedPhoto,
+            photo: nil,
             homeClub: selectedClub?.clubName ?? selectedClub?.courseName,
             homeClubId: selectedClub?.id,
             isClubMember: isClubMember
@@ -368,19 +342,22 @@ struct OnboardingView: View {
                         .foregroundColor(Color.textPrimary)
                         .padding(.leading, 4)
 
-                    TextField("e.g. 12.4", text: $handicapText)
-                        .font(.system(size: 16))
-                        .focused($obFocused, equals: .handicap)
-                        .keyboardType(.decimalPad)
-                        .onChange(of: handicapText) {
-                            let filtered = filterHandicap(handicapText)
-                            if filtered != handicapText {
-                                DispatchQueue.main.async {
-                                    handicapText = filtered
-                                }
-                            }
+                    Button {
+                        obFocused = nil
+                        let val = parseHandicap(handicapText)
+                        hcPickerValue = val
+                        hcPickerIsPlus = val < 0
+                        showHCPicker = true
+                    } label: {
+                        HStack {
+                            Text(handicapText.isEmpty ? "e.g. 12.4" : handicapText)
+                                .font(.system(size: 16))
+                                .foregroundColor(handicapText.isEmpty ? Color.textDisabled : Color.textPrimary)
+                            Spacer()
                         }
-                        .carryInput(focused: obFocused == .handicap)
+                        .carryInput(focused: false)
+                    }
+                    .buttonStyle(.plain)
                 }
                 .id("handicapSection")
 
@@ -688,20 +665,22 @@ struct OnboardingView: View {
 
             // Mock notification preview card
             HStack(alignment: .top, spacing: 12) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 9)
-                        .fill(Color.successBgLight)
-                        .frame(width: 38, height: 38)
-                    Text("$")
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundColor(Color(hexString: "#1B7A14"))
-                }
+                Image("carry-glyph")
+                    .resizable()
+                    .renderingMode(.original)
+                    .scaledToFit()
+                    .frame(width: 28, height: 28)
+                    .padding(5)
+                    .background(
+                        RoundedRectangle(cornerRadius: 9)
+                            .fill(Color.successBgLight)
+                    )
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Tee time in 5 minutes")
+                    Text("Your Round is Live!")
                         .font(.system(size: 15, weight: .bold))
                         .foregroundColor(Color(hexString: "#2A2A2A"))
-                    Text("Start Friday Meeting so your players can join the scorecard.")
+                    Text("Open your scorecard now")
                         .font(.system(size: 13))
                         .foregroundColor(Color(hexString: "#2A2A2A"))
                         .lineLimit(2)
@@ -726,13 +705,13 @@ struct OnboardingView: View {
 
             // Benefits
             VStack(alignment: .leading, spacing: 24) {
-                notificationBenefit("Tee time reminders before your round")
+                notificationBenefit("Get alerted when you're invited to a game")
                     .opacity(notifShowBenefits[0] ? 1 : 0)
                     .offset(y: notifShowBenefits[0] ? 0 : 16)
-                notificationBenefit("Know when your game goes LIVE")
+                notificationBenefit("Get notified when it's time to tee off")
                     .opacity(notifShowBenefits[1] ? 1 : 0)
                     .offset(y: notifShowBenefits[1] ? 0 : 16)
-                notificationBenefit("See when skins are won in real time")
+                notificationBenefit("See live results as they come in")
                     .opacity(notifShowBenefits[2] ? 1 : 0)
                     .offset(y: notifShowBenefits[2] ? 0 : 16)
             }
@@ -777,6 +756,60 @@ struct OnboardingView: View {
                 .font(.system(size: 18, weight: .medium))
                 .foregroundColor(Color(hexString: "#2A2A2A"))
                 .tracking(-0.23)
+        }
+    }
+
+    // MARK: - Disclaimer Step (last step of onboarding)
+
+    private var disclaimerStep: some View {
+        VStack(spacing: 0) {
+            Spacer()
+
+            Image("disclaimer-alert")
+                .resizable()
+                .renderingMode(.original)
+                .scaledToFit()
+                .frame(width: 80, height: 80)
+                .padding(.bottom, 24)
+
+            Text("Carry is a Scorekeeper")
+                .font(.system(size: 28, weight: .bold))
+                .foregroundColor(Color.textPrimary)
+                .multilineTextAlignment(.center)
+                .padding(.bottom, 32)
+
+            VStack(alignment: .leading, spacing: 20) {
+                disclaimerBullet("Dollar amounts are for scorekeeping and calculating winnings only")
+                disclaimerBullet("No real money is processed, held, or transferred through Carry")
+                disclaimerBullet("Players settle up independently and are responsible for complying with local laws")
+            }
+            .padding(.horizontal, 32)
+
+            Spacer()
+
+            // Legal links
+            HStack(spacing: 4) {
+                Link("Terms of Service", destination: URL(string: "https://carryapp.site/terms.html")!)
+                Text("and")
+                    .foregroundColor(Color.textSecondary)
+                Link("Privacy Policy", destination: URL(string: "https://carryapp.site/privacy.html")!)
+            }
+            .font(.system(size: 13))
+            .foregroundColor(Color.textTertiary)
+            .padding(.bottom, 8)
+        }
+    }
+
+    private func disclaimerBullet(_ text: String) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: "xmark.circle.fill")
+                .font(.system(size: 20))
+                .foregroundColor(Color(hexString: "#BCF0B5"))
+                .frame(width: 24)
+            Text(text)
+                .font(.system(size: 16, weight: .medium))
+                .foregroundColor(Color.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }
