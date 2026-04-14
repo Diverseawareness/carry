@@ -28,6 +28,7 @@ struct RoundCompleteView: View {
     @State private var venmoIndex: Int = 0
     @State private var showCreateGroupCard = false
     @State private var showPaywall = false
+    @State private var roundStory: RoundStory?
 
     // MARK: - Body
 
@@ -75,13 +76,17 @@ struct RoundCompleteView: View {
         .ignoresSafeArea(.container, edges: .bottom)
         .onAppear {
             startAnimationSequence()
+            generateRoundStory()
         }
         .sheet(isPresented: $showShareSheet) {
             if let image = shareCardImage {
-                ShareSheet(activityItems: [
-                    image,
-                    "Check out our skins game results! Get Carry: https://carryapp.site" as String
-                ])
+                let caption: String = {
+                    if let story = roundStory {
+                        return story.shareText + "\n\nTracked with Carry — carryapp.site"
+                    }
+                    return "Check out our skins game results! Get Carry: https://carryapp.site"
+                }()
+                ShareSheet(activityItems: [image, caption])
             }
         }
         .sheet(isPresented: $showPaywall) {
@@ -454,6 +459,27 @@ struct RoundCompleteView: View {
                         }
                     }
 
+                    // Round Story + Stats
+                    if pendingSkins.isEmpty, let story = roundStory {
+                        RoundStoryView(
+                            story: story,
+                            cachedSkins: viewModel.cachedSkins,
+                            allPlayers: viewModel.allPlayers,
+                            moneyTotals: viewModel.moneyTotals(),
+                            skinsWonByPlayer: viewModel.skinsWonByPlayer(),
+                            skinValue: viewModel.skinValue,
+                            currentUserId: viewModel.currentUserId
+                        )
+                        .padding(.top, 24)
+                        .opacity(showLeaderboard ? 1 : 0)
+                        .offset(y: showLeaderboard ? 0 : 8)
+                        .animation(
+                            .spring(response: 0.38, dampingFraction: 0.82)
+                                .delay(Double(winners.count) * 0.04 + 0.1),
+                            value: showLeaderboard
+                        )
+                    }
+
                     // "Pending" section
                     if !pendingSkins.isEmpty {
                         HStack(spacing: 7) {
@@ -746,6 +772,22 @@ struct RoundCompleteView: View {
     }
 
     // MARK: - Animation Sequence
+
+    private func generateRoundStory() {
+        let detector = StoryPatternDetector(
+            cachedSkins: viewModel.cachedSkins,
+            allPlayers: viewModel.allPlayers,
+            moneyTotals: viewModel.moneyTotals(),
+            skinsWonByPlayer: viewModel.skinsWonByPlayer(),
+            pot: viewModel.pot,
+            skinValue: viewModel.skinValue,
+            holes: viewModel.holes
+        )
+        let patterns = detector.detectPatterns()
+        // Stable seed from round ID (not Swift hashValue which changes across launches)
+        let seed = viewModel.config.id.utf8.reduce(0) { $0 &* 31 &+ Int($1) }
+        roundStory = StoryTemplateEngine().generateStory(patterns: patterns, seed: seed)
+    }
 
     private func startAnimationSequence() {
         UINotificationFeedbackGenerator().notificationOccurred(.success)
