@@ -49,7 +49,7 @@ struct GroupManagerView: View {
     @State private var editingName = ""
     @State private var teeTimesLinked = false  // true when times are set at consecutive intervals
     @State private var selectedTees: [String]  // tee color per group (e.g. "Combos", "Blues")
-    @State private var carriesEnabled = false  // carries toggle (off by default for multi-group)
+    @State private var carriesEnabled: Bool  // carries toggle (off by default for multi-group)
     @State private var scoringMode: ScoringMode = .everyone  // .single or .everyone (on by default)
     @State private var winningsDisplay: String = "gross"  // "gross" or "net" — how winnings show in UI
     @State private var handicapPercentage: Double = 1.0  // 1.0 = 100%, 0.7 = 70%
@@ -100,7 +100,7 @@ struct GroupManagerView: View {
     /// Only the group creator can manage settings, players and tee times.
     private var isCreator: Bool { currentUserId == creatorId }
 
-    init(allMembers: [Player], selectedCourse: SelectedCourse? = nil, onCourseChanged: ((SelectedCourse) -> Void)? = nil, onTeeTimeChanged: ((Date?) -> Void)? = nil, onRecurrenceChanged: ((GameRecurrence?) -> Void)? = nil, initialTeeTime: Date? = nil, initialTeeTimes: [Date?]? = nil, initialBuyIn: Double = 0, initialDate: Date? = nil, initialRecurrence: GameRecurrence? = nil, preselected: Set<Int>? = nil, groupName: String = "The Friday Skins", currentUserId: Int = 1, creatorId: Int = 1, isLiveRound: Bool = false, roundStarted: Bool = false, roundHistory: [HomeRound] = [], onLeaveGroup: (() -> Void)? = nil, onDeleteGroup: (() -> Void)? = nil, scheduledLabel: String? = nil, onBack: (() -> Void)? = nil, supabaseGroupId: UUID? = nil, isQuickGame: Bool = false, showInviteCrewOnAppear: Bool = false, onGroupRefreshed: ((SavedGroup) -> Void)? = nil, onConfirm: @escaping (RoundConfig) -> Void) {
+    init(allMembers: [Player], selectedCourse: SelectedCourse? = nil, onCourseChanged: ((SelectedCourse) -> Void)? = nil, onTeeTimeChanged: ((Date?) -> Void)? = nil, onRecurrenceChanged: ((GameRecurrence?) -> Void)? = nil, initialTeeTime: Date? = nil, initialTeeTimes: [Date?]? = nil, initialBuyIn: Double = 0, initialDate: Date? = nil, initialRecurrence: GameRecurrence? = nil, initialCarriesEnabled: Bool = false, preselected: Set<Int>? = nil, groupName: String = "The Friday Skins", currentUserId: Int = 1, creatorId: Int = 1, isLiveRound: Bool = false, roundStarted: Bool = false, roundHistory: [HomeRound] = [], onLeaveGroup: (() -> Void)? = nil, onDeleteGroup: (() -> Void)? = nil, scheduledLabel: String? = nil, onBack: (() -> Void)? = nil, supabaseGroupId: UUID? = nil, isQuickGame: Bool = false, showInviteCrewOnAppear: Bool = false, onGroupRefreshed: ((SavedGroup) -> Void)? = nil, onConfirm: @escaping (RoundConfig) -> Void) {
         self._allMembers = State(initialValue: allMembers)
         self._currentCourse = State(initialValue: selectedCourse)
         // Cache API holes so they survive Supabase refreshes that lose hole data
@@ -156,6 +156,7 @@ struct GroupManagerView: View {
         _scorerIDs = State(initialValue: safeGrouped.map { $0.first?.id ?? 0 })
         _selectedTees = State(initialValue: Array(repeating: "Combos", count: groupCount))
         _buyInText = State(initialValue: initialBuyIn > 0 ? "\(Int(initialBuyIn))" : "")
+        _carriesEnabled = State(initialValue: initialCarriesEnabled)
         // Round date: use initialDate, or extract date from tee time, or default to today
         _roundDate = State(initialValue: initialDate ?? initialTeeTime ?? Date())
 
@@ -1701,7 +1702,7 @@ struct GroupManagerView: View {
             buyIn: Int(buyInText) ?? 0,
             gameType: "skins",
             skinRules: SkinRules(
-                net: isQuickGame && !storeService.isPremium ? false : true,
+                net: true,
                 carries: isQuickGame && !storeService.isPremium ? false : carriesEnabled,
                 outright: true,
                 handicapPercentage: handicapPercentage

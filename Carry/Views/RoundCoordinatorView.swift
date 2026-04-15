@@ -21,6 +21,7 @@ struct RoundCoordinatorView: View {
     var initialTeeTimes: [Date?]? = nil
     var initialRecurrence: GameRecurrence? = nil
     var initialBuyIn: Double
+    var initialCarriesEnabled: Bool = false
     var initialRoundConfig: RoundConfig?
     var initialDemoMode: RoundViewModel.DemoMode
     var roundHistory: [HomeRound]
@@ -53,6 +54,7 @@ struct RoundCoordinatorView: View {
         initialTeeTimes: [Date?]? = nil,
         initialRecurrence: GameRecurrence? = nil,
         initialBuyIn: Double = 0,
+        initialCarriesEnabled: Bool = false,
         initialRoundConfig: RoundConfig? = nil,
         initialDemoMode: RoundViewModel.DemoMode = .none,
         roundHistory: [HomeRound] = [],
@@ -81,6 +83,7 @@ struct RoundCoordinatorView: View {
         self.initialTeeTimes = initialTeeTimes
         self.initialRecurrence = initialRecurrence
         self.initialBuyIn = initialBuyIn
+        self.initialCarriesEnabled = initialCarriesEnabled
         self.initialRoundConfig = initialRoundConfig
         self.initialDemoMode = initialDemoMode
         self.roundHistory = roundHistory
@@ -152,7 +155,7 @@ struct RoundCoordinatorView: View {
                 GroupManagerView(allMembers: initialMembers, selectedCourse: selectedCourse, onCourseChanged: { course in
                     self.selectedCourse = course
                     self.onCourseSelected?(course)
-                }, onTeeTimeChanged: onTeeTimeChanged, onRecurrenceChanged: onRecurrenceChanged, initialTeeTime: initialTeeTime, initialTeeTimes: initialTeeTimes, initialBuyIn: initialBuyIn, initialRecurrence: initialRecurrence, groupName: groupName, currentUserId: currentUserId, creatorId: creatorId, isLiveRound: hasStartedRound, roundHistory: roundHistory, onLeaveGroup: onLeaveGroup, onDeleteGroup: onDeleteGroup, scheduledLabel: scheduledLabel, onBack: {
+                }, onTeeTimeChanged: onTeeTimeChanged, onRecurrenceChanged: onRecurrenceChanged, initialTeeTime: initialTeeTime, initialTeeTimes: initialTeeTimes, initialBuyIn: initialBuyIn, initialRecurrence: initialRecurrence, initialCarriesEnabled: initialCarriesEnabled, groupName: groupName, currentUserId: currentUserId, creatorId: creatorId, isLiveRound: hasStartedRound, roundHistory: roundHistory, onLeaveGroup: onLeaveGroup, onDeleteGroup: onDeleteGroup, scheduledLabel: scheduledLabel, onBack: {
                     if hasStartedRound {
                         // Return to scorecard without rebuilding config
                         withAnimation(.spring(response: 0.45, dampingFraction: 0.9)) {

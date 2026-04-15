@@ -6,6 +6,7 @@ final class StoreService: ObservableObject {
     @Published var isPremium: Bool = false
     @Published var products: [Product] = []
     @Published var isLoading: Bool = false
+    @Published var fetchError: String?
 
     private let productIDs: Set<String> = [
         "com.diverseawareness.carry.premium.annual",
@@ -26,16 +27,27 @@ final class StoreService: ObservableObject {
 
     // MARK: - Fetch Products
 
+    /// Fetches products from the App Store. Sets `fetchError` on failure so UI can show retry.
     func fetchProducts() async {
         isLoading = true
+        fetchError = nil
         defer { isLoading = false }
+
         do {
             let storeProducts = try await Product.products(for: productIDs)
-            products = storeProducts.sorted { $0.price > $1.price }
+            guard !storeProducts.isEmpty else {
+                fetchError = "No subscription options available right now. Please try again."
+                NSLog("[StoreService] Product.products returned empty for IDs: \(productIDs)")
+                return
+            }
+            // Sort annual first (longer period), then monthly. Avoid sorting by price
+            // (fragile across regions/currencies).
+            products = storeProducts.sorted { a, b in
+                a.id.contains("annual") && !b.id.contains("annual")
+            }
         } catch {
-            #if DEBUG
-            print("[StoreService] Failed to fetch products: \(error)")
-            #endif
+            fetchError = "Couldn't load subscription options. Check your connection and try again."
+            NSLog("[StoreService] Failed to fetch products: \(error.localizedDescription)")
         }
     }
 
@@ -66,13 +78,10 @@ final class StoreService: ObservableObject {
 
     // MARK: - Entitlements
 
+    /// Checks current subscription entitlements. Only grants premium when a valid
+    /// transaction exists — no auto-grant based on sandbox/TestFlight. Apple reviewers
+    /// test using sandbox accounts and must see the real paywall + purchase flow.
     func checkEntitlements() async {
-        // Auto-grant premium for TestFlight builds
-        if isTestFlight {
-            isPremium = true
-            return
-        }
-
         var foundEntitlement = false
         for await result in Transaction.currentEntitlements {
             if let transaction = try? Self.checkVerified(result),
@@ -84,22 +93,19 @@ final class StoreService: ObservableObject {
         isPremium = foundEntitlement
     }
 
-    /// Returns true when the app is installed via TestFlight (sandbox receipt)
-    private var isTestFlight: Bool {
-        guard let receiptURL = Bundle.main.appStoreReceiptURL else { return false }
-        return receiptURL.lastPathComponent == "sandboxReceipt"
-    }
-
     // MARK: - Transaction Listener
 
     private func listenForTransactions() -> Task<Void, Error> {
         Task.detached {
             for await result in Transaction.updates {
-                if let transaction = try? Self.checkVerified(result) {
+                do {
+                    let transaction = try Self.checkVerified(result)
                     await MainActor.run {
                         self.isPremium = self.productIDs.contains(transaction.productID)
                     }
                     await transaction.finish()
+                } catch {
+                    NSLog("[StoreService] Transaction verification failed: \(error.localizedDescription)")
                 }
             }
         }

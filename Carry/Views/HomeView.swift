@@ -545,7 +545,7 @@ struct HomeView: View {
                     } else {
                         let visibleRounds = storeService.isPremium
                             ? recentRounds
-                            : Array(recentRounds.prefix(3))
+                            : Array(recentRounds.prefix(1))
                         ForEach(visibleRounds) { round in
                             swipeToLeaveWrapper(round: round) {
                                 recentRoundCard(round)
@@ -553,7 +553,7 @@ struct HomeView: View {
                             .padding(.horizontal, 16)
                             .padding(.bottom, 8)
                         }
-                        if !storeService.isPremium && recentRounds.count > 3 {
+                        if !storeService.isPremium && recentRounds.count > 1 {
                             Button {
                                 showPaywall = true
                             } label: {

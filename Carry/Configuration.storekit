@@ -63,7 +63,11 @@
     {
       "id" : "carry_premium",
       "localizations" : [
-
+        {
+          "description" : "Unlock unlimited skins games and full round history.",
+          "displayName" : "Carry Premium",
+          "locale" : "en_US"
+        }
       ],
       "name" : "Carry Premium",
       "subscriptions" : [

@@ -44,6 +44,8 @@ struct QuickGameSheet: View {
     @State private var selectedCourse: SelectedCourse?
     @State private var buyInAmount: Double = 0
     @State private var handicapPct: Double = 1.0
+    @State private var carriesEnabled: Bool = false
+    @State private var showCarriesInfo: Bool = false
     @State private var groupCount: Int = 1
     @State private var slots: [[PlayerSlot]] = []
     @State private var isCreating = false
@@ -168,6 +170,7 @@ struct QuickGameSheet: View {
                     handicapAllowanceSection
                     teeTimeSection
                     buyInSection
+                    carriesSection
                     playerGroupsSection
                     continueButton
                 }
@@ -582,6 +585,62 @@ struct QuickGameSheet: View {
         }
     }
 
+    // MARK: - Carries Section
+
+    private var carriesSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Carries")
+                    .font(.carry.bodySMBold)
+                    .foregroundColor(Color.textPrimary)
+                if !storeService.isPremium {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 11))
+                        .foregroundColor(Color.textDisabled)
+                }
+            }
+            .padding(.leading, 4)
+
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Skins carry to the next hole")
+                        .font(.carry.bodySM)
+                        .foregroundColor(Color.textPrimary)
+                    if !storeService.isPremium {
+                        HStack(spacing: 4) {
+                            Image("premium-crown")
+                                .renderingMode(.template)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(height: 11)
+                                .foregroundColor(Color.goldDark)
+                            Text("Premium feature")
+                                .font(.carry.caption)
+                                .foregroundColor(Color.textDisabled)
+                        }
+                    }
+                }
+                Spacer()
+                Toggle("", isOn: $carriesEnabled)
+                    .labelsHidden()
+                    .tint(Color.textPrimary)
+                    .disabled(!storeService.isPremium)
+            }
+            .padding(.leading, 4)
+            .padding(.vertical, 14)
+            .padding(.horizontal, 16)
+            .background(RoundedRectangle(cornerRadius: 12).fill(.white))
+            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.borderLight, lineWidth: 1))
+        }
+        .padding(.horizontal, 24)
+        .padding(.bottom, 20)
+        .alert("What are Carries?", isPresented: $showCarriesInfo) {
+            Button("Got it", role: .cancel) {}
+        } message: {
+            Text("When no one wins a hole outright, the skin carries over and adds to the next hole's value. The next outright winner takes all accumulated skins.\n\nWhen off, tied holes are dead — no carryover.")
+        }
+    }
+
     // MARK: - Buy-In Section
 
     private var buyInSection: some View {
@@ -789,9 +848,17 @@ struct QuickGameSheet: View {
             VStack(alignment: .leading, spacing: 20) {
                 // Score Keeper section
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Score Keeper")
-                        .font(.carry.bodySMBold)
-                        .foregroundColor(Color.textPrimary)
+                    HStack {
+                        Text("Score Keeper")
+                            .font(.carry.bodySMBold)
+                            .foregroundColor(Color.textPrimary)
+                        Spacer()
+                        if groupIndex != 0 {
+                            Text("*Carry app required")
+                                .font(.carry.caption)
+                                .foregroundColor(Color.textDisabled)
+                        }
+                    }
 
                     ScorerAssignmentView(
                         scorer: scorerSlotBinding(groupIndex: groupIndex),
@@ -1282,7 +1349,8 @@ struct QuickGameSheet: View {
             handicapPercentage: handicapPct,
             isQuickGame: true,
             teeTimes: teeTimes.isEmpty ? nil : teeTimes,
-            teeTimeInterval: consecutiveInterval > 0 ? consecutiveInterval : nil
+            teeTimeInterval: consecutiveInterval > 0 ? consecutiveInterval : nil,
+            carriesEnabled: storeService.isPremium ? carriesEnabled : false
         )
 
         isCreating = false
