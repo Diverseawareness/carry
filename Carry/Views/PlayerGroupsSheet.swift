@@ -289,9 +289,17 @@ struct PlayerGroupsSheet: View {
             VStack(alignment: .leading, spacing: 20) {
                 // Score Keeper
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Score Keeper")
-                        .font(.carry.bodySMBold)
-                        .foregroundColor(Color.textPrimary)
+                    HStack {
+                        Text("Score Keeper")
+                            .font(.carry.bodySMBold)
+                            .foregroundColor(Color.textPrimary)
+                        Spacer()
+                        if groupIndex != 0 {
+                            Text("*Carry app required")
+                                .font(.carry.caption)
+                                .foregroundColor(Color.textDisabled)
+                        }
+                    }
 
                     if groupIndex < scorerSlots.count {
                         let scorerColors = ["#4CAF50", "#2196F3", "#FF9800", "#E91E63", "#9C27B0", "#00BCD4", "#FF5722", "#607D8B"]

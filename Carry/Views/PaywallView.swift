@@ -44,10 +44,6 @@ struct PaywallView: View {
                         Text("Go Premium")
                             .font(.system(size: 28, weight: .heavy))
                             .foregroundColor(Color.textPrimary)
-
-                        Text("Unlock the full Carry experience")
-                            .font(.system(size: 16))
-                            .foregroundColor(Color.textSubtle)
                     }
                     .padding(.top, 8)
 
@@ -58,7 +54,13 @@ struct PaywallView: View {
                         featureRow("All-time season leaderboard")
                     }
                     .padding(.horizontal, 36)
-                    .padding(.top, 32)
+                    .padding(.top, 24)
+
+                    // Extras
+                    Text("+ Custom handicap % and Skins Carries")
+                        .font(.system(size: 13))
+                        .foregroundColor(Color.textSecondary)
+                        .padding(.top, 14)
 
                     // Legal links
                     HStack(spacing: 4) {
@@ -69,66 +71,92 @@ struct PaywallView: View {
                     }
                     .font(.system(size: 13))
                     .foregroundColor(Color.goldDark)
-                    .padding(.top, 32)
-
-                    // Plan cards
-                    VStack(spacing: 12) {
-                        // Annual
-                        planCard(
-                            type: .annual,
-                            title: "Annual",
-                            subtitle: annualSubtitle,
-                            detail: "Best value — full season coverage"
-                        )
-
-                        // Monthly
-                        planCard(
-                            type: .monthly,
-                            title: "Monthly",
-                            subtitle: monthlySubtitle,
-                            detail: "Full access, cancel anytime"
-                        )
-                    }
-                    .padding(.horizontal, 20)
                     .padding(.top, 20)
 
-                    if storeService.products.isEmpty && !storeService.isLoading {
-                        Text("Unable to load subscription options")
-                            .font(.system(size: 14))
-                            .foregroundColor(Color.textSecondary)
-                            .padding(.top, 16)
+                    // Plan cards — only shown once products have loaded
+                    if !storeService.products.isEmpty {
+                        VStack(spacing: 12) {
+                            if storeService.annualProduct != nil {
+                                planCard(
+                                    type: .annual,
+                                    title: "Annual",
+                                    subtitle: annualSubtitle,
+                                    detail: "Best value — full season coverage"
+                                )
+                            }
+                            if storeService.monthlyProduct != nil {
+                                planCard(
+                                    type: .monthly,
+                                    title: "Monthly",
+                                    subtitle: monthlySubtitle,
+                                    detail: "Full access, cancel anytime"
+                                )
+                            }
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.top, 20)
                     }
 
+                    // Loading state
                     if storeService.isLoading {
                         ProgressView()
-                            .padding(.top, 16)
+                            .padding(.top, 24)
+                        Text("Loading subscription options…")
+                            .font(.system(size: 14))
+                            .foregroundColor(Color.textSecondary)
+                            .padding(.top, 8)
                     }
 
-                    // Selected plan summary
-                    Text(ctaSummary)
-                        .font(.system(size: 14))
-                        .foregroundColor(Color.textSecondary)
-                        .padding(.top, 20)
+                    // Error state with retry
+                    if !storeService.isLoading && storeService.products.isEmpty {
+                        VStack(spacing: 12) {
+                            Text(storeService.fetchError ?? "Unable to load subscription options.")
+                                .font(.system(size: 14))
+                                .foregroundColor(Color.textSecondary)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 32)
 
-                    // CTA Button
-                    Button {
-                        purchaseSelected()
-                    } label: {
-                        Text("Try It Free")
-                            .font(.system(size: 18, weight: .bold))
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 56)
-                            .background(
-                                RoundedRectangle(cornerRadius: 16)
-                                    .fill(Color.textPrimary)
-                            )
+                            Button {
+                                Task { await storeService.fetchProducts() }
+                            } label: {
+                                Text("Try Again")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 24)
+                                    .padding(.vertical, 10)
+                                    .background(RoundedRectangle(cornerRadius: 12).fill(Color.textPrimary))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(.top, 24)
                     }
-                    .buttonStyle(.plain)
-                    .disabled(isPurchasing || storeService.products.isEmpty)
-                    .opacity(isPurchasing ? 0.6 : 1)
-                    .padding(.horizontal, 20)
-                    .padding(.top, 12)
+
+                    // Selected plan summary + CTA (only when products loaded)
+                    if !storeService.products.isEmpty {
+                        Text(ctaSummary)
+                            .font(.system(size: 14))
+                            .foregroundColor(Color.textSecondary)
+                            .padding(.top, 20)
+
+                        Button {
+                            purchaseSelected()
+                        } label: {
+                            Text("Try It Free")
+                                .font(.system(size: 18, weight: .bold))
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 56)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 16)
+                                        .fill(Color.textPrimary)
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isPurchasing)
+                        .opacity(isPurchasing ? 0.6 : 1)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 12)
+                    }
 
                     if isPurchasing {
                         ProgressView()
@@ -136,23 +164,13 @@ struct PaywallView: View {
                     }
 
                     // Auto-renewal disclosure (required by App Store Guideline 3.1.2)
-                    Text("Subscription automatically renews unless cancelled at least 24 hours before the end of the current period. Manage in Settings > Apple ID > Subscriptions.")
+                    Text("Payment will be charged to your Apple ID at confirmation of purchase. Your 7-day free trial converts to a paid subscription that renews automatically unless cancelled at least 24 hours before the end of the current period. Manage in Settings > Apple ID > Subscriptions.")
                         .font(.system(size: 11))
                         .foregroundColor(Color.textDisabled)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 32)
                         .padding(.top, 16)
-
-                    // Restore
-                    Button {
-                        Task { await storeService.restorePurchases() }
-                    } label: {
-                        Text("Restore Purchases")
-                            .font(.system(size: 14))
-                            .foregroundColor(Color.textTertiary)
-                    }
-                    .padding(.top, 12)
-                    .padding(.bottom, 40)
+                        .padding(.bottom, 40)
                 }
             }
         }
@@ -257,17 +275,13 @@ struct PaywallView: View {
     // MARK: - Computed Text
 
     private var annualSubtitle: String {
-        if let product = storeService.annualProduct {
-            return "7 days free, then \(product.displayPrice)/year"
-        }
-        return "7 days free, then $29.99/year"
+        guard let product = storeService.annualProduct else { return "" }
+        return "7 days free, then \(product.displayPrice)/year"
     }
 
     private var monthlySubtitle: String {
-        if let product = storeService.monthlyProduct {
-            return "7 days free, then \(product.displayPrice)/month"
-        }
-        return "7 days free, then $4.99/month"
+        guard let product = storeService.monthlyProduct else { return "" }
+        return "7 days free, then \(product.displayPrice)/month"
     }
 
     private var ctaSummary: String {

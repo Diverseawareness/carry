@@ -169,11 +169,12 @@ struct ProfileView: View {
                             .frame(height: 56)
                             .background(
                                 RoundedRectangle(cornerRadius: 16)
-                                    .stroke(Color.deepNavy, lineWidth: 1.5)
+                                    .strokeBorder(Color.deepNavy, lineWidth: 1.5)
                             )
                         }
                         .buttonStyle(.plain)
                         .padding(.horizontal, 20)
+                        .padding(.vertical, 1)
                     }
 
                     // MARK: Account

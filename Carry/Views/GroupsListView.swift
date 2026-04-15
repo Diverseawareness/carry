@@ -530,6 +530,7 @@ struct GroupsListView: View {
             initialTeeTimes: group.teeTimes,
             initialRecurrence: group.recurrence,
             initialBuyIn: group.buyInPerPlayer,
+            initialCarriesEnabled: group.carriesEnabled,
             initialRoundConfig: roundConfig,
             roundHistory: group.roundHistory,
             onExit: {
@@ -1593,6 +1594,7 @@ struct SavedGroup: Identifiable, Equatable {
         && lhs.handicapPercentage == rhs.handicapPercentage
         && lhs.isQuickGame == rhs.isQuickGame
         && lhs.scorerIds == rhs.scorerIds
+        && lhs.carriesEnabled == rhs.carriesEnabled
     }
     let id: UUID
     let name: String
@@ -1613,6 +1615,7 @@ struct SavedGroup: Identifiable, Equatable {
     var teeTimes: [Date?]? = nil // per-group tee times (Quick Game consecutive)
     var teeTimeInterval: Int? = nil // minutes between consecutive tee times
     var winningsDisplay: String = "gross" // "gross" or "net" — how winnings are shown
+    var carriesEnabled: Bool = false // whether carries are enabled for this game
 
     /// Human-readable scheduled date, e.g. "Every Friday · 8:00 AM" or "Sat, Mar 14 · 8:24 AM"
     var scheduledLabel: String? {
