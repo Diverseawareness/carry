@@ -1487,6 +1487,7 @@ struct NotificationsSheet: View {
     @AppStorage("notif_gameAlerts") private var gameAlerts = true
     @AppStorage("notif_liveScoring") private var liveScoring = true
     @AppStorage("notif_groupActivity") private var groupActivity = true
+    @AppStorage("notif_liveActivity") private var liveActivity = true
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1511,6 +1512,30 @@ struct NotificationsSheet: View {
                 subtitle: "Skins won during a round, all groups active",
                 isOn: $liveScoring
             )
+
+            notifDivider
+
+            // Live Activity toggle (lock screen + Dynamic Island banner)
+            notifToggle(
+                title: "Live Activity",
+                subtitle: "Round status on your lock screen & Dynamic Island",
+                isOn: $liveActivity
+            )
+
+            // Inline hint — iOS has its own Live Activities kill switch we can't override.
+            Button {
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(url)
+                }
+            } label: {
+                Text("Also requires Live Activities enabled in ")
+                    + Text("iOS Settings").underline()
+            }
+            .font(.carry.caption)
+            .foregroundColor(Color.textSecondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 12)
 
             notifDivider
 

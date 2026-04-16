@@ -38,6 +38,14 @@ serve(async (req) => {
       if (type === "UPDATE" && old_record && record.scorer_id !== old_record.scorer_id && record.scorer_id) {
         return await handleScorerChanged(supabase, record, jwt);
       }
+      // End Game (destructive): status = 'cancelled' set by creator. Notify everyone.
+      if (type === "UPDATE" && record.status === "cancelled" && old_record?.status !== "cancelled") {
+        return await handleGameDeleted(supabase, record, jwt);
+      }
+      // End Game & Save Results: status = 'concluded' + force_completed flipped true.
+      if (type === "UPDATE" && record.force_completed === true && old_record?.force_completed !== true && record.status === "concluded") {
+        return await handleGameForceEnded(supabase, record, jwt);
+      }
       if (record.status === "completed") {
         // ROUND ENDED — notify all group members
         return await handleRoundEnded(supabase, record, jwt);
@@ -347,6 +355,155 @@ async function handleRoundEnded(supabase: any, record: any, jwt: string) {
   }
 
   return new Response(JSON.stringify({ message: `Round ended push sent to ${sent} players` }), { status: 200 });
+}
+
+// ─── Game Deleted Push (creator ended with no scores saved) ─────
+
+async function handleGameDeleted(supabase: any, record: any, jwt: string) {
+  const groupId = record.group_id;
+  const creatorId = record.created_by;
+
+  // Creator name for copy
+  const { data: creatorProfile } = await supabase
+    .from("profiles")
+    .select("display_name")
+    .eq("id", creatorId)
+    .single();
+  const creatorName = creatorProfile?.display_name?.split(" ")[0] || "The host";
+
+  // Course name for copy
+  const { data: round } = await supabase
+    .from("rounds")
+    .select("courses(name)")
+    .eq("id", record.id)
+    .single();
+  const courseName = round?.courses?.name || "the course";
+
+  // All active group members except the creator (Quick Games have no group)
+  let playerIds: string[] = [];
+  if (groupId) {
+    const { data: members } = await supabase
+      .from("group_members")
+      .select("player_id")
+      .eq("group_id", groupId)
+      .eq("status", "active")
+      .neq("player_id", creatorId);
+    playerIds = (members || []).map((m: any) => m.player_id);
+  } else {
+    // Quick Game: notify every round_player except creator
+    const { data: roundPlayers } = await supabase
+      .from("round_players")
+      .select("player_id")
+      .eq("round_id", record.id)
+      .eq("status", "accepted")
+      .neq("player_id", creatorId);
+    playerIds = (roundPlayers || []).map((r: any) => r.player_id);
+  }
+
+  if (playerIds.length === 0) {
+    return new Response(JSON.stringify({ message: "No members to notify" }), { status: 200 });
+  }
+
+  const { data: profiles } = await supabase
+    .from("profiles")
+    .select("id, device_token")
+    .in("id", playerIds);
+
+  const apnsPayload = {
+    aps: {
+      alert: {
+        title: "Game Ended",
+        body: `${creatorName} ended the game at ${courseName}. No scores were saved.`,
+      },
+      sound: "default",
+    },
+    groupId: groupId,
+    roundId: record.id,
+    type: "gameDeleted",
+  };
+
+  let sent = 0;
+  for (const profile of (profiles || [])) {
+    if (profile.device_token) {
+      await sendPush(profile.device_token, apnsPayload, jwt);
+      sent++;
+    }
+  }
+
+  return new Response(JSON.stringify({ message: `Game deleted push sent to ${sent} players` }), { status: 200 });
+}
+
+// ─── Game Force-Ended Push (partial scores saved, results ready) ─
+
+async function handleGameForceEnded(supabase: any, record: any, jwt: string) {
+  const groupId = record.group_id;
+  const creatorId = record.created_by;
+
+  const { data: creatorProfile } = await supabase
+    .from("profiles")
+    .select("display_name")
+    .eq("id", creatorId)
+    .single();
+  const creatorName = creatorProfile?.display_name?.split(" ")[0] || "The host";
+
+  const { data: round } = await supabase
+    .from("rounds")
+    .select("courses(name)")
+    .eq("id", record.id)
+    .single();
+  const courseName = round?.courses?.name || "the course";
+
+  // All active group members except the creator (Quick Games use round_players)
+  let playerIds: string[] = [];
+  if (groupId) {
+    const { data: members } = await supabase
+      .from("group_members")
+      .select("player_id")
+      .eq("group_id", groupId)
+      .eq("status", "active")
+      .neq("player_id", creatorId);
+    playerIds = (members || []).map((m: any) => m.player_id);
+  } else {
+    const { data: roundPlayers } = await supabase
+      .from("round_players")
+      .select("player_id")
+      .eq("round_id", record.id)
+      .eq("status", "accepted")
+      .neq("player_id", creatorId);
+    playerIds = (roundPlayers || []).map((r: any) => r.player_id);
+  }
+
+  if (playerIds.length === 0) {
+    return new Response(JSON.stringify({ message: "No members to notify" }), { status: 200 });
+  }
+
+  const { data: profiles } = await supabase
+    .from("profiles")
+    .select("id, device_token")
+    .in("id", playerIds);
+
+  const apnsPayload = {
+    aps: {
+      alert: {
+        title: "Final Results",
+        body: `${creatorName} ended the game at ${courseName}. Tap to see final results.`,
+      },
+      sound: "default",
+    },
+    groupId: groupId,
+    roundId: record.id,
+    type: "gameForceEnded",
+  };
+
+  let sent = 0;
+  for (const profile of (profiles || [])) {
+    if (profile.device_token) {
+      await sendPush(profile.device_token, apnsPayload, jwt);
+      sent++;
+    }
+  }
+
+  return new Response(JSON.stringify({ message: `Game force-ended push sent to ${sent} players` }), { status: 200 });
 }
 
 // ─── Score Dispute Push ─────────────────────────────────────────

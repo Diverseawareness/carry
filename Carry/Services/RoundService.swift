@@ -180,6 +180,36 @@ final class RoundService {
             .execute()
     }
 
+    // MARK: - End Game (creator-only)
+
+    /// End Game (destructive): marks the round cancelled + force_completed, deletes scores.
+    /// The UPDATE fires the push trigger which fans `gameDeleted` out to every participant.
+    /// Preserves the round row for history; status = 'cancelled' is the canonical signal.
+    func endGameDestructively(roundId: UUID) async throws {
+        // Score delete first — if this fails, the round is still active (safer rollback).
+        try await deleteScores(roundId: roundId)
+        try await client.from("rounds")
+            .update([
+                "status": "cancelled",
+                "force_completed": "true",
+            ])
+            .eq("id", value: roundId.uuidString)
+            .execute()
+    }
+
+    /// End Game & Save Results: concludes the round with whatever scores exist, flips
+    /// force_completed so every participant's client knows this was a forced end and
+    /// should auto-show final results. Push trigger fans `gameForceEnded` out.
+    func forceEndRoundWithResults(roundId: UUID) async throws {
+        try await client.from("rounds")
+            .update([
+                "status": "concluded",
+                "force_completed": "true",
+            ])
+            .eq("id", value: roundId.uuidString)
+            .execute()
+    }
+
     func fetchRoundPlayers(roundId: UUID) async throws -> [RoundPlayerDTO] {
         try await client.from("round_players")
             .select()

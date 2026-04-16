@@ -19,10 +19,16 @@ struct ScorecardView: View {
     @State private var showRoundComplete = false
     @State private var roundCompleteCollapsed = false
     @State private var showOptionsMenu = false
-    @State private var showEndRoundAlert = false
-    @State private var showEndShareRoundAlert = false
+    // Cancel Round (non-destructive black style): quiet hard-delete, no explicit push.
     @State private var showCancelRoundAlert = false
-    @State private var showRoundCancelledAlert = false
+    // End Game (destructive): deletes scores, marks round cancelled, notifies all.
+    @State private var showEndGameAlert = false
+    // End Game & Save Results: force-concludes with partial scores for all groups.
+    @State private var showEndGameSaveAlert = false
+    // Shown to non-creators when the creator destructively ended the game.
+    @State private var showGameEndedAlert = false
+    // Generic failure alert for End Game network/server errors (offline, auth, etc.)
+    @State private var showEndGameFailedAlert = false
     @State private var showCourseSelector = false
     @State private var showScorerPicker = false
     @State private var activeToast: GameEvent?
@@ -182,58 +188,6 @@ struct ScorecardView: View {
             guard !events.isEmpty, activeToast == nil else { return }
             showNextToast()
         }
-        .alert("End Round?", isPresented: $showEndRoundAlert) {
-            Button("Cancel", role: .cancel) { }
-            Button("End Round", role: .destructive) {
-                Task {
-                    viewModel.forceCompleted = true
-                    viewModel.calculateSkins()
-                    if let roundId = viewModel.config.supabaseRoundId {
-                        try? await RoundService().updateRoundStatus(roundId: roundId, status: "concluded")
-                    }
-                    if let groupId = viewModel.config.supabaseGroupId {
-                        await GroupService().advanceScheduledDateIfRecurring(groupId: groupId)
-                    }
-                    await MainActor.run {
-                        NotificationCenter.default.post(name: .didEndRound, object: nil)
-                        viewModel.isRoundComplete = true
-                        withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
-                            showRoundComplete = true
-                        }
-                    }
-                }
-            }
-        } message: {
-            Text(viewModel.allGroupsFinished
-                 ? "This will end the round and show results."
-                 : "Not all groups have finished scoring. Skins will be awarded based on completed holes.")
-        }
-        .alert("End Round & Save Results?", isPresented: $showEndShareRoundAlert) {
-            Button("Cancel", role: .cancel) { }
-            Button("Share Results", role: .destructive) {
-                Task {
-                    viewModel.forceCompleted = true
-                    viewModel.calculateSkins()
-                    if let roundId = viewModel.config.supabaseRoundId {
-                        try? await RoundService().updateRoundStatus(roundId: roundId, status: "concluded")
-                    }
-                    if let groupId = viewModel.config.supabaseGroupId {
-                        await GroupService().advanceScheduledDateIfRecurring(groupId: groupId)
-                    }
-                    await MainActor.run {
-                        NotificationCenter.default.post(name: .didEndRound, object: nil)
-                        viewModel.isRoundComplete = true
-                        withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
-                            showRoundComplete = true
-                        }
-                    }
-                }
-            }
-        } message: {
-            Text(viewModel.allGroupsFinished
-                 ? "This will end the round and share results with all players."
-                 : "Not all groups have finished scoring. Skins will be awarded based on completed holes and shared with all players.")
-        }
         .alert("Cancel Round?", isPresented: $showCancelRoundAlert) {
             Button("Keep Playing", role: .cancel) { }
             Button("Cancel Round", role: .destructive) {
@@ -250,16 +204,75 @@ struct ScorecardView: View {
         } message: {
             Text("This will delete the round and all scores. Your game setup will be preserved.")
         }
-        .alert("Round Cancelled", isPresented: $showRoundCancelledAlert) {
+        .alert("End Game?", isPresented: $showEndGameAlert) {
+            Button("Keep Playing", role: .cancel) { }
+            Button("End Game", role: .destructive) {
+                Task {
+                    guard let roundId = viewModel.config.supabaseRoundId else {
+                        await MainActor.run { showEndGameFailedAlert = true }
+                        return
+                    }
+                    do {
+                        try await RoundService().endGameDestructively(roundId: roundId)
+                        await MainActor.run {
+                            NotificationCenter.default.post(name: .didCancelRound, object: nil)
+                            onBack?()
+                        }
+                    } catch {
+                        await MainActor.run { showEndGameFailedAlert = true }
+                    }
+                }
+            }
+        } message: {
+            Text("This will delete the game and all scores for everyone. All participants will be notified.")
+        }
+        .alert("End Game & Save Results?", isPresented: $showEndGameSaveAlert) {
+            Button("Keep Playing", role: .cancel) { }
+            Button("End & Save", role: .destructive) {
+                Task {
+                    guard let roundId = viewModel.config.supabaseRoundId else {
+                        await MainActor.run { showEndGameFailedAlert = true }
+                        return
+                    }
+                    do {
+                        try await RoundService().forceEndRoundWithResults(roundId: roundId)
+                        if let groupId = viewModel.config.supabaseGroupId {
+                            await GroupService().advanceScheduledDateIfRecurring(groupId: groupId)
+                        }
+                        await MainActor.run {
+                            viewModel.forceCompleted = true
+                            viewModel.calculateSkins()
+                            NotificationCenter.default.post(name: .didEndRound, object: nil)
+                            viewModel.isRoundComplete = true
+                            withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
+                                showRoundComplete = true
+                            }
+                        }
+                    } catch {
+                        await MainActor.run { showEndGameFailedAlert = true }
+                    }
+                }
+            }
+        } message: {
+            Text(viewModel.allGroupsFinished
+                 ? "This will end the game and save final results for everyone. All participants will be notified."
+                 : "This will end the game for all groups and save results with whatever scores exist. Skins will be calculated from completed holes. All participants will be notified.")
+        }
+        .alert("Game Ended", isPresented: $showGameEndedAlert) {
             Button("OK") {
                 onBack?()
             }
         } message: {
-            Text("This round was cancelled by the host.")
+            Text("The host ended this game. No scores were saved.")
+        }
+        .alert("Couldn't End Game", isPresented: $showEndGameFailedAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("Check your connection and try again.")
         }
         .onReceive(viewModel.$roundWasCancelled) { cancelled in
             if cancelled {
-                showRoundCancelledAlert = true
+                showGameEndedAlert = true
             }
         }
         .fullScreenCover(isPresented: $showCourseSelector) {
@@ -424,13 +437,9 @@ struct ScorecardView: View {
                 Menu {
                     let isRoundCreator = true
 
-                    if isRoundCreator && !isQuickGame {
-                        Button {
-                            onEditPlayers?()
-                        } label: {
-                            Label("Group Settings", systemImage: "gearshape")
-                        }
-                    }
+                    // Group Settings intentionally omitted mid-round — it flips the
+                    // whole flow back to setup phase which is a footgun while scores
+                    // exist. onEditPlayers prop kept for future lighter edit paths.
 
                     if isRoundCreator && !isQuickGame {
                         Button {
@@ -452,15 +461,15 @@ struct ScorecardView: View {
                         Divider()
 
                         Button(role: .destructive) {
-                            showEndRoundAlert = true
+                            showEndGameAlert = true
                         } label: {
-                            Label("End Round", systemImage: "xmark.circle")
+                            Label("End Game", systemImage: "trash")
                         }
 
                         Button(role: .destructive) {
-                            showEndShareRoundAlert = true
+                            showEndGameSaveAlert = true
                         } label: {
-                            Label("End Round & Save Results", systemImage: "checkmark.circle")
+                            Label("End Game & Save Results", systemImage: "checkmark.circle")
                         }
                     }
                 } label: {

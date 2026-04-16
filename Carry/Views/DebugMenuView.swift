@@ -39,6 +39,7 @@ struct DebugMenuView: View {
                     subscriptionSection
                     authSection
                     roundDataSection
+                    liveActivitySection
                     playerSearchSection
                     inviteFlowSection
                     quickInfoSection
@@ -232,6 +233,87 @@ struct DebugMenuView: View {
             }
             .background(RoundedRectangle(cornerRadius: 14).fill(.white))
         }
+    }
+
+    // MARK: - Live Activity
+
+    // NOTE: These controls only drive the Live Activity's visual state
+    // (for previewing the lock-screen banner / Dynamic Island). They do NOT
+    // end, conclude, or finalize the actual round in the app. "Dismiss
+    // Banner Only" just removes the banner from the lock screen — the real
+    // end-round flow lives in ScorecardView's End Round / Cancel Round
+    // alerts. The lock-screen banner itself is now tappable and routes
+    // back into the round.
+    private var liveActivitySection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionHeader("LIVE ACTIVITY")
+
+            VStack(spacing: 0) {
+                actionRow("Start — Not Started", icon: "play.circle") {
+                    startMockActivity(state: .notStarted, hole: 0)
+                }
+                divider
+                actionRow("Start — Live (Hole 7)", icon: "play.circle.fill") {
+                    startMockActivity(state: .live, hole: 7)
+                }
+                divider
+                actionRow("Transition → Pending", icon: "hourglass") {
+                    LiveActivityService.shared.update(mockState(state: .pending, hole: 14))
+                }
+                divider
+                actionRow("Transition → Game Done", icon: "checkmark.circle.fill") {
+                    LiveActivityService.shared.update(mockState(state: .done, hole: 18))
+                }
+                divider
+                actionRow("Dismiss Banner Only (debug)", icon: "stop.circle") {
+                    LiveActivityService.shared.endAll()
+                }
+            }
+            .background(RoundedRectangle(cornerRadius: 14).fill(.white))
+        }
+    }
+
+    private func startMockActivity(state: CarryRoundAttributes.RoundState, hole: Int) {
+        LiveActivityService.shared.start(
+            roundId: "debug-\(UUID().uuidString.prefix(8))",
+            courseName: "Pebble Beach",
+            groupName: "Saturday Skins",
+            totalHoles: 18,
+            groupId: nil,
+            initialState: mockState(state: state, hole: hole)
+        )
+    }
+
+    private func mockState(state: CarryRoundAttributes.RoundState, hole: Int) -> CarryRoundAttributes.ContentState {
+        let sample = Array(Player.allPlayers.prefix(4))
+        let winnings: [Int]
+        switch state {
+        case .notStarted: winnings = [0, 0, 0, 0]
+        case .live:       winnings = [12, 8, 4, 0]
+        case .pending:    winnings = [14, 10, 6, 2]
+        case .done:       winnings = [20, 12, 6, 4]
+        }
+
+        let pills = zip(sample, winnings).map { p, w in
+            CarryRoundAttributes.PillPlayer(
+                id: p.id,
+                shortName: p.shortName,
+                initials: p.initials,
+                colorHex: p.color,
+                winnings: w,
+                isCurrentUser: p.id == 1
+            )
+        }
+
+        return CarryRoundAttributes.ContentState(
+            currentHole: hole,
+            state: state,
+            players: pills,
+            completedGroups: state == .pending ? 1 : (state == .done ? 4 : 0),
+            totalGroups: 4,
+            skinsWon: state == .done ? 9 : (state == .live || state == .pending ? 3 : 0),
+            waitingOnGroup: state == .pending ? "other groups" : nil
+        )
     }
 
     // MARK: - Player Search & Username

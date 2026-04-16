@@ -18,6 +18,8 @@ class RoundViewModel: ObservableObject {
     private var scoreChannel: RealtimeChannelV2?
     // Polling timer for cross-group score sync (15s interval)
     private var pollingCancellable: AnyCancellable?
+    // Live Activity subscriptions (Dynamic Island + lock screen updates)
+    private var liveActivityCancellables = Set<AnyCancellable>()
 
     @Published var scores: [Int: [Int: Int]]  // [playerID: [holeNum: score]]
     @Published var activeHole: Int?
@@ -520,6 +522,11 @@ class RoundViewModel: ObservableObject {
     private func pollAndDetectNewSkins() async {
         guard let roundId = config.supabaseRoundId else { return }
 
+        // 1. Check the round row itself for creator-triggered End Game states.
+        //    This runs BEFORE score fetch so we detect remote force-end even when
+        //    the creator hasn't entered any scores (or when scores get wiped).
+        if await detectRemoteRoundEnd(roundId: roundId) { return }
+
         // Snapshot current won skins before refresh
         let previousWonHoles: Set<Int> = await MainActor.run {
             Set(cachedSkins.compactMap { holeNum, status in
@@ -531,8 +538,8 @@ class RoundViewModel: ObservableObject {
         do {
             let scoreDTOs = try await roundService.fetchScores(roundId: roundId)
             if scoreDTOs.isEmpty {
-                // Scores are empty — could mean the round was deleted (Cancel Round),
-                // OR just that nobody has scored yet, OR a transient server error.
+                // Scores are empty — could mean the round was deleted (legacy hard-delete
+                // path), OR just that nobody has scored yet, OR a transient server error.
                 // Only conclude "cancelled" if we had local scores AND the round row
                 // itself no longer exists in the DB. A network error or empty response
                 // alone is NOT proof of deletion — going offline must not kill the round.
@@ -625,6 +632,41 @@ class RoundViewModel: ObservableObject {
             // and scores will resync. Wrongly setting roundWasCancelled here was causing
             // both devices to auto-exit the round whenever cell signal dropped.
         }
+    }
+
+    /// Check the round row for creator-triggered End Game states and react locally.
+    /// Returns true when a terminal state was detected (caller should short-circuit the poll).
+    ///
+    ///   - status = 'cancelled'                          → roundWasCancelled = true
+    ///   - status = 'concluded' + force_completed = true → forceCompleted + myGroupFinished
+    ///
+    /// A missing round row (legacy hard-delete path) is handled by the score-empty check.
+    /// A network failure returns false so the rest of the poll continues — offline must
+    /// not kill the round.
+    private func detectRemoteRoundEnd(roundId: UUID) async -> Bool {
+        guard let round = try? await roundService.fetchRoundById(roundId: roundId) else {
+            return false  // Network error or row gone — handled elsewhere.
+        }
+
+        if round.status == "cancelled" {
+            await MainActor.run {
+                if !self.roundWasCancelled { self.roundWasCancelled = true }
+            }
+            return true
+        }
+
+        if round.status == "concluded", round.forceCompleted == true {
+            await MainActor.run {
+                if !self.forceCompleted {
+                    self.forceCompleted = true
+                    self.myGroupFinished = true       // triggers RoundCompleteView
+                    self.calculateSkins()             // refresh with forceCompleted pool
+                }
+            }
+            return true
+        }
+
+        return false
     }
 
     /// Handle an incoming remote score update.
@@ -1055,6 +1097,7 @@ class RoundViewModel: ObservableObject {
             Task { await loadScoresFromSupabase() }
             subscribeToRealtimeScores()
             startScorePolling()
+            setupLiveActivity()
         }
 
         #if DEBUG
@@ -1214,5 +1257,135 @@ class RoundViewModel: ObservableObject {
         lines.append("")
         lines.append("Tracked with Carry")
         return lines.joined(separator: "\n")
+    }
+
+    // MARK: - Live Activity (Dynamic Island + Lock Screen)
+
+    private func setupLiveActivity() {
+        // User preference (defaults true) — Profile → Notifications → Live Activity.
+        // We still build the update/end pipelines below so that flipping the
+        // toggle ON mid-round will pick up the next state change without a relaunch.
+        if UserDefaults.standard.object(forKey: "notif_liveActivity") as? Bool ?? true {
+            LiveActivityService.shared.start(
+                roundId: config.id,
+                courseName: config.course,
+                groupName: config.groupName,
+                totalHoles: holes.count,
+                groupId: config.supabaseGroupId?.uuidString,
+                initialState: buildLiveActivityState()
+            )
+        }
+
+        // Push updates on relevant state changes (coalesced).
+        // Also re-checks the user preference so flipping it ON mid-round
+        // starts the activity, and flipping it OFF kills the banner.
+        Publishers.CombineLatest4($scores, $activeHole, $cachedSkins, $myGroupFinished)
+            .dropFirst()
+            .debounce(for: .milliseconds(300), scheduler: DispatchQueue.main)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _, _, _, _ in
+                guard let self else { return }
+                let enabled = UserDefaults.standard.object(forKey: "notif_liveActivity") as? Bool ?? true
+                if enabled {
+                    // start() is idempotent for the same roundId — it just updates state.
+                    LiveActivityService.shared.start(
+                        roundId: self.config.id,
+                        courseName: self.config.course,
+                        groupName: self.config.groupName,
+                        totalHoles: self.holes.count,
+                        groupId: self.config.supabaseGroupId?.uuidString,
+                        initialState: self.buildLiveActivityState()
+                    )
+                } else {
+                    LiveActivityService.shared.endAll()
+                }
+            }
+            .store(in: &liveActivityCancellables)
+
+        // End when the round completes or is cancelled
+        Publishers.CombineLatest3($isRoundComplete, $forceCompleted, $roundWasCancelled)
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] complete, forced, cancelled in
+                guard let self else { return }
+                if cancelled {
+                    // Cancelled rounds: dismiss the banner immediately with no
+                    // stale "LIVE Hole 12" final state.
+                    LiveActivityService.shared.endAll()
+                } else if complete || forced {
+                    LiveActivityService.shared.end(finalState: self.buildLiveActivityState())
+                }
+            }
+            .store(in: &liveActivityCancellables)
+    }
+
+    private func buildLiveActivityState() -> CarryRoundAttributes.ContentState {
+        let money = moneyTotals()
+        let totalSkinsAwarded = skinsWonByPlayer().values.reduce(0, +)
+
+        // Build + sort pill players by winnings desc, preserving original order for ties
+        let pillPlayers: [CarryRoundAttributes.PillPlayer] = allPlayers.map { player in
+            CarryRoundAttributes.PillPlayer(
+                id: player.id,
+                shortName: player.shortName,
+                initials: player.initials,
+                colorHex: player.color,
+                winnings: money[player.id] ?? 0,
+                isCurrentUser: player.id == currentUserId
+            )
+        }.sorted { lhs, rhs in
+            if lhs.winnings != rhs.winnings { return lhs.winnings > rhs.winnings }
+            return (allPlayers.firstIndex { $0.id == lhs.id } ?? 0)
+                 < (allPlayers.firstIndex { $0.id == rhs.id } ?? 0)
+        }
+
+        // Determine round state
+        let roundState: CarryRoundAttributes.RoundState
+        if isRoundComplete || forceCompleted {
+            roundState = .done
+        } else if myGroupFinished {
+            roundState = .pending
+        } else if (activeHole ?? 0) == 0 {
+            roundState = .notStarted
+        } else {
+            roundState = .live
+        }
+
+        // Group counts — derive from allPlayers
+        let totalGroups = Set(allPlayers.map { $0.group }).count
+        let completedGroups = myGroupFinished ? 1 : 0  // rough; only known from this device
+
+        return CarryRoundAttributes.ContentState(
+            currentHole: activeHole ?? 0,
+            state: roundState,
+            players: pillPlayers,
+            completedGroups: completedGroups,
+            totalGroups: totalGroups,
+            skinsWon: totalSkinsAwarded,
+            waitingOnGroup: (myGroupFinished && !isRoundComplete) ? "other groups" : nil
+        )
+    }
+
+    private func computeLeaderName() -> String {
+        let money = moneyTotals()
+        guard !money.isEmpty else { return "—" }
+        let maxAmount = money.values.max() ?? 0
+        guard maxAmount > 0 else { return "—" }
+        let leaders = money.filter { $0.value == maxAmount }
+        if leaders.count > 1 { return "Tied" }
+        guard let leaderId = leaders.first?.key,
+              let player = allPlayers.first(where: { $0.id == leaderId }) else { return "—" }
+        return player.shortName
+    }
+
+    private func computeToPar(forPlayerId playerId: Int) -> Int {
+        guard let playerScores = scores[playerId], !playerScores.isEmpty else { return 0 }
+        var toPar = 0
+        for (holeNum, score) in playerScores {
+            if let hole = holes.first(where: { $0.num == holeNum }) {
+                toPar += (score - hole.par)
+            }
+        }
+        return toPar
     }
 }

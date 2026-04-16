@@ -54,6 +54,8 @@
 	<string>$(GOLF_COURSE_API_KEY)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

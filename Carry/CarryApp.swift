@@ -26,7 +26,17 @@ class CarryAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCente
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         UNUserNotificationCenter.current().delegate = self
+        // End any Live Activities orphaned by a previous force-quit or crash.
+        // If the user opens a scorecard this session, setupLiveActivity() starts fresh.
+        LiveActivityService.shared.cleanupOrphanedActivities()
         return true
+    }
+
+    func applicationWillTerminate(_ application: UIApplication) {
+        // Dismiss the Live Activity when the app is force-quit.
+        // If the user re-opens the app and enters the scorecard, setupLiveActivity()
+        // restarts it automatically.
+        LiveActivityService.shared.endAll()
     }
 
     func application(
@@ -81,12 +91,17 @@ class CarryAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCente
         let type = userInfo["type"] as? String
         if type == "groupInvite" {
             NotificationCenter.default.post(name: .didTapGroupInviteNotification, object: nil)
-        } else if type == "roundStarted" || type == "roundEnded" {
+        } else if type == "roundStarted" || type == "roundEnded" || type == "gameForceEnded" {
+            // All three route to the group's round — gameForceEnded will land on the
+            // scorecard where RoundCompleteView auto-shows via the force_completed flag.
             if let groupIdString = userInfo["groupId"] as? String,
                let groupId = UUID(uuidString: groupIdString) {
                 NotificationCenter.default.post(name: .didTapRoundNotification, object: groupId)
             }
         }
+        // gameDeleted has no navigation target — the round is gone. If the user is still
+        // on the scorecard, polling detects status='cancelled' and shows the Game Ended
+        // alert; otherwise the app just opens to wherever they left off.
         completionHandler()
     }
 }
@@ -267,6 +282,22 @@ struct CarryApp: App {
                 }
             } else {
                 appRouter.pendingGroupInvite = invite
+            }
+            return
+        }
+
+        // Live Activity deep link: carry://round/<roundId>?group=<groupId>
+        // For grouped rounds we route via the existing pending-round flow
+        // (skins tab → open scorecard). For Quick Games (no groupId) we just
+        // land on the Home tab where the active round card is visible.
+        if url.scheme == "carry", url.host == "round" {
+            let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+            let groupIdString = components?.queryItems?.first(where: { $0.name == "group" })?.value
+            if let groupIdString, let groupId = UUID(uuidString: groupIdString) {
+                appRouter.navigateToTab = "skinGames"
+                appRouter.pendingRoundGroupId = groupId
+            } else {
+                appRouter.navigateToTab = "home"
             }
         }
     }

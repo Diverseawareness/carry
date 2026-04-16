@@ -125,6 +125,10 @@ struct RoundDTO: Codable, Identifiable {
     var handicapPercentage: Double  // e.g. 0.7 for 70%, 1.0 for 100%
     var status: String
     var scoringMode: String?
+    /// True when the creator used End Game / End Game & Save Results. Combined with
+    /// `status`, disambiguates natural completion from a forced end.
+    /// Optional to tolerate rows written before the `force_completed` migration ran.
+    var forceCompleted: Bool?
     let createdAt: Date?
     var updatedAt: Date?
 
@@ -141,6 +145,7 @@ struct RoundDTO: Codable, Identifiable {
         case handicapPercentage = "handicap_percentage"
         case status
         case scoringMode = "scoring_mode"
+        case forceCompleted = "force_completed"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
     }
