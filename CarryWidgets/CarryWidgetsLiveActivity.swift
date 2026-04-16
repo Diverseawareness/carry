@@ -138,15 +138,15 @@ private struct LockScreenView: View {
             }
 
             // Row 2: pill bar
-            PillBar(players: state.players, maxVisible: 4)
+            PillBar(players: state.players, maxVisible: 3)
                 .padding(.top, 26)
 
             // Row 3: state-dependent footer
             footer
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 20)
         .padding(.vertical, 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
@@ -309,7 +309,7 @@ private struct PlayerPill: View {
                 .font(.system(size: 13, weight: player.isCurrentUser ? .semibold : .medium))
                 .foregroundColor(.white)
                 .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
+                .truncationMode(.tail)
             Text("$\(player.winnings)")
                 .font(.system(size: 13, weight: .bold))
                 .monospacedDigit()
