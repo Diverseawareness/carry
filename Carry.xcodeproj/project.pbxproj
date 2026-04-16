@@ -91,10 +91,6 @@
 		M10002 /* MembershipRadioButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = M10001 /* MembershipRadioButton.swift */; };
 		N10002 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = N10001 /* NotificationService.swift */; };
 		S10002 /* SyncQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = S10001 /* SyncQueue.swift */; };
-		A30001 /* StoryPattern.swift in Sources */ = {isa = PBXBuildFile; fileRef = B30001 /* StoryPattern.swift */; };
-		A30002 /* StoryPatternDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = B30002 /* StoryPatternDetector.swift */; };
-		A30003 /* StoryTemplateEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B30003 /* StoryTemplateEngine.swift */; };
-		A30004 /* RoundStoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B30004 /* RoundStoryView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -194,10 +190,6 @@
 		N10001 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
 		S10001 /* SyncQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncQueue.swift; sourceTree = "<group>"; };
 		SC0001 /* Secrets.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Secrets.xcconfig; sourceTree = "<group>"; };
-		B30001 /* StoryPattern.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoryPattern.swift; sourceTree = "<group>"; };
-		B30002 /* StoryPatternDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoryPatternDetector.swift; sourceTree = "<group>"; };
-		B30003 /* StoryTemplateEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoryTemplateEngine.swift; sourceTree = "<group>"; };
-		B30004 /* RoundStoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoundStoryView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -281,7 +273,6 @@
 				B10002 /* Player.swift */,
 				B10003 /* Hole.swift */,
 				B10004 /* SkinResult.swift */,
-				B30001 /* StoryPattern.swift */,
 				E40003 /* GameEvent.swift */,
 				B10005 /* ScoreLabel.swift */,
 				B10006 /* RoundConfig.swift */,
@@ -331,7 +322,6 @@
 				B20003 /* CarryInputModifier.swift */,
 				B20099 /* ScorerAssignmentView.swift */,
 				B20199 /* FinalResultsComponents.swift */,
-				B30004 /* RoundStoryView.swift */,
 				B20200 /* DisclaimerView.swift */,
 				B20102 /* PlayerGroupsSheet.swift */,
 				B20101 /* HandicapPickerSheet.swift */,
@@ -366,8 +356,6 @@
 				B10025 /* RoundService.swift */,
 				GS0002 /* GroupService.swift */,
 				B20201 /* ImageCache.swift */,
-				B30002 /* StoryPatternDetector.swift */,
-				B30003 /* StoryTemplateEngine.swift */,
 				FC29B0CF11FF413AA819A069 /* GolfCourseService.swift */,
 				A3B7E2D419CF4FA8B1C60D72 /* PlayerSearchService.swift */,
 				D20001 /* AppRouter.swift */,
@@ -514,7 +502,6 @@
 				A10002 /* Player.swift in Sources */,
 				A10003 /* Hole.swift in Sources */,
 				A10004 /* SkinResult.swift in Sources */,
-				A30001 /* StoryPattern.swift in Sources */,
 				A10005 /* ScoreLabel.swift in Sources */,
 				A10006 /* RoundConfig.swift in Sources */,
 				A10020 /* SupabaseModels.swift in Sources */,
@@ -524,7 +511,6 @@
 				A20003 /* CarryInputModifier.swift in Sources */,
 				A20099 /* ScorerAssignmentView.swift in Sources */,
 				A20199 /* FinalResultsComponents.swift in Sources */,
-				A30004 /* RoundStoryView.swift in Sources */,
 				A20200 /* DisclaimerView.swift in Sources */,
 				A20102 /* PlayerGroupsSheet.swift in Sources */,
 				A20101 /* HandicapPickerSheet.swift in Sources */,
@@ -536,8 +522,6 @@
 				A10023 /* RoundService.swift in Sources */,
 				GS0001 /* GroupService.swift in Sources */,
 				A20201 /* ImageCache.swift in Sources */,
-				A30002 /* StoryPatternDetector.swift in Sources */,
-				A30003 /* StoryTemplateEngine.swift in Sources */,
 				60385FE12F78D10200FBF213 /* ResultsShareCard.swift in Sources */,
 				7F68AD8196384B3AB96CBCFF /* GuestClaimView.swift in Sources */,
 				A10008 /* ScorecardView.swift in Sources */,
