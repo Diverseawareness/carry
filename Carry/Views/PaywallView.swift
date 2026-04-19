@@ -1,6 +1,34 @@
 import SwiftUI
 import StoreKit
 
+/// Why the paywall was opened. Drives the contextual subtitle line —
+/// "Starting rounds is a Premium feature" vs. a generic "Go Premium" —
+/// without branching the whole view. When `hadPremium` is true the hero
+/// title also flips to "Your Premium trial ended" so post-trial users see
+/// the reassuring framing we designed instead of a first-time upsell.
+enum PaywallTrigger {
+    case startRound
+    case createGroup
+    case scoreRound
+    case manageGroup
+    case quickGameLimit
+    case allTimeLeaderboard
+    case general
+
+    /// One-line context shown just under the hero title.
+    var contextLine: String {
+        switch self {
+        case .startRound:          return "Starting rounds is a Premium feature"
+        case .createGroup:         return "Recurring Skins Groups are Premium"
+        case .scoreRound:          return "Scoring rounds is a Premium feature"
+        case .manageGroup:         return "Managing groups is a Premium feature"
+        case .quickGameLimit:      return "You've used all 3 free Quick Games this month"
+        case .allTimeLeaderboard:  return "All-time leaderboards are a Premium feature"
+        case .general:             return ""
+        }
+    }
+}
+
 struct PaywallView: View {
     @EnvironmentObject var storeService: StoreService
     @Environment(\.dismiss) var dismiss
@@ -8,7 +36,19 @@ struct PaywallView: View {
     @State private var errorMessage: String?
     @State private var selectedPlan: PlanType = .annual
 
+    /// Why this paywall was opened. Omit for the generic "Go Premium" upsell.
+    var trigger: PaywallTrigger = .general
+
     private enum PlanType { case annual, monthly }
+
+    /// Hero title — flips to "Your Premium trial ended" for users who were
+    /// previously premium, regardless of which action triggered the sheet.
+    /// This is the main UX promise of the v2 free tier: post-trial users
+    /// get the reassuring framing (you had this, you can have it back)
+    /// instead of a cold first-time pitch.
+    private var heroTitle: String {
+        storeService.hadPremium ? "Your Premium trial ended" : "Go Premium"
+    }
 
     var body: some View {
         ZStack {
@@ -32,7 +72,10 @@ struct PaywallView: View {
                     .padding(.top, 16)
                     .padding(.trailing, 20)
 
-                    // Hero
+                    // Hero — title flips based on hadPremium so returning
+                    // users see "Your Premium trial ended" framing instead
+                    // of the first-time pitch. Contextual line appears only
+                    // when a specific trigger was set.
                     VStack(spacing: 8) {
                         Image("premium-crown")
                             .resizable()
@@ -41,9 +84,18 @@ struct PaywallView: View {
                             .padding(.bottom, 4)
                             .accessibilityHidden(true)
 
-                        Text("Go Premium")
+                        Text(heroTitle)
                             .font(.system(size: 28, weight: .heavy))
                             .foregroundColor(Color.textPrimary)
+                            .multilineTextAlignment(.center)
+
+                        if !trigger.contextLine.isEmpty {
+                            Text(trigger.contextLine)
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundColor(Color.textSecondary)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 24)
+                        }
                     }
                     .padding(.top, 8)
 

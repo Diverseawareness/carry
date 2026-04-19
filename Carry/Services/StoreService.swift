@@ -3,10 +3,26 @@ import SwiftUI
 
 @MainActor
 final class StoreService: ObservableObject {
-    @Published var isPremium: Bool = false
+    @Published var isPremium: Bool = false {
+        didSet {
+            // Sticky flag — once a user has been premium on this device,
+            // `hadPremium` stays true forever. Used by the paywall to show
+            // "Your Premium trial ended" framing instead of a generic upsell.
+            if isPremium {
+                UserDefaults.standard.set(true, forKey: "hadPremium")
+            }
+        }
+    }
     @Published var products: [Product] = []
     @Published var isLoading: Bool = false
     @Published var fetchError: String?
+
+    /// True if this device has ever seen `isPremium = true`. Never flips
+    /// back to false on its own — gives the paywall context that the user
+    /// had premium before and is now post-trial or lapsed.
+    var hadPremium: Bool {
+        UserDefaults.standard.bool(forKey: "hadPremium")
+    }
 
     private let productIDs: Set<String> = [
         "com.diverseawareness.carry.premium.annual",
