@@ -387,6 +387,7 @@ struct SkinsGroupDTO: Codable, Identifiable {
     var isQuickGame: Bool?
     var scorerIds: [Int]?  // per-group scorer player IDs
     var teeTimeInterval: Int?  // minutes between consecutive tee times (0 or nil = off)
+    var teeTimesJson: String?  // JSON-encoded [String?] of ISO8601 timestamps, per-group
     var lastTeeBoxHolesJson: String?  // per-hole par/hcp data, saved at course selection
     var winningsDisplay: String?  // 'gross' (default) or 'net' — how winnings are shown
     let createdAt: Date?
@@ -396,6 +397,20 @@ struct SkinsGroupDTO: Codable, Identifiable {
     func decodeHoles() -> [Hole]? {
         guard let json = lastTeeBoxHolesJson, let data = json.data(using: .utf8) else { return nil }
         return try? JSONDecoder().decode([Hole].self, from: data)
+    }
+
+    /// Decode the per-group tee times array stored as a JSON string of
+    /// ISO8601 timestamps. Nil entries are preserved (group with no time set).
+    func decodeTeeTimes() -> [Date?]? {
+        guard let json = teeTimesJson, let data = json.data(using: .utf8) else { return nil }
+        guard let strings = try? JSONDecoder().decode([String?].self, from: data) else { return nil }
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let isoPlain = ISO8601DateFormatter()
+        return strings.map { s in
+            guard let s else { return nil }
+            return iso.date(from: s) ?? isoPlain.date(from: s)
+        }
     }
 
     enum CodingKeys: String, CodingKey {
@@ -416,6 +431,7 @@ struct SkinsGroupDTO: Codable, Identifiable {
         case isQuickGame = "is_quick_game"
         case scorerIds = "scorer_ids"
         case teeTimeInterval = "tee_time_interval"
+        case teeTimesJson = "tee_times_json"
         case lastTeeBoxHolesJson = "last_tee_box_holes_json"
         case winningsDisplay = "winnings_display"
         case createdAt = "created_at"
@@ -483,6 +499,8 @@ struct SkinsGroupUpdate: Codable {
     var isQuickGame: Bool?
     var scorerIds: [Int]?
     var teeTimeInterval: Int?
+    var teeTimesJson: String?
+    var clearTeeTimesJson: Bool = false  // when true, sends null for tee_times_json column
     var lastTeeBoxHolesJson: String?
     var winningsDisplay: String?
 
@@ -502,6 +520,7 @@ struct SkinsGroupUpdate: Codable {
         case isQuickGame = "is_quick_game"
         case scorerIds = "scorer_ids"
         case teeTimeInterval = "tee_time_interval"
+        case teeTimesJson = "tee_times_json"
         case lastTeeBoxHolesJson = "last_tee_box_holes_json"
         case winningsDisplay = "winnings_display"
     }
@@ -531,6 +550,11 @@ struct SkinsGroupUpdate: Codable {
         if let isQuickGame { try container.encode(isQuickGame, forKey: .isQuickGame) }
         if let scorerIds { try container.encode(scorerIds, forKey: .scorerIds) }
         if let teeTimeInterval { try container.encode(teeTimeInterval, forKey: .teeTimeInterval) }
+        if let teeTimesJson {
+            try container.encode(teeTimesJson, forKey: .teeTimesJson)
+        } else if clearTeeTimesJson {
+            try container.encodeNil(forKey: .teeTimesJson)
+        }
         if let lastTeeBoxHolesJson { try container.encode(lastTeeBoxHolesJson, forKey: .lastTeeBoxHolesJson) }
         if let winningsDisplay { try container.encode(winningsDisplay, forKey: .winningsDisplay) }
     }

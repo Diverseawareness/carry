@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Background -->
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#0A1F0A;stop-opacity:1"/>
+      <stop offset="100%" style="stop-color:#064102;stop-opacity:1"/>
+    </linearGradient>
+    <filter id="shadow">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="20"/>
+      <feOffset dx="0" dy="10"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.3"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <rect width="1024" height="1024" fill="url(#bgGradient)"/>
+
+  <!-- Decorative gold circles -->
+  <circle cx="900" cy="150" r="120" fill="#D4A017" opacity="0.1"/>
+  <circle cx="120" cy="880" r="90" fill="#D4A017" opacity="0.08"/>
+
+  <!-- Full season label -->
+  <text x="512" y="180" font-family="-apple-system, SF Pro Display, Helvetica, Arial, sans-serif" font-size="32" font-weight="600" fill="#C4A450" text-anchor="middle" letter-spacing="4">FULL SEASON</text>
+
+  <!-- Main headline -->
+  <text x="512" y="300" font-family="-apple-system, SF Pro Display, Helvetica, Arial, sans-serif" font-size="100" font-weight="800" fill="#FFFFFF" text-anchor="middle" letter-spacing="-2">Unlimited</text>
+  <text x="512" y="410" font-family="-apple-system, SF Pro Display, Helvetica, Arial, sans-serif" font-size="100" font-weight="800" fill="#FFFFFF" text-anchor="middle" letter-spacing="-2">Skins Games</text>
+
+  <!-- Leaderboard mockup card -->
+  <rect x="162" y="480" width="700" height="380" rx="32" fill="#FAFAFA" filter="url(#shadow)"/>
+
+  <!-- Card header -->
+  <text x="202" y="540" font-family="-apple-system, SF Pro Display, Helvetica, Arial, sans-serif" font-size="22" font-weight="600" fill="#1A1A1A">Season Leaderboard</text>
+  <text x="822" y="540" font-family="-apple-system, SF Pro Display, Helvetica, Arial, sans-serif" font-size="18" font-weight="500" fill="#999999" text-anchor="end">2026</text>
+
+  <!-- Leaderboard rows -->
+  <g font-family="-apple-system, SF Pro Display, Helvetica, Arial, sans-serif">
+    <!-- Row 1 -->
+    <circle cx="232" cy="610" r="22" fill="#D4A017"/>
+    <text x="232" y="618" font-size="20" font-weight="700" fill="#FFFFFF" text-anchor="middle">JS</text>
+    <text x="272" y="618" font-size="22" font-weight="600" fill="#1A1A1A">Jake S.</text>
+    <text x="822" y="618" font-size="22" font-weight="700" fill="#C4A450" text-anchor="end">+$248</text>
+
+    <!-- Divider -->
+    <rect x="272" y="642" width="550" height="1" fill="#E5E5E5"/>
+
+    <!-- Row 2 -->
+    <circle cx="232" cy="680" r="22" fill="#4A7C59"/>
+    <text x="232" y="688" font-size="20" font-weight="700" fill="#FFFFFF" text-anchor="middle">MK</text>
+    <text x="272" y="688" font-size="22" font-weight="600" fill="#1A1A1A">Mike K.</text>
+    <text x="822" y="688" font-size="22" font-weight="700" fill="#C4A450" text-anchor="end">+$185</text>
+
+    <!-- Divider -->
+    <rect x="272" y="712" width="550" height="1" fill="#E5E5E5"/>
+
+    <!-- Row 3 -->
+    <circle cx="232" cy="750" r="22" fill="#C77B3D"/>
+    <text x="232" y="758" font-size="20" font-weight="700" fill="#FFFFFF" text-anchor="middle">TL</text>
+    <text x="272" y="758" font-size="22" font-weight="600" fill="#1A1A1A">Tom L.</text>
+    <text x="822" y="758" font-size="22" font-weight="700" fill="#1A1A1A" text-anchor="end">+$72</text>
+
+    <!-- Divider -->
+    <rect x="272" y="782" width="550" height="1" fill="#E5E5E5"/>
+
+    <!-- Row 4 -->
+    <circle cx="232" cy="820" r="22" fill="#6B8CB5"/>
+    <text x="232" y="828" font-size="20" font-weight="700" fill="#FFFFFF" text-anchor="middle">DS</text>
+    <text x="272" y="828" font-size="22" font-weight="600" fill="#1A1A1A">Daniel S.</text>
+    <text x="822" y="828" font-size="22" font-weight="700" fill="#999999" text-anchor="end">-$40</text>
+  </g>
+
+  <!-- Bottom tagline -->
+  <text x="512" y="940" font-family="-apple-system, SF Pro Display, Helvetica, Arial, sans-serif" font-size="28" font-weight="500" fill="#BCF0B5" text-anchor="middle" opacity="0.9">Full history · All stats · Every round</text>
+</svg>

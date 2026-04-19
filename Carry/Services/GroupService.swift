@@ -414,6 +414,26 @@ final class GroupService {
         }
     }
 
+    /// Persist per-group tee times as JSON so independent (non-consecutive)
+    /// schedules survive across devices. Nil entries encode groups that
+    /// haven't had a time set yet. Pass an empty array to clear.
+    func saveTeeTimes(groupId: UUID, teeTimes: [Date?]) async throws {
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let encoded: [String?] = teeTimes.map { date in
+            date.map { iso.string(from: $0) }
+        }
+        let update: SkinsGroupUpdate
+        if teeTimes.isEmpty {
+            update = SkinsGroupUpdate(teeTimesJson: nil, clearTeeTimesJson: true)
+        } else {
+            let data = try JSONEncoder().encode(encoded)
+            let json = String(data: data, encoding: .utf8) ?? "[]"
+            update = SkinsGroupUpdate(teeTimesJson: json)
+        }
+        try await updateGroup(groupId: groupId, update: update)
+    }
+
     /// Delete a group entirely — uses RPC to delete in FK-safe order.
     func deleteGroup(groupId: UUID) async throws {
         try await client.rpc("delete_group", params: ["gid": groupId.uuidString]).execute()
@@ -541,6 +561,13 @@ final class GroupService {
             // Only active (non-pending) players count for rounds, skins, and pot
             let activePlayers = players.filter { !$0.isPendingAccept }
 
+            // Compute per-group tee times once so every round in this group
+            // can resolve the current user's slot from the same array.
+            let groupTeeTimes = reconstructTeeTimes(
+                group: group,
+                groupCount: Set(players.map(\.group)).count
+            )
+
             if let rounds = try? await roundService.fetchRoundsForGroup(groupId: group.id) {
                 for roundDTO in rounds {
                     let currentPlayerIntId = Player.stableId(from: userId)
@@ -552,6 +579,7 @@ final class GroupService {
                         creatorId: creatorId,
                         buyIn: roundDTO.buyIn,
                         scheduledDate: group.scheduledDate,
+                        teeTimes: groupTeeTimes,
                         currentUserId: currentPlayerIntId,
                         teeBox: lastCourse?.teeBox,
                         supabaseGroupId: group.id,
@@ -590,11 +618,7 @@ final class GroupService {
                 }
             }
 
-            let teeTimes = reconstructTeeTimes(
-                scheduledDate: group.scheduledDate,
-                teeTimeInterval: group.teeTimeInterval,
-                groupCount: Set(players.map(\.group)).count
-            )
+            let teeTimes = groupTeeTimes
 
             let savedGroup = SavedGroup(
                 id: group.id,
@@ -715,6 +739,13 @@ final class GroupService {
         var roundHistory: [HomeRound] = []
         let activePlayers = players.filter { !$0.isPendingAccept }
 
+        // Compute per-group tee times once so every round in this group can
+        // resolve the current user's slot from the same array.
+        let groupTeeTimes = reconstructTeeTimes(
+            group: group,
+            groupCount: Set(players.map(\.group)).count
+        )
+
         if let rounds = try? await roundService.fetchRoundsForGroup(groupId: group.id) {
             for roundDTO in rounds {
                 let currentPlayerIntId = Player.stableId(from: userId)
@@ -726,6 +757,7 @@ final class GroupService {
                     creatorId: creatorId,
                     buyIn: roundDTO.buyIn,
                     scheduledDate: group.scheduledDate,
+                    teeTimes: groupTeeTimes,
                     currentUserId: currentPlayerIntId,
                     teeBox: lastCourse?.teeBox,
                     supabaseGroupId: group.id,
@@ -760,11 +792,7 @@ final class GroupService {
             }
         }
 
-        let teeTimes = reconstructTeeTimes(
-            scheduledDate: group.scheduledDate,
-            teeTimeInterval: group.teeTimeInterval,
-            groupCount: Set(players.map(\.group)).count
-        )
+        let teeTimes = groupTeeTimes
 
         return SavedGroup(
             id: group.id,
@@ -828,6 +856,27 @@ final class GroupService {
     // MARK: - Tee Time Reconstruction
 
     /// Reconstruct per-group tee times from a base scheduled date and interval.
+    /// Resolve the per-group tee times for a skins group. Prefers the
+    /// persisted `tee_times_json` array (preserves independent/non-consecutive
+    /// tee times exactly as the creator set them). Falls back to deriving
+    /// consecutive tee times from `scheduledDate + teeTimeInterval` so
+    /// pre-migration groups keep working.
+    private func reconstructTeeTimes(group: SkinsGroupDTO, groupCount: Int) -> [Date?]? {
+        if let persisted = group.decodeTeeTimes(), !persisted.isEmpty {
+            // Pad/truncate to match current groupCount so parallel arrays
+            // stay in lockstep if a group was added/removed since last save.
+            let target = max(groupCount, 1)
+            if persisted.count == target { return persisted }
+            if persisted.count > target { return Array(persisted.prefix(target)) }
+            return persisted + Array(repeating: nil, count: target - persisted.count)
+        }
+        return reconstructTeeTimes(
+            scheduledDate: group.scheduledDate,
+            teeTimeInterval: group.teeTimeInterval,
+            groupCount: groupCount
+        )
+    }
+
     private func reconstructTeeTimes(scheduledDate: Date?, teeTimeInterval: Int?, groupCount: Int) -> [Date?]? {
         guard let baseTime = scheduledDate else { return nil }
         let interval = teeTimeInterval ?? 0
@@ -872,6 +921,7 @@ final class GroupService {
         creatorId: Int,
         buyIn: Int,
         scheduledDate: Date? = nil,
+        teeTimes: [Date?]? = nil,
         currentUserId: Int? = nil,
         teeBox: TeeBox? = nil,
         supabaseGroupId: UUID? = nil,
@@ -1151,7 +1201,20 @@ final class GroupService {
             completedGroups: completedGroups,
             startedAt: roundDTO.createdAt,
             completedAt: status == .completed ? roundDTO.createdAt : nil,
-            scheduledDate: scheduledDate,
+            scheduledDate: {
+                // Prefer the current user's own group tee time (e.g. a Quick
+                // Game scorer in group 2 should see their 9:30 slot, not the
+                // group's first tee time). Falls back to scheduledDate when
+                // no per-group array is persisted or the user isn't in this
+                // round's player list.
+                if let teeTimes, let uid = currentUserId,
+                   let me = roundPlayers.first(where: { $0.id == uid }),
+                   me.group >= 1, me.group <= teeTimes.count,
+                   let mine = teeTimes[me.group - 1] {
+                    return mine
+                }
+                return scheduledDate
+            }(),
             playerWinnings: playerWinnings,
             playerWonHoles: playerWonHoles
         )

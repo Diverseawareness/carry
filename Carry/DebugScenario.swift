@@ -13,6 +13,7 @@ enum DebugScenario: String, CaseIterable, Identifiable {
     case homeEmpty         // Fresh user — no groups, no rounds
     case homeFree          // Free user — 1 group, 3 recent rounds capped, locked winnings
     case homePremium       // Premium user — unlimited groups, full history, all stats
+    case homeSpectator     // Group member NOT in today's round — sees live card, can't open scorecard
     case groupCreator      // Creator setting up groups before starting
     case groupMember       // Member viewing group setup (read-only)
     case scorecardViewer   // Viewer — same UI, no score input
@@ -42,6 +43,7 @@ enum DebugScenario: String, CaseIterable, Identifiable {
         case .homeEmpty:       return "Home (Empty)"
         case .homeFree:        return "Home (Free User)"
         case .homePremium:     return "Home (Premium)"
+        case .homeSpectator:   return "Home (Spectator)"
         case .groupCreator:    return "Group Setup (Creator)"
         case .groupMember:     return "Group Setup (Member)"
         case .scorecardViewer: return "Scorecard (Viewer)"
@@ -71,6 +73,7 @@ enum DebugScenario: String, CaseIterable, Identifiable {
         case .homeEmpty:       return "house"
         case .homeFree:        return "lock"
         case .homePremium:     return "crown"
+        case .homeSpectator:   return "eye"
         case .groupCreator:    return "person.2"
         case .groupMember:     return "person.2"
         case .scorecardViewer: return "eye"
@@ -94,7 +97,7 @@ enum DebugScenario: String, CaseIterable, Identifiable {
 
     var section: DebugSection {
         switch self {
-        case .home, .homeAllCardStates, .homeConcluded, .homeEmpty:    return .navigation
+        case .home, .homeAllCardStates, .homeConcluded, .homeEmpty, .homeSpectator:    return .navigation
         case .groupCreator, .groupMember, .createGroup:            return .navigation
         case .homeFree, .homePremium, .paywall:                    return .subscription
         case .scorecardViewer, .scorecardEmpty, .scorecardMid, .scorecardLate, .scorecardCarries, .confettiTest, .pendingResults, .roundComplete: return .scorecard
@@ -258,6 +261,60 @@ extension DebugScenario {
                 startScreen: .home,
                 isCreator: true,
                 isPremium: true
+            )
+
+        case .homeSpectator:
+            // User 1 (Daniel) is a GROUP member but NOT in today's active round's
+            // player list. The home card should still render + poll, but tapping
+            // it should NOT open the scorecard. Final results are viewable.
+            let spectatorActiveRound = HomeRound(
+                id: UUID(),
+                groupName: "The Friday Skins",
+                courseName: "Torrey Pines South",
+                // NOTE: player id 1 (Daniel / current user) intentionally excluded
+                players: Array(Player.allPlayers.dropFirst()).prefix(12).map { $0 },
+                status: .active,
+                currentHole: 7,
+                totalHoles: 18,
+                buyIn: 50,
+                skinsWon: 3,
+                totalSkins: 18,
+                yourSkins: 0,
+                invitedBy: nil,
+                creatorId: 2,
+                startedAt: Calendar.current.date(byAdding: .hour, value: -1, to: Date()),
+                completedAt: nil,
+                scheduledDate: Calendar.current.date(byAdding: .hour, value: -1, to: Date()),
+                playerWinnings: [2: 45, 3: 22, 5: 15],
+                playerWonHoles: [2: [1, 4], 3: [3], 5: [6]]
+            )
+            let spectatorGroup = SavedGroup(
+                id: UUID(),
+                name: "The Friday Skins",
+                members: Player.allPlayers,   // Daniel IS in the group members
+                lastPlayed: "Today",
+                creatorId: 2,                 // Someone else is creator
+                lastCourse: SelectedCourse(
+                    courseId: 1,
+                    courseName: "Torrey Pines South",
+                    clubName: "Torrey Pines",
+                    location: "La Jolla, CA",
+                    teeBox: TeeBox.demo[1],
+                    apiTee: nil
+                ),
+                activeRound: spectatorActiveRound,
+                roundHistory: []
+            )
+            return DebugWorldState(
+                currentUserId: 1,
+                creatorId: 2,                 // Not the creator
+                players: Player.allPlayers,
+                roundConfig: .default,
+                demoMode: .none,
+                course: Self.demoCourse,
+                groups: [spectatorGroup],
+                startScreen: .home,
+                isCreator: false              // Daniel isn't the round creator either
             )
 
         case .groupCreator:

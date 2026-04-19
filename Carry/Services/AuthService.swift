@@ -192,6 +192,10 @@ final class AuthService: ObservableObject {
 
     // MARK: - Onboarding
 
+    /// Persist the user's onboarding data. Throws on failure so the caller can
+    /// show a retry — we do NOT mark onboarded until the save confirms, to avoid
+    /// a race where the profiles row stays at DB defaults (e.g. handicap=0.0)
+    /// while the user is marked complete and navigates away.
     func completeOnboarding(
         firstName: String,
         lastName: String,
@@ -202,46 +206,52 @@ final class AuthService: ObservableObject {
         homeClub: String? = nil,
         homeClubId: Int? = nil,
         isClubMember: Bool = true
-    ) {
-        UserDefaults.standard.set(true, forKey: "onboardingCompleted")
-        isOnboarded = true
-        isNewUser = true
-
+    ) async throws {
         let displayName = firstName  // First name only for scorecard/pills
         let firstI = String(firstName.prefix(1)).uppercased()
         let lastI = String(lastName.prefix(1)).uppercased()
         let initials = lastI.isEmpty ? String(firstName.prefix(2)).uppercased() : "\(firstI)\(lastI)"
 
-        // If we have a real user, persist to Supabase
-        if currentUser != nil {
-            Task {
-                do {
-                    // Upload avatar photo if provided
-                    var avatarUrl: String? = nil
-                    if let photo = photo {
-                        avatarUrl = try await uploadAvatar(photo)
-                    }
+        if isAuthenticated {
+            // Real auth'd user — persist to Supabase and AWAIT so we throw
+            // on failure rather than silently dropping the update.
+            // Note: we branch on `isAuthenticated` (not currentUser != nil)
+            // because `currentUser` may briefly be nil during onboarding
+            // while the initial profile fetch is in flight. `updateProfile`
+            // now handles that case by resolving the userId from the session.
+            var avatarUrl: String? = nil
+            if let photo = photo {
+                avatarUrl = try await uploadAvatar(photo)
+            }
 
-                    try await updateProfile(ProfileUpdate(
-                        firstName: firstName,
-                        lastName: lastName,
-                        username: username?.lowercased(),
-                        displayName: displayName,
-                        initials: initials,
-                        color: "#BCF0B5",
-                        avatar: "🏌️",
-                        handicap: handicap,
-                        ghinNumber: ghinNumber,
-                        homeClub: homeClub,
-                        homeClubId: homeClubId,
-                        avatarUrl: avatarUrl,
-                        isClubMember: isClubMember
-                    ))
-                } catch {
-                    #if DEBUG
-                    print("Failed to save onboarding profile: \(error)")
-                    #endif
-                }
+            try await updateProfile(ProfileUpdate(
+                firstName: firstName,
+                lastName: lastName,
+                username: username?.lowercased(),
+                displayName: displayName,
+                initials: initials,
+                color: "#BCF0B5",
+                avatar: "🏌️",
+                handicap: handicap,
+                ghinNumber: ghinNumber,
+                homeClub: homeClub,
+                homeClubId: homeClubId,
+                avatarUrl: avatarUrl,
+                isClubMember: isClubMember
+            ))
+
+            // Post-save verification — re-read the just-saved profile state
+            // (updateProfile calls loadProfile internally, which writes to
+            // currentUser). If the handicap we just wrote doesn't match
+            // the handicap the server now reports, something went wrong
+            // silently (0 rows affected, stale cache, etc.) — throw so the
+            // caller can surface a retry instead of stranding the user at
+            // an unintended handicap.
+            guard let savedHandicap = currentUser?.handicap else {
+                throw AuthError.profileSaveVerificationFailed
+            }
+            if abs(savedHandicap - handicap) > 0.05 {
+                throw AuthError.profileSaveVerificationFailed
             }
         } else {
             // No Supabase session (dev/debug) — create a local profile
@@ -265,6 +275,11 @@ final class AuthService: ObservableObject {
                 updatedAt: nil
             )
         }
+
+        // Only mark onboarded AFTER the persist succeeded.
+        UserDefaults.standard.set(true, forKey: "onboardingCompleted")
+        isOnboarded = true
+        isNewUser = true
     }
 
     // MARK: - Username
@@ -418,11 +433,34 @@ final class AuthService: ObservableObject {
     }
 
     func updateProfile(_ update: ProfileUpdate) async throws {
-        guard isAuthenticated, let userId = currentUser?.id else {
-            // Dev mode: apply changes locally so profile edits work without auth
+        // Dev/debug (no auth) → apply locally. Not expected in production.
+        guard isAuthenticated else {
             applyLocalProfileUpdate(update)
             return
         }
+
+        // Resolve userId. Prefer the loaded profile; fall back to the
+        // session when `currentUser` hasn't finished loading yet. This
+        // closes an onboarding race where the profile fetch is still in
+        // flight when the user taps Finish — previously the update fell
+        // through to the local-only path and was silently discarded, so
+        // the DB handicap stayed at the trigger default of 0.0.
+        let userId: UUID
+        if let id = currentUser?.id {
+            userId = id
+        } else {
+            do {
+                let session = try await client.auth.session
+                userId = session.user.id
+            } catch {
+                // No session despite isAuthenticated == true (shouldn't
+                // happen). Fall back to local-only to preserve prior
+                // behavior rather than crashing.
+                applyLocalProfileUpdate(update)
+                return
+            }
+        }
+
         try await client.from("profiles")
             .update(update)
             .eq("id", value: userId.uuidString)
@@ -451,10 +489,14 @@ final class AuthService: ObservableObject {
 
 enum AuthError: LocalizedError {
     case missingToken
+    case profileSaveVerificationFailed
 
     var errorDescription: String? {
         switch self {
-        case .missingToken: return "Missing identity token from Apple Sign-In"
+        case .missingToken:
+            return "Missing identity token from Apple Sign-In"
+        case .profileSaveVerificationFailed:
+            return "Couldn't confirm your profile was saved. Please try again."
         }
     }
 }

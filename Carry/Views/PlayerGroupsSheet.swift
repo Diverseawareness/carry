@@ -697,11 +697,54 @@ struct PlayerGroupsSheet: View {
 
                 if let profileId = newValue.profileId, oldValue.profileId != profileId {
                     var player = newValue.asPlayer
-                    // Carry user picked from search — mark as pending until they accept
-                    player.isPendingAccept = true
+                    // Carry user picked from search — mark as pending until
+                    // they accept. Exception: if the selected player is the
+                    // current user (creator reassigning themselves), skip
+                    // the pending-accept — they're the one doing the action.
+                    player.isPendingAccept = (player.id != currentUserId)
+
+                    // Move semantics: if the selected player is already in
+                    // another group (either as a player or that group's
+                    // scorer), remove them from there before placing them
+                    // as this group's scorer. Prevents a player ending up
+                    // in two groups at once — which is what would otherwise
+                    // happen when the creator searches themselves back in.
+                    for gi in 0..<groups.count where gi != groupIndex {
+                        if let prevIdx = groups[gi].firstIndex(where: { $0.id == player.id }) {
+                            groups[gi].remove(at: prevIdx)
+                            if gi < scorerIDs.count && scorerIDs[gi] == player.id {
+                                // Clear the now-empty scorer slot — the
+                                // missing-scorer banner will surface on
+                                // that group until a new scorer is added.
+                                scorerIDs[gi] = 0
+                            }
+                            // Clear them from that group's UI slot assignments
+                            // too so the non-scorer slot list renders correctly.
+                            if gi < slotAssignments.count {
+                                for slotIdx in slotAssignments[gi].indices
+                                where slotAssignments[gi][slotIdx] == player.id {
+                                    slotAssignments[gi][slotIdx] = nil
+                                }
+                            }
+                        }
+                    }
+
+                    // Within-group promotion: if the selected player is a
+                    // Carry member currently occupying a NON-scorer slot of
+                    // THIS group, clear that slot. Without this, they'd
+                    // appear twice — once as the scorer at the top, once
+                    // as a player in the list below. Guests can't reach
+                    // this branch (profileId is nil in search results).
+                    if groupIndex < slotAssignments.count {
+                        for slotIdx in slotAssignments[groupIndex].indices
+                        where slotAssignments[groupIndex][slotIdx] == player.id {
+                            slotAssignments[groupIndex][slotIdx] = nil
+                        }
+                    }
+
                     if let existingIdx = groups[groupIndex].firstIndex(where: { $0.id == player.id }) {
-                        // Already in group — update their pending status
-                        groups[groupIndex][existingIdx].isPendingAccept = true
+                        // Already in this group — just update pending status
+                        groups[groupIndex][existingIdx].isPendingAccept = player.isPendingAccept
                     } else {
                         groups[groupIndex].append(player)
                     }
@@ -711,8 +754,9 @@ struct PlayerGroupsSheet: View {
                     groups[groupIndex].append(player)
                     scorerIDs[groupIndex] = player.id
                 } else if newValue.state == .empty && oldValue.state != .empty {
-                    let fallback = groups[groupIndex].first(where: { $0.profileId != nil })
-                    scorerIDs[groupIndex] = fallback?.id ?? 0
+                    // Scorer cleared — never auto-assign (especially not a
+                    // guest). Leave 0 so the creator explicitly picks one.
+                    scorerIDs[groupIndex] = 0
                 }
             }
         )
@@ -724,9 +768,11 @@ struct PlayerGroupsSheet: View {
             if gi == exceptGroup { continue }
             if let pid = slot.profileId { ids.insert(pid) }
         }
-        if let currentProfileId = allMembers.first(where: { $0.id == currentUserId })?.profileId {
-            ids.insert(currentProfileId)
-        }
+        // The creator/current user is intentionally NOT excluded — they may
+        // want to search themselves back in as a scorer after moving to
+        // another group. The scorer binding setter below handles the
+        // "move from previous slot" case so we don't end up with the same
+        // person placed in two groups.
         return ids
     }
 
@@ -936,8 +982,13 @@ struct PlayerGroupsSheet: View {
 
     private func syncScorerIDs() {
         while scorerIDs.count < groups.count {
-            let firstConfirmed = groups[scorerIDs.count].first(where: { !$0.isPendingInvite && !$0.isPendingAccept })
-            scorerIDs.append(firstConfirmed?.id ?? groups[scorerIDs.count].first?.id ?? 0)
+            // Never auto-assign a guest or phone invite — they can't score.
+            // If no valid Carry user exists yet, leave 0 so the missing-scorer
+            // banner prompts the creator to pick someone.
+            let firstConfirmed = groups[scorerIDs.count].first(where: {
+                !$0.isGuest && !$0.isPendingInvite && !$0.isPendingAccept && $0.profileId != nil
+            })
+            scorerIDs.append(firstConfirmed?.id ?? 0)
         }
         while scorerIDs.count > groups.count { scorerIDs.removeLast() }
     }
@@ -1093,11 +1144,15 @@ struct PlayerGroupsSheet: View {
                                 .eq("player_id", value: profileId.uuidString)
                                 .execute()
                         } else {
+                            // New Carry user added by the creator — must accept
+                            // via their home screen. Inserting as "invited" (not
+                            // "active") ensures they show as pending until they
+                            // tap Accept, matching the rest of the invite flow.
                             let insert = GroupMemberInsert(
                                 groupId: groupId,
                                 playerId: profileId,
                                 role: "member",
-                                status: "active",
+                                status: "invited",
                                 groupNum: gi + 1
                             )
                             _ = try? await SupabaseManager.shared.client
@@ -1135,6 +1190,12 @@ struct PlayerGroupsSheet: View {
             }
             if !assignments.isEmpty {
                 try await GroupService().saveGroupNums(groupId: groupId, assignments: assignments)
+                // Mirror group_num into round_players for any active/concluded
+                // round so scorecards mid-flight pick up the rearrangement.
+                try? await RoundService().syncRoundPlayersGroupNums(
+                    groupId: groupId,
+                    assignments: assignments
+                )
             }
             try await GroupService().updateGroup(
                 groupId: groupId,

@@ -1056,6 +1056,12 @@ struct GroupsListView: View {
                 CreateGroupSheet { newGroup in
                     groups.insert(newGroup, at: 0)
                     showCreateGroup = false
+                    // Land inside the newly created group's details.
+                    // `pendingActiveGroupId` is observed by a delayed handler
+                    // above that waits for the sheet dismissal animation to
+                    // settle, then sets `activeGroup` with a spring animation
+                    // — same path used when tapping an existing group row.
+                    pendingActiveGroupId = newGroup.id
                 }
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)

@@ -137,15 +137,15 @@ private struct LockScreenView: View {
                 StateBadge(state: state.state, hole: state.currentHole)
             }
 
-            // Row 2: pill bar
-            PillBar(players: state.players, maxVisible: 3)
-                .padding(.top, 26)
+            // Row 2: pill bar. 4 per row so 8-player groups stay on one row,
+            // and the overall content fits within iOS' lock-screen max height.
+            PillBar(players: state.players, maxVisible: 4)
 
             // Row 3: state-dependent footer
             footer
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, 14)
+        .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -160,7 +160,6 @@ private struct LockScreenView: View {
                     .foregroundColor(.white.opacity(0.85))
                 Spacer()
             }
-            .padding(.top, 26)
         case .done:
             HStack(spacing: 6) {
                 // Static green dot — mirrors the .pending PulseDot so both
@@ -179,7 +178,6 @@ private struct LockScreenView: View {
                     .foregroundColor(.white.opacity(0.85))
                 Spacer()
             }
-            .padding(.top, 26)
         case .live, .notStarted:
             EmptyView()
         }
@@ -289,12 +287,14 @@ private struct OverflowPill: View {
     let count: Int
 
     var body: some View {
+        // Match PlayerPill's vertical padding so both pills share the same
+        // rendered height (13pt font + 5pt vertical padding on both).
         Text("+\(count)")
             .font(.system(size: 13, weight: .bold))
             .monospacedDigit()
             .foregroundColor(.white.opacity(0.8))
             .padding(.horizontal, 12)
-            .frame(height: 34)
+            .padding(.vertical, 5)
             .background(Capsule().fill(Color.white.opacity(0.08)))
             .overlay(Capsule().strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5))
     }

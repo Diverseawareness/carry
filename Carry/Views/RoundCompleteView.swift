@@ -1,5 +1,67 @@
 import SwiftUI
 
+// MARK: - Round Stats — Pure Logic (testable)
+
+/// Pure computation for the per-player score stats line shown in
+/// `RoundStatsView`. Separated from the view so it can be unit-tested.
+/// Example output: `"38 · 38 76, 3 Birdies, 1 Bogey"`
+enum RoundStatsLine {
+    /// Builds the stats line for a player's gross scores.
+    /// - Parameters:
+    ///   - playerScores: `[holeNum: grossScore]`. 0 / missing values are ignored.
+    ///   - parsByHole: `[holeNum: par]`. Holes with no par are ignored.
+    /// - Returns: `nil` if no usable scores exist, otherwise the formatted line.
+    ///
+    /// Pars are intentionally omitted from the display — they're the implied
+    /// default and just add visual noise. Only notable holes (eagles, birdies,
+    /// bogeys, doubles+) are surfaced.
+    static func make(
+        playerScores: [Int: Int],
+        parsByHole: [Int: Int]
+    ) -> String? {
+        guard !playerScores.isEmpty else { return nil }
+
+        var frontStrokes = 0
+        var backStrokes = 0
+        var eagles = 0, birdies = 0, bogeys = 0, doubleBogeysOrWorse = 0
+
+        for (holeNum, gross) in playerScores {
+            guard gross > 0 else { continue }           // skip 0/unscored sentinels
+            guard let par = parsByHole[holeNum] else { continue }
+
+            if holeNum <= 9 {
+                frontStrokes += gross
+            } else {
+                backStrokes += gross
+            }
+
+            let diff = gross - par
+            switch diff {
+            case ..<(-1):               eagles += 1     // eagle or better
+            case -1:                    birdies += 1
+            case 1:                     bogeys += 1
+            case let d where d >= 2:    doubleBogeysOrWorse += 1
+            default:                    break           // par — not surfaced
+            }
+        }
+
+        let total = frontStrokes + backStrokes
+        guard total > 0 else { return nil }
+
+        var parts: [String] = []
+        parts.append("\(frontStrokes) \u{00B7} \(backStrokes) \(total)")
+
+        if eagles > 0 { parts.append("\(eagles) Eagle\(eagles == 1 ? "" : "s")") }
+        if birdies > 0 { parts.append("\(birdies) Birdie\(birdies == 1 ? "" : "s")") }
+        if bogeys > 0 { parts.append("\(bogeys) Bogey\(bogeys == 1 ? "" : "s")") }
+        if doubleBogeysOrWorse > 0 {
+            parts.append("\(doubleBogeysOrWorse) Double Bogey\(doubleBogeysOrWorse == 1 ? "" : "s")+")
+        }
+
+        return parts.joined(separator: ", ")
+    }
+}
+
 /// Bottom sheet overlay shown when all group players finish 18 holes.
 /// Sheet slides up with "Final Results", then transitions to results leaderboard.
 /// Can be collapsed to a bottom bar to allow scorecard editing, then expanded again.
@@ -452,6 +514,31 @@ struct RoundCompleteView: View {
                                     .padding(.trailing, 24)
                             }
                         }
+                    }
+
+                    // Round Stats — per-player breakdown. Shown only once
+                    // all holes are resolved (no pending) so the numbers
+                    // match the leaderboard above.
+                    if pendingSkins.isEmpty {
+                        RoundStatsView(
+                            cachedSkins: viewModel.cachedSkins,
+                            allPlayers: viewModel.allPlayers,
+                            moneyTotals: viewModel.moneyTotals(),
+                            skinsWonByPlayer: viewModel.skinsWonByPlayer(),
+                            scores: viewModel.scores,
+                            holes: viewModel.holes,
+                            currentUserId: viewModel.currentUserId,
+                            teeBox: viewModel.config.teeBox,
+                            handicapPercentage: viewModel.config.skinRules.handicapPercentage
+                        )
+                        .padding(.top, 24)
+                        .opacity(showLeaderboard ? 1 : 0)
+                        .offset(y: showLeaderboard ? 0 : 8)
+                        .animation(
+                            .spring(response: 0.38, dampingFraction: 0.82)
+                                .delay(Double(winners.count) * 0.04 + 0.1),
+                            value: showLeaderboard
+                        )
                     }
 
                     // "Pending" section
@@ -952,5 +1039,254 @@ struct RoundCompleteView: View {
             UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
         }
         func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+    }
+}
+
+// MARK: - Round Stats View
+
+/// Per-player round stats shown below the leaderboard on the post-round
+/// Results screen. For each player displays: money won/lost, total skins,
+/// holes won, biggest skin (with carry count), and front/back-nine split.
+/// Players are sorted by money total (winners first). Extracted from the
+/// larger Round Story feature on the experimental branch — this is the
+/// stats portion only, without the narrative recap or pattern detection.
+struct RoundStatsView: View {
+    let cachedSkins: [Int: SkinStatus]
+    let allPlayers: [Player]
+    let moneyTotals: [Int: Int]
+    let skinsWonByPlayer: [Int: Int]
+    let scores: [Int: [Int: Int]]  // [playerID: [holeNum: gross]]
+    let holes: [Hole]
+    let currentUserId: Int
+    let teeBox: TeeBox?
+    let handicapPercentage: Double
+
+    @State private var isExpanded = true
+
+    /// par per hole number (built once per render)
+    private var parsByHole: [Int: Int] {
+        Dictionary(uniqueKeysWithValues: holes.map { ($0.num, $0.par) })
+    }
+
+    /// Total handicap strokes received by a player across the round
+    /// ("pops" in golf vernacular). Uses USGA playing-handicap math when a
+    /// tee box with valid slope+rating is available; falls back to the
+    /// rounded raw index otherwise (Quick Games, pre-migration rounds, or
+    /// any round whose tee box lost its rating/slope data).
+    /// Plus handicaps (negative playing hcp) give strokes back, not receive
+    /// them — shown as 0 pops.
+    private func pops(for player: Player) -> Int {
+        let playingHcp: Int
+        if let teeBox, teeBox.slopeRating > 0, teeBox.courseRating > 0 {
+            playingHcp = teeBox.playingHandicap(
+                forIndex: player.handicap,
+                percentage: handicapPercentage
+            )
+        } else {
+            playingHcp = Int(player.handicap.rounded())
+        }
+        return max(playingHcp, 0)
+    }
+
+    /// Formatted handicap index for display ("6.5", "+2.0", "36"). Plus
+    /// handicaps show a leading + so readers can tell at a glance that the
+    /// player gives strokes rather than receiving them. Uses `.sign` so
+    /// negative zero (reachable via the +HC picker at 0.0) is also caught.
+    private func handicapLabel(for player: Player) -> String {
+        let hcp = player.handicap
+        if hcp.sign == .minus {
+            return String(format: "+%.1f", -hcp)
+        }
+        return String(format: "%.1f", hcp)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header strip — tinted gray, tap to collapse/expand
+            Button {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    isExpanded.toggle()
+                }
+            } label: {
+                HStack {
+                    Text("Round Stats")
+                        .font(.carry.headline)
+                        .foregroundColor(Color.textPrimary)
+                    Spacer()
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(Color.textSecondary)
+                        .rotationEffect(.degrees(isExpanded ? 180 : 0))
+                }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 16)
+                .frame(maxWidth: .infinity)
+                .background(Color.bgSecondary)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            // Body — white, rows with thin separators
+            if isExpanded {
+                VStack(spacing: 0) {
+                    ForEach(Array(sortedPlayers.enumerated()), id: \.element.id) { index, player in
+                        playerStatRow(player)
+
+                        if index < sortedPlayers.count - 1 {
+                            Rectangle()
+                                .fill(Color.borderFaint)
+                                .frame(height: 1)
+                                .padding(.leading, 68) // row 18 + avatar 38 + spacing 12 = 68 (under the name)
+                                .padding(.trailing, 18)
+                        }
+                    }
+                }
+                .padding(.top, 6)
+                .padding(.bottom, 18)
+                .frame(maxWidth: .infinity)
+                .background(Color.white)
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .strokeBorder(Color.borderFaint, lineWidth: 1)
+        )
+        .padding(.horizontal, 24)
+    }
+
+    // MARK: - Row
+
+    private func playerStatRow(_ player: Player) -> some View {
+        let skins = skinsWonByPlayer[player.id] ?? 0
+        let money = moneyTotals[player.id] ?? 0
+        let holesWon = wonHoles(for: player.id)
+        let isYou = player.id == currentUserId
+
+        return VStack(alignment: .leading, spacing: 9) {
+            HStack(alignment: .top, spacing: 12) {
+                PlayerAvatar(player: player, size: 38)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 5) {
+                        Text(player.shortName)
+                            .font(.carry.bodySemibold)
+                            .foregroundColor(Color.textPrimary)
+                            .lineLimit(1)
+                        if isYou {
+                            Text("You")
+                                .font(.carry.micro)
+                                .foregroundColor(Color.gold)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 1)
+                                .background(Capsule().fill(Color.gold.opacity(0.10)))
+                        }
+                    }
+
+                    // Handicap index · total pops for the round
+                    Text("\(handicapLabel(for: player)) · \(pops(for: player)) pops")
+                        .font(.carry.bodySM)
+                        .foregroundColor(Color.textSecondary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                Text(moneyText(money))
+                    .font(.carry.bodyLGBold)
+                    .monospacedDigit()
+                    .foregroundColor(
+                        money > 0 ? Color.goldMuted
+                        : money < 0 ? Color.textDisabled
+                        : Color.borderSoft
+                    )
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                // Line 1 — skins count + holes won
+                if skins > 0 {
+                    let holesList = holesWon.map { "\($0)" }.joined(separator: ", ")
+                    statLine(
+                        label: "\(skins) Skin\(skins == 1 ? "" : "s")",
+                        detail: "Holes \(holesList)"
+                    )
+                } else {
+                    statLine(label: "No Skins", detail: nil)
+                }
+
+                // Line 2 — score stats. Example:
+                // "38 · 38 76, 3 Birdies, 14 Pars, 1 Bogey"
+                if let line = scoreStatsLine(for: player.id) {
+                    Text(line)
+                        .font(.carry.bodySM)
+                        .foregroundColor(Color.textSecondary)
+                }
+            }
+            .padding(.leading, 50) // align under the name (38 avatar + 12 spacing)
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 15)
+    }
+
+    private func statLine(label: String, detail: String?) -> some View {
+        HStack(spacing: 4) {
+            Text(label)
+                .font(.carry.bodySM)
+                .foregroundColor(Color.textSecondary)
+            if let detail = detail {
+                Text("\u{00B7}")
+                    .font(.carry.bodySM)
+                    .foregroundColor(Color.textDisabled)
+                Text(detail)
+                    .font(.carry.bodySM)
+                    .foregroundColor(Color.textTertiary)
+            }
+        }
+    }
+
+    // MARK: - Data Helpers
+
+    private var sortedPlayers: [Player] {
+        allPlayers.sorted { (moneyTotals[$0.id] ?? 0) > (moneyTotals[$1.id] ?? 0) }
+    }
+
+    /// Biggest skin (largest carry) won by a given player — kept for future
+    /// use when round stats surface elsewhere (e.g. the Profile tab). Not
+    /// currently rendered in the Round Stats section but safe to keep on
+    /// the type.
+    private func biggestSkin(for playerId: Int) -> (hole: Int, carry: Int)? {
+        var best: (hole: Int, carry: Int)?
+        for (holeNum, status) in cachedSkins {
+            if case .won(let winner, _, _, let carry) = status, winner.id == playerId {
+                if best == nil || carry > best!.carry {
+                    best = (holeNum, carry)
+                }
+            }
+        }
+        return best
+    }
+
+    private func wonHoles(for playerId: Int) -> [Int] {
+        cachedSkins.compactMap { (holeNum, status) in
+            if case .won(let winner, _, _, _) = status, winner.id == playerId {
+                return holeNum
+            }
+            return nil
+        }.sorted()
+    }
+
+    /// Thin wrapper — all the formatting logic lives in `RoundStatsLine.make`
+    /// so it can be unit-tested. Returns nil if the player has no usable scores.
+    private func scoreStatsLine(for playerId: Int) -> String? {
+        RoundStatsLine.make(
+            playerScores: scores[playerId] ?? [:],
+            parsByHole: parsByHole
+        )
+    }
+
+    private func moneyText(_ amount: Int) -> String {
+        if amount > 0 { return "$\(amount)" }
+        if amount < 0 { return "-$\(-amount)" }
+        return "$0"
     }
 }

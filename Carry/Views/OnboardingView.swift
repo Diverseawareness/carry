@@ -21,6 +21,8 @@ struct OnboardingView: View {
     @State private var hasAppleName = false
     @State private var progressReady = false
     @State private var notificationRequested = false
+    @State private var isSavingOnboarding = false
+    @State private var saveErrorMessage: String?
 
     // Photo picker removed — users add photo from profile settings
 
@@ -102,8 +104,17 @@ struct OnboardingView: View {
 
                 // Bottom button bar — hidden on golf profile step (button is inline there)
                 if !isGolfProfileStep {
-                    buttonBar
-                        .padding(.bottom, 24)
+                    VStack(spacing: 8) {
+                        if let saveErrorMessage {
+                            Text(saveErrorMessage)
+                                .font(.carry.bodySM)
+                                .foregroundColor(Color.systemRedColor)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 24)
+                        }
+                        buttonBar
+                    }
+                    .padding(.bottom, 24)
                 }
             }
 
@@ -135,18 +146,21 @@ struct OnboardingView: View {
         .sheet(isPresented: $showHCPicker) {
             HandicapPickerSheet(
                 handicap: $hcPickerValue,
-                isPlus: $hcPickerIsPlus
+                isPlus: $hcPickerIsPlus,
+                onConfirm: {
+                    // Only write back when the user explicitly taps Done.
+                    // Swipe-dismiss = cancel (leaves handicapText untouched,
+                    // so validation correctly blocks the Next button).
+                    let absVal = abs(hcPickerValue)
+                    if hcPickerIsPlus || hcPickerValue < 0 {
+                        handicapText = "+\(String(format: "%.1f", absVal))"
+                    } else {
+                        handicapText = String(format: "%.1f", absVal)
+                    }
+                }
             )
             .presentationDetents([.height(520)])
             .presentationDragIndicator(.visible)
-            .onDisappear {
-                let absVal = abs(hcPickerValue)
-                if hcPickerIsPlus || hcPickerValue < 0 {
-                    handicapText = "+\(String(format: "%.1f", absVal))"
-                } else {
-                    handicapText = String(format: "%.1f", absVal)
-                }
-            }
         }
     }
 
@@ -192,18 +206,26 @@ struct OnboardingView: View {
             } label: {
                 let isNotifStep = hasAppleName ? step == 1 : step == 2
                 let isDisclaimerStep = step == totalSteps - 1
-                let label = isDisclaimerStep ? "I Understand" : isNotifStep ? (notificationRequested ? "Continue" : "Enable Notifications") : "Next"
-                Text(label)
-                    .font(.carry.headlineBold)
-                    .foregroundColor(continueEnabled ? .white : Color.textDisabled)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 56)
-                    .background(
-                        RoundedRectangle(cornerRadius: btnRadius)
-                            .fill(continueEnabled ? Color.textPrimary : Color.borderSubtle)
-                    )
+                let defaultLabel = isDisclaimerStep ? "I Understand" : isNotifStep ? (notificationRequested ? "Continue" : "Enable Notifications") : "Next"
+                ZStack {
+                    // Show spinner while saving on the final (disclaimer) step
+                    if isSavingOnboarding {
+                        ProgressView()
+                            .tint(.white)
+                    } else {
+                        Text(defaultLabel)
+                            .font(.carry.headlineBold)
+                            .foregroundColor(continueEnabled ? .white : Color.textDisabled)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 56)
+                .background(
+                    RoundedRectangle(cornerRadius: btnRadius)
+                        .fill(continueEnabled ? Color.textPrimary : Color.borderSubtle)
+                )
             }
-            .disabled(!continueEnabled)
+            .disabled(!continueEnabled || isSavingOnboarding)
         }
         .padding(.horizontal, 24)
     }
@@ -247,24 +269,36 @@ struct OnboardingView: View {
     }
 
     private func finishOnboarding() {
-        // Mark disclaimer as accepted (it's the last onboarding step now)
-        UserDefaults.standard.set(true, forKey: "disclaimerAccepted")
+        guard !isSavingOnboarding else { return }
+        isSavingOnboarding = true
+        saveErrorMessage = nil
 
-        authService.completeOnboarding(
-            firstName: firstName.trimmingCharacters(in: .whitespaces),
-            lastName: lastName.trimmingCharacters(in: .whitespaces),
-            username: nil,
-            ghinNumber: ghinNumber.isEmpty ? nil : ghinNumber,
-            handicap: parseHandicap(handicapText),
-            photo: nil,
-            homeClub: selectedClub?.clubName ?? selectedClub?.courseName,
-            homeClubId: selectedClub?.id,
-            isClubMember: isClubMember
-        )
-        let name = firstName.trimmingCharacters(in: .whitespaces)
-        ToastManager.shared.success("Account created, welcome \(name)!")
-        Analytics.onboardingCompleted()
-        onComplete?()
+        Task {
+            do {
+                try await authService.completeOnboarding(
+                    firstName: firstName.trimmingCharacters(in: .whitespaces),
+                    lastName: lastName.trimmingCharacters(in: .whitespaces),
+                    username: nil,
+                    ghinNumber: ghinNumber.isEmpty ? nil : ghinNumber,
+                    handicap: parseHandicap(handicapText),
+                    photo: nil,
+                    homeClub: selectedClub?.clubName ?? selectedClub?.courseName,
+                    homeClubId: selectedClub?.id,
+                    isClubMember: isClubMember
+                )
+                // Profile save succeeded — safe to finalize onboarding locally.
+                UserDefaults.standard.set(true, forKey: "disclaimerAccepted")
+                let name = firstName.trimmingCharacters(in: .whitespaces)
+                ToastManager.shared.success("Account created, welcome \(name)!")
+                Analytics.onboardingCompleted()
+                onComplete?()
+            } catch {
+                await MainActor.run {
+                    isSavingOnboarding = false
+                    saveErrorMessage = "Couldn't save your profile. Check your connection and try again."
+                }
+            }
+        }
     }
 
     // MARK: - Step: Name only (no Apple name)
@@ -361,7 +395,12 @@ struct OnboardingView: View {
                 }
                 .id("handicapSection")
 
-                // GHIN Number
+                // GHIN Number — hidden until GHIN integration is approved.
+                // When re-enabling: uncomment the block below and drop the
+                // teaser card that replaced it. The `ghinNumber` @State +
+                // finishOnboarding submission at the top of this file are
+                // kept in place so turning this back on is just a UI flip.
+                /*
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 4) {
                         Text("GHIN Number")
@@ -386,6 +425,31 @@ struct OnboardingView: View {
                     .font(.system(size: 12))
                     .foregroundColor(Color.textTertiary)
                     .padding(.top, 4)
+                */
+
+                // GHIN integration teaser — sets expectation that handicap
+                // auto-sync is on the roadmap without promising a date.
+                HStack(spacing: 12) {
+                    Image("usga-ghin")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 44, height: 44)
+                    Text("Auto-sync your handicap — coming soon")
+                        .font(.system(size: 15))
+                        .foregroundColor(Color.textSecondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.bgSecondary)
+                )
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("GHIN handicap auto-sync coming soon")
 
                 // Next button inline (not anchored above keyboard)
                 Button {
@@ -786,17 +850,6 @@ struct OnboardingView: View {
             .padding(.horizontal, 32)
 
             Spacer()
-
-            // Legal links
-            HStack(spacing: 4) {
-                Link("Terms of Service", destination: URL(string: "https://carryapp.site/terms.html")!)
-                Text("and")
-                    .foregroundColor(Color.textSecondary)
-                Link("Privacy Policy", destination: URL(string: "https://carryapp.site/privacy.html")!)
-            }
-            .font(.system(size: 13))
-            .foregroundColor(Color.textTertiary)
-            .padding(.bottom, 8)
         }
     }
 

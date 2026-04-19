@@ -26,6 +26,10 @@ struct ProfileView: View {
     @State private var showShareSheet = false
     @State private var showDeleteConfirm = false
 
+    /// Feature flag — GHIN row is hidden until USGA GPA Program approval.
+    /// Code is kept in place; flip to `true` once API access is granted.
+    private let ghinRowEnabled = false
+
     private var fullName: String {
         let first = authService.currentUser?.firstName ?? ""
         let last = authService.currentUser?.lastName ?? ""
@@ -142,13 +146,13 @@ struct ProfileView: View {
                     if storeService.isPremium {
                         capsHeader("SUBSCRIPTION")
                         settingsGroup {
-                            plainRow("Manage Subscription") {
+                            plainRow("Manage Subscription", trailingSymbol: "chevron.right") {
                                 if let url = URL(string: "https://apps.apple.com/account/subscriptions") {
                                     UIApplication.shared.open(url)
                                 }
                             }
                             groupDivider()
-                            plainRow("Restore Purchases") {
+                            plainRow("Restore Purchases", trailingSymbol: "chevron.right") {
                                 Task { try? await AppStore.sync() }
                             }
                         }
@@ -171,6 +175,7 @@ struct ProfileView: View {
                                 RoundedRectangle(cornerRadius: 16)
                                     .strokeBorder(Color.deepNavy, lineWidth: 1.5)
                             )
+                            .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .padding(.horizontal, 20)
@@ -180,52 +185,68 @@ struct ProfileView: View {
                     // MARK: Account
                     capsHeader("ACCOUNT")
                     settingsGroup {
-                        plainRow("Profile") {
+                        plainRow("Edit Profile", trailingSymbol: "chevron.right") {
                             showEditProfile = true
                         }
-                        groupDivider()
-                        plainRow("GHIN Nr", value: ghinNumber) {
-                            showGhinEdit = true
+                        // GHIN row — hidden behind `ghinRowEnabled` until USGA GPA
+                        // approval. Keep the code in place.
+                        if ghinRowEnabled {
+                            groupDivider()
+                            plainRow("GHIN Nr", value: ghinNumber, trailingSymbol: "chevron.right") {
+                                showGhinEdit = true
+                            }
                         }
                         groupDivider()
-                        plainRow("Notifications") {
+                        // Inline Handicap Index editor — opens the exact same
+                        // HandicapPickerSheet flow used inside EditProfileSheet.
+                        plainRow(
+                            "Handicap Index",
+                            value: formatHandicap(handicap),
+                            trailingSymbol: "chevron.up.chevron.down"
+                        ) {
+                            hcPickerValue = handicap
+                            hcPickerIsPlus = handicap < 0
+                            showHandicapPicker = true
+                        }
+                        groupDivider()
+                        plainRow("Notifications", trailingSymbol: "chevron.up.chevron.down") {
                             showNotifications = true
-                        }
-                    }
-
-                    // MARK: About
-                    capsHeader("ABOUT")
-                    settingsGroup {
-                        plainRow("App FAQ") {
-                            if let url = URL(string: "https://carryapp.site/faq.html") {
-                                UIApplication.shared.open(url)
-                            }
-                        }
-                        groupDivider()
-                        plainRow("Terms of Service") {
-                            if let url = URL(string: "https://carryapp.site/terms.html") {
-                                UIApplication.shared.open(url)
-                            }
-                        }
-                        groupDivider()
-                        plainRow("Privacy Policy") {
-                            if let url = URL(string: "https://carryapp.site/privacy.html") {
-                                UIApplication.shared.open(url)
-                            }
                         }
                     }
 
                     // MARK: Support
                     capsHeader("SUPPORT")
                     settingsGroup {
-                        plainRow("Contact Support") {
+                        plainRow("Contact Support", trailingSymbol: "envelope") {
                             if let url = URL(string: "mailto:support@carryapp.site") {
                                 UIApplication.shared.open(url)
                             }
                         }
                         groupDivider()
-                        plainRow("Share Carry with a Friend") {
+                        plainRow("Share Carry with a Friend", trailingSymbol: "square.and.arrow.up") {
                             showShareSheet = true
+                        }
+                    }
+
+                    // MARK: About
+                    capsHeader("ABOUT")
+                    settingsGroup {
+                        plainRow("App FAQ", trailingSymbol: "chevron.right") {
+                            if let url = URL(string: "https://carryapp.site/faq.html") {
+                                UIApplication.shared.open(url)
+                            }
+                        }
+                        groupDivider()
+                        plainRow("Terms of Service", trailingSymbol: "chevron.right") {
+                            if let url = URL(string: "https://carryapp.site/terms.html") {
+                                UIApplication.shared.open(url)
+                            }
+                        }
+                        groupDivider()
+                        plainRow("Privacy Policy", trailingSymbol: "chevron.right") {
+                            if let url = URL(string: "https://carryapp.site/privacy.html") {
+                                UIApplication.shared.open(url)
+                            }
                         }
                     }
 
@@ -240,6 +261,7 @@ struct ProfileView: View {
                                 .foregroundColor(Color.systemRedColor)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.vertical, 14)
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                     }
@@ -249,7 +271,7 @@ struct ProfileView: View {
                         .padding(.horizontal, 24)
                         .padding(.top, 6)
 
-                    // MARK: Sign Out
+                    // MARK: Sign Out (standalone card)
                     settingsGroup {
                         plainRow("Sign Out") {
                             showSignOutConfirm = true
@@ -257,7 +279,7 @@ struct ProfileView: View {
                     }
                     .padding(.top, 16)
 
-                    // MARK: Version
+                    // MARK: Version (standalone card)
                     settingsGroup {
                         HStack {
                             Text("Version")
@@ -326,22 +348,24 @@ struct ProfileView: View {
         .sheet(isPresented: $showHandicapPicker) {
             HandicapPickerSheet(
                 handicap: $hcPickerValue,
-                isPlus: $hcPickerIsPlus
+                isPlus: $hcPickerIsPlus,
+                onConfirm: {
+                    // Only persist when the user taps Done — swipe-dismiss is
+                    // a cancel (no network call, no toast).
+                    let newHandicap = hcPickerValue
+                    Task {
+                        do {
+                            try await authService.updateProfile(ProfileUpdate(handicap: newHandicap))
+                            ToastManager.shared.success("Handicap updated")
+                        } catch {
+                            profileError = "Could not update handicap. Please try again."
+                            showProfileError = true
+                        }
+                    }
+                }
             )
             .presentationDetents([.height(520)])
             .presentationDragIndicator(.visible)
-            .onDisappear {
-                let newHandicap = hcPickerValue
-                Task {
-                    do {
-                        try await authService.updateProfile(ProfileUpdate(handicap: newHandicap))
-                        ToastManager.shared.success("Handicap updated")
-                    } catch {
-                        profileError = "Could not update handicap. Please try again."
-                        showProfileError = true
-                    }
-                }
-            }
         }
         .sheet(isPresented: $showEditProfile) {
             EditProfileSheet(parentProfileImage: $profileImage)
@@ -515,25 +539,44 @@ struct ProfileView: View {
             .frame(height: 1)
     }
 
-    private func plainRow(_ label: String, value: String? = nil, action: @escaping () -> Void) -> some View {
+    private func plainRow(
+        _ label: String,
+        value: String? = nil,
+        trailingSymbol: String? = nil,
+        action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
-            HStack {
+            HStack(spacing: 10) {
                 Text(label)
                     .font(.system(size: 16))
                     .foregroundColor(Color.textPrimary)
 
-                Spacer()
+                Spacer(minLength: 8)
 
                 if let value, !value.isEmpty {
                     Text(value)
-                        .font(.system(size: 15))
-                        .foregroundColor(Color.textSecondary)
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(Color.textPrimary)
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .frame(maxWidth: 160, alignment: .trailing)
                 }
+
+                if let trailingSymbol {
+                    Image(systemName: trailingSymbol)
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(Color.textSecondary)
+                        .frame(width: 20, height: 20)
+                }
             }
+            // Full-width, ~48pt tappable surface. .contentShape ensures the
+            // transparent Spacer region is also hit-testable — without it,
+            // only the text/icon nodes themselves react to taps, which on
+            // iPhone XS (and some older devices) was dropping taps entirely
+            // in the empty middle zone of each row.
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 14)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
@@ -547,11 +590,7 @@ struct EditProfileSheet: View {
     @Binding var parentProfileImage: UIImage?
     @State private var firstName: String = ""
     @State private var lastName: String = ""
-    @State private var handicap: String = ""
-    @State private var showHCPicker = false
-    @State private var hcPickerValue: Double = 0
-    @State private var hcPickerIsPlus: Bool = false
-    enum ProfileField: Hashable { case firstName, lastName, handicap, clubSearch }
+    enum ProfileField: Hashable { case firstName, lastName, clubSearch }
     @FocusState private var profileFocused: ProfileField?
     @State private var selectedPhoto: UIImage? = nil
     @State private var photoItem: PhotosPickerItem? = nil
@@ -709,31 +748,9 @@ struct EditProfileSheet: View {
                     }
                     .padding(.horizontal, 24)
 
-                    // Handicap field
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Handicap")
-                            .font(.carry.bodySMBold)
-                            .foregroundColor(Color.textPrimary)
-                            .padding(.leading, 4)
-
-                        Button {
-                            profileFocused = nil
-                            let val: Double = handicap.hasPrefix("+") ? -(Double(String(handicap.dropFirst())) ?? 0) : Double(handicap) ?? 0
-                            hcPickerValue = val
-                            hcPickerIsPlus = val < 0
-                            showHCPicker = true
-                        } label: {
-                            HStack {
-                                Text(handicap.isEmpty ? "e.g. 12.4" : handicap)
-                                    .font(.system(size: 16))
-                                    .foregroundColor(handicap.isEmpty ? Color.textDisabled : Color.textPrimary)
-                                Spacer()
-                            }
-                            .carryInput(focused: false)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .padding(.horizontal, 24)
+                    // Handicap field removed — HC is now edited from the main
+                    // Profile screen via the HC Index row (opens the same
+                    // HandicapPickerSheet flow).
 
                     // Home Club / Home Course
                     VStack(alignment: .leading, spacing: 6) {
@@ -928,22 +945,6 @@ struct EditProfileSheet: View {
             } // ScrollViewReader
         }
         .background(Color.white)
-        .sheet(isPresented: $showHCPicker) {
-            HandicapPickerSheet(
-                handicap: $hcPickerValue,
-                isPlus: $hcPickerIsPlus
-            )
-            .presentationDetents([.height(520)])
-            .presentationDragIndicator(.visible)
-            .onDisappear {
-                let absVal = abs(hcPickerValue)
-                if hcPickerIsPlus || hcPickerValue < 0 {
-                    handicap = "+\(String(format: "%.1f", absVal))"
-                } else {
-                    handicap = String(format: "%.1f", absVal)
-                }
-            }
-        }
         .onAppear {
             firstName = authService.currentUser?.firstName ?? ""
             lastName = authService.currentUser?.lastName ?? ""
@@ -952,9 +953,6 @@ struct EditProfileSheet: View {
                 hasExistingClub = true
             }
             isClubMember = authService.currentUser?.isClubMember ?? true
-            if let hcp = authService.currentUser?.handicap {
-                handicap = String(format: hcp.truncatingRemainder(dividingBy: 1) == 0 ? "%.0f" : "%.1f", hcp)
-            }
         }
         .confirmationDialog("Profile Photo", isPresented: $showPhotoOptions, titleVisibility: .visible) {
             Button("Take Photo") { showCamera = true }
@@ -1035,7 +1033,6 @@ struct EditProfileSheet: View {
                     avatarUrl = ""  // Clear the avatar URL
                 }
 
-                let parsedHandicap = Double(handicap.trimmingCharacters(in: .whitespaces))
                 let displayName = firstTrimmed  // First name only for scorecard/pills
                 let initials: String = {
                     let first = firstTrimmed.prefix(1).uppercased()
@@ -1054,12 +1051,14 @@ struct EditProfileSheet: View {
                     clubId = authService.currentUser?.homeClubId
                 }
 
+                // Handicap intentionally NOT included — edited separately from
+                // the Profile screen's HC Index row. Omitting leaves the DB
+                // column untouched on save.
                 var update = ProfileUpdate(
                     firstName: firstTrimmed,
                     lastName: lastTrimmed,
                     displayName: displayName,
                     initials: initials,
-                    handicap: parsedHandicap ?? 0,
                     homeClub: clubName,
                     homeClubId: clubId,
                     isClubMember: (selectedClub != nil || hasExistingClub) ? isClubMember : nil

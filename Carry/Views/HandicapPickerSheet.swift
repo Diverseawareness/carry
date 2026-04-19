@@ -10,6 +10,11 @@ import SwiftUI
 struct HandicapPickerSheet: View {
     @Binding var handicap: Double
     @Binding var isPlus: Bool
+    /// Fires when the user taps Done. Use this to write the value and run
+    /// any save side effects (e.g. network update, onboarding form fill).
+    /// A swipe-to-dismiss does NOT call this — the sheet is treated as a
+    /// cancel in that case.
+    var onConfirm: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
 
     // Local state for picker — committed on Done
@@ -106,6 +111,7 @@ struct HandicapPickerSheet: View {
                 let value = Double(selectedWhole) + Double(selectedDecimal) / 10.0
                 handicap = localIsPlus ? -value : value
                 isPlus = localIsPlus
+                onConfirm?()
                 dismiss()
             } label: {
                 Text("Done")

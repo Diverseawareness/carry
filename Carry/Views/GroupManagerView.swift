@@ -20,6 +20,7 @@ struct GroupManagerView: View {
     @State private var dropTargetGroup: Int?
     @State private var dropTargetIndex: Int?  // target row index for within-group reorder
     @State private var orderSyncTask: Task<Void, Never>?
+    @State private var teeTimesSyncTask: Task<Void, Never>?
     @State private var showAddSheet = false
     @State private var showGuestEntry = false
     @State private var showInviteEntry = false
@@ -34,6 +35,7 @@ struct GroupManagerView: View {
     @State private var showSettings = false
     @State private var showLeaderboard = false
     @State private var showPaywall = false
+    @State private var showQRInvite = false
     @State private var leaderboardTab: Int = 0  // 0 = Round, 1 = All Time
     @State private var groupName = "The Friday Skins"  // editable group/event name
     @State private var showSwapPicker = false
@@ -316,21 +318,49 @@ struct GroupManagerView: View {
     /// Ensure each group has a valid scorer; default to first confirmed (non-pending) player
     private func syncScorerIDs() {
         while scorerIDs.count < groups.count {
-            let firstConfirmed = groups[scorerIDs.count].first(where: { !$0.isPendingInvite && !$0.isPendingAccept })
-            scorerIDs.append(firstConfirmed?.id ?? groups[scorerIDs.count].first?.id ?? 0)
+            // For a brand-new group being appended, default to the first
+            // Carry user (skip guests and phone invites — they can't score).
+            // If none exists, leave 0 so the missing-scorer banner surfaces
+            // and prompts manual assignment.
+            let defaultScorer = groups[scorerIDs.count].first(where: {
+                !$0.isGuest && !$0.isPendingInvite && !$0.isPendingAccept && $0.profileId != nil
+            })
+            scorerIDs.append(defaultScorer?.id ?? 0)
         }
         while scorerIDs.count > groups.count {
             scorerIDs.removeLast()
         }
-        // Validate: if scorer was moved out of group or is pending, reassign to first confirmed player
-        // Quick Games: allow pending scorers — they'll become active when they accept
+        // Validate existing scorer assignments:
+        //  - scorerIDs[i] == 0              → intentionally empty (banner); don't auto-fill
+        //  - scorer no longer in the group  → clear (banner); don't auto-reassign
+        //  - scorer is a guest              → clear (banner); guests can't score
+        //  - Skins Group pending scorer     → advance past to next confirmed Carry user
+        //                                     (existing behavior, Quick Games allow pending)
         for i in 0..<groups.count {
+            if scorerIDs[i] == 0 { continue }                  // respect empty — banner will prompt
+
             let groupPlayerIDs = Set(groups[i].map(\.id))
             let currentScorer = groups[i].first(where: { $0.id == scorerIDs[i] })
-            let isPendingScorer = currentScorer?.isPendingInvite == true || currentScorer?.isPendingAccept == true
-            if !groupPlayerIDs.contains(scorerIDs[i]) || (!isQuickGame && isPendingScorer) {
-                let firstConfirmed = groups[i].first(where: { !$0.isPendingInvite && !$0.isPendingAccept })
-                scorerIDs[i] = firstConfirmed?.id ?? groups[i].first?.id ?? 0
+            let isPendingScorer = currentScorer?.isPendingInvite == true
+                || currentScorer?.isPendingAccept == true
+            // Guests have a profileId (guest-profile UUID on Supabase), so
+            // key off isGuest rather than profileId.
+            let isGuestScorer = currentScorer?.isGuest == true || currentScorer?.profileId == nil
+
+            if !groupPlayerIDs.contains(scorerIDs[i]) {
+                // Scorer was removed (e.g. swipe-delete) → leave empty so
+                // the creator gets prompted via the missing-scorer banner.
+                scorerIDs[i] = 0
+            } else if isGuestScorer {
+                // Can't score → clear, banner prompts manual pick.
+                scorerIDs[i] = 0
+            } else if !isQuickGame && isPendingScorer {
+                // Skins Group: advance past pending scorer to next confirmed
+                // Carry user (matches prior behavior).
+                let nextConfirmed = groups[i].first(where: {
+                    !$0.isGuest && !$0.isPendingInvite && !$0.isPendingAccept && $0.profileId != nil
+                })
+                scorerIDs[i] = nextConfirmed?.id ?? 0
             }
         }
     }
@@ -477,6 +507,15 @@ struct GroupManagerView: View {
         }
     }
 
+    /// Leaderboard rows to render given the active tab. On the Last Round
+    /// tab we narrow down to players who actually won skins — matches the
+    /// post-round Results screen, where the leaderboard is a celebration of
+    /// winners. All Time keeps every participant so standings stay complete.
+    private var visibleLeaderboardPlayers: [Player] {
+        guard leaderboardTab == 0 else { return leaderboardPlayers }
+        return leaderboardPlayers.filter { (cumulativeStats[$0.id]?.skins ?? 0) > 0 }
+    }
+
     private var hasPendingPlayers: Bool {
         allAvailable.contains { selectedIDs.contains($0.id) && ($0.isPendingInvite || $0.isPendingAccept) }
     }
@@ -547,71 +586,48 @@ struct GroupManagerView: View {
                 selectedIDs = sel
 
                 if hadGroups {
-                    // Preserve existing group arrangement — merge changes in-place
-                    let freshIds = Set(filteredFreshMembers.map(\.id))
-
-                    // Track scorers who just accepted so we can toast
+                    // Rebuild groups authoritatively from server's group_num so
+                    // tee-time rearrangements done by the creator propagate to
+                    // every member device. Swipe-deletes pending a server commit
+                    // are already filtered via recentlyRemovedIds above.
+                    let existingById = Dictionary(
+                        uniqueKeysWithValues: groups.flatMap { $0 }.map { ($0.id, $0) }
+                    )
                     let scorerIdSet = Set(scorerIDs)
                     var newlyAcceptedScorers: [String] = []
-
-                    // 1. Update statuses for existing members, remove gone members
-                    for gi in groups.indices {
-                        groups[gi] = groups[gi].compactMap { player in
-                            guard freshIds.contains(player.id) else { return nil } // removed/declined
-                            if let fresh = freshById[player.id] {
-                                // Detect scorer acceptance: was pending, now active
-                                if player.isPendingAccept && !fresh.isPendingAccept && scorerIdSet.contains(player.id) {
-                                    newlyAcceptedScorers.append(fresh.name)
-                                }
-                                var updated = player
-                                updated.isPendingAccept = fresh.isPendingAccept
-                                updated.isPendingInvite = fresh.isPendingInvite
-                                return updated
-                            }
-                            return player
-                        }
-                    }
-
-                    // Toast for scorers who just accepted
-                    for name in newlyAcceptedScorers {
-                        let first = name.components(separatedBy: " ").first ?? name
-                        ToastManager.shared.success("\(first) accepted — ready to score")
-                    }
-
-                    // 2. Add new members to their assigned group (from group_num), respecting max 4
-                    let existingIdsNow = Set(groups.flatMap { $0 }.map(\.id))
                     var newlyJoinedNames: [String] = []
-                    for newPlayer in filteredFreshMembers where !existingIdsNow.contains(newPlayer.id) {
-                        let targetGroup = max(0, newPlayer.group - 1)
-                        if targetGroup < groups.count && groups[targetGroup].count < 4 {
-                            groups[targetGroup].append(newPlayer)
-                        } else if targetGroup >= groups.count {
-                            while groups.count <= targetGroup { groups.append([]) }
-                            groups[targetGroup].append(newPlayer)
-                        } else {
-                            // Target group full — find group with fewest players
-                            if let minIdx = groups.indices.min(by: { groups[$0].count < groups[$1].count }),
-                               groups[minIdx].count < 4 {
-                                groups[minIdx].append(newPlayer)
+
+                    for fresh in filteredFreshMembers {
+                        if let prior = existingById[fresh.id] {
+                            if prior.isPendingAccept && !fresh.isPendingAccept && scorerIdSet.contains(fresh.id) {
+                                newlyAcceptedScorers.append(fresh.name)
                             }
-                        }
-                        // Track for toast (skins groups only — quick game members are added by creator)
-                        if !isQuickGame && !newPlayer.isPendingAccept {
-                            let first = newPlayer.name.components(separatedBy: " ").first ?? newPlayer.name
+                        } else if !isQuickGame && !fresh.isPendingAccept {
+                            let first = fresh.name.components(separatedBy: " ").first ?? fresh.name
                             newlyJoinedNames.append(first)
                         }
                     }
 
-                    // Toast for members who just joined
+                    let maxGroupNum = filteredFreshMembers.map(\.group).max() ?? 1
+                    let targetCount = max(maxGroupNum, 1)
+                    var rebuilt: [[Player]] = Array(repeating: [], count: targetCount)
+                    for fresh in filteredFreshMembers {
+                        let idx = max(0, min(fresh.group - 1, targetCount - 1))
+                        rebuilt[idx].append(fresh)
+                    }
+                    while rebuilt.last?.isEmpty == true && rebuilt.count > 1 {
+                        rebuilt.removeLast()
+                    }
+                    groups = rebuilt
+
+                    for name in newlyAcceptedScorers {
+                        let first = name.components(separatedBy: " ").first ?? name
+                        ToastManager.shared.success("\(first) accepted — ready to score")
+                    }
                     if let name = newlyJoinedNames.first, newlyJoinedNames.count == 1 {
                         ToastManager.shared.success("\(name) joined the group")
                     } else if newlyJoinedNames.count > 1 {
                         ToastManager.shared.success("\(newlyJoinedNames.joined(separator: ", ")) joined the group")
-                    }
-
-                    // 3. Remove trailing empty groups
-                    while groups.last?.isEmpty == true && groups.count > 1 {
-                        groups.removeLast()
                     }
                 } else {
                     // First load — use autoGroup to set up initial arrangement
@@ -628,29 +644,42 @@ struct GroupManagerView: View {
 
                 let groupCount = max(groups.count, 1)
                 startingSides = Self.defaultSides(count: groupCount)
-                // Use saved scorer IDs from Supabase if available, otherwise default to first player
+                // Use saved scorer IDs from Supabase if available, otherwise
+                // leave empty and let syncScorerIDs pick a valid Carry user
+                // (or 0, which triggers the missing-scorer banner).
                 if let saved = freshGroup.scorerIds, !saved.isEmpty {
                     scorerIDs = saved
-                    // Pad if fewer scorer IDs than groups
-                    while scorerIDs.count < groups.count {
-                        scorerIDs.append(groups[scorerIDs.count].first?.id ?? 0)
-                    }
                 } else {
-                    scorerIDs = groups.map { $0.first?.id ?? 0 }
+                    scorerIDs = []
                 }
+                syncScorerIDs()
 
-                // Update tee time / schedule
-                if let date = freshGroup.scheduledDate {
+                // Update tee time / schedule — recompute every refresh so
+                // members pick up changes the creator makes to schedule or
+                // group count. Prefer the authoritative per-group array
+                // (freshGroup.teeTimes) so independent/non-consecutive tee
+                // times propagate exactly; fall back to deriving from
+                // scheduledDate + teeTimeInterval for pre-migration groups.
+                if let fresh = freshGroup.teeTimes, !fresh.isEmpty {
+                    // Pad/truncate to groupCount so parallel arrays line up.
+                    if fresh.count == groupCount {
+                        teeTimes = fresh
+                    } else if fresh.count > groupCount {
+                        teeTimes = Array(fresh.prefix(groupCount))
+                    } else {
+                        teeTimes = fresh + Array(repeating: nil, count: groupCount - fresh.count)
+                    }
+                    if let first = fresh.compactMap({ $0 }).first {
+                        roundDate = first
+                    }
+                } else if let date = freshGroup.scheduledDate {
                     roundDate = date
-                    if teeTimes.isEmpty || teeTimes.allSatisfy({ $0 == nil }) {
-                        if let interval = freshGroup.teeTimeInterval, interval > 0, groupCount > 1 {
-                            // Compute consecutive tee times from interval
-                            teeTimes = (0..<groupCount).map { i in
-                                date.addingTimeInterval(Double(i) * Double(interval) * 60)
-                            }
-                        } else {
-                            teeTimes = [date] + Array(repeating: nil, count: max(groupCount - 1, 0))
+                    if let interval = freshGroup.teeTimeInterval, interval > 0, groupCount > 1 {
+                        teeTimes = (0..<groupCount).map { i in
+                            date.addingTimeInterval(Double(i) * Double(interval) * 60)
                         }
+                    } else if teeTimes.count != groupCount {
+                        teeTimes = [date] + Array(repeating: nil, count: max(groupCount - 1, 0))
                     }
                 }
 
@@ -778,6 +807,23 @@ struct GroupManagerView: View {
                     }
                     .accessibilityLabel("Leaderboard")
                     .accessibilityHint("Shows round and all-time leaderboard")
+
+                    // QR invite button — creator only, and only once the group
+                    // has been persisted to Supabase (new groups get their ID on
+                    // first save). Without the ID there's no URL to encode.
+                    if isCreator && supabaseGroupId != nil {
+                        Button {
+                            showQRInvite = true
+                        } label: {
+                            Image(systemName: "qrcode")
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundColor(Color.textPrimary)
+                                .frame(width: 40, height: 40)
+                                .background(Circle().fill(.white))
+                        }
+                        .accessibilityLabel("QR invite")
+                        .accessibilityHint("Shows a scannable QR code to invite players")
+                    }
 
                     // Group options button — creator only
                     if isCreator {
@@ -1354,6 +1400,16 @@ struct GroupManagerView: View {
                 .presentationDragIndicator(.visible)
                 .presentationBackground(.white)
         }
+        .sheet(isPresented: $showQRInvite) {
+            if let groupId = supabaseGroupId {
+                GroupInviteQRSheet(groupId: groupId, groupName: groupName)
+                    // Fitted height (~12 + 447 card + 24 + 56 btn + 24) so
+                    // there's no empty space between the card and the button.
+                    .presentationDetents([.height(590)])
+                    .presentationDragIndicator(.visible)
+                    .presentationBackground(.white)
+            }
+        }
         .sheet(isPresented: $showSwapPicker) {
             swapPickerSheet
                 .presentationDetents([.medium])
@@ -1604,6 +1660,17 @@ struct GroupManagerView: View {
                 guard !Task.isCancelled else { return }
                 syncPlayerOrderToSupabase()
                 syncGroupNumsToSupabase()
+            }
+        }
+        .onChange(of: teeTimes) { _, _ in
+            // Debounce: persist the full per-group tee times array so
+            // independent (non-consecutive) schedules survive across
+            // devices. Members read this via SavedGroup.teeTimes.
+            teeTimesSyncTask?.cancel()
+            teeTimesSyncTask = Task {
+                try? await Task.sleep(nanoseconds: 800_000_000) // 0.8s
+                guard !Task.isCancelled else { return }
+                syncTeeTimesToSupabase()
             }
         }
     }
@@ -2037,11 +2104,20 @@ struct GroupManagerView: View {
                 } else {
                     teeTimesLinked = false
                 }
+                // Independent tee times may now be out of chronological order
+                // — e.g. Group 2 was just set to an earlier time than Group 1.
+                // Reorder all per-group parallel arrays so position 0 is
+                // always the earliest tee time. No-op when already sorted,
+                // so safe to call unconditionally.
+                reorderGroupsByTeeTime()
+
                 let cal = Calendar.current
                 if cal.isDate(teeTimePickerDate, inSameDayAs: roundDate) {
                     roundDate = teeTimePickerDate
                 }
-                // Explicitly notify parent of tee time change
+                // Explicitly notify parent of tee time change — use the
+                // NEW earliest time (position 0 after the reorder), not the
+                // old first-slot time.
                 onTeeTimeChanged?(teeTimes.first.flatMap { $0 })
                 showTeeTimePicker = false
                 ToastManager.shared.success("Tee time updated")
@@ -2274,6 +2350,7 @@ struct GroupManagerView: View {
     private func groupCard(index: Int, players: [Player]) -> some View {
         let borderColor = groupCardBorderColor(index: index, playerCount: players.count)
         let borderWidth: CGFloat = dropTargetGroup == index ? 2 : 1
+        let needsScorer = !groupHasValidScorer(index: index)
 
         return VStack(spacing: 0) {
             groupCardHeader(index: index)
@@ -2281,6 +2358,15 @@ struct GroupManagerView: View {
             Rectangle()
                 .fill(Color(hexString: "#EBEBEB"))
                 .frame(height: 1)
+
+            // Missing-scorer alert — shown when this group has no Carry user
+            // assigned as scorer. Only Carry users can actually score, so a
+            // group full of guests (or one whose Carry-user scorer moved to
+            // another group) has no valid scorer. Tap opens the Manage
+            // sheet so the creator can search or SMS-invite one.
+            if needsScorer && isCreator && !isLiveRound && !roundStarted {
+                missingScorerBanner(forGroup: index)
+            }
 
             ForEach(players) { player in
                 SwipeToDeleteRow(enabled: isCreator && !isLiveRound && !roundStarted && player.id != currentUserId) {
@@ -2339,6 +2425,54 @@ struct GroupManagerView: View {
             syncScorerIDs: syncScorerIDs,
             syncSelectedTees: syncSelectedTees
         ))
+    }
+
+    // MARK: - Missing Scorer Banner
+    //
+    // Shown inside a group card when that group has no Carry-user scorer.
+    // Layout per Figma 716:5949 — pink background, dark-red text, justified.
+    // Tap routes to the appropriate Manage sheet so the creator can assign
+    // a scorer via search or SMS invite.
+    private func missingScorerBanner(forGroup groupIndex: Int) -> some View {
+        Button {
+            // Route to the same Manage sheet the "Invite & Manage" button uses.
+            // Quick Game → PlayerGroupsSheet; Skins Group → ManageMembersSheet.
+            if isQuickGame {
+                showPlayerGroups = true
+            } else {
+                showManageMembers = true
+            }
+        } label: {
+            HStack {
+                Text("Tee time needs scorer")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(Color(hexString: "#AC1010"))
+                Spacer()
+                Text("Add Scorer")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(Color(hexString: "#AC1010"))
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(hexString: "#FFD2D2"))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Returns true when `scorerIDs[index]` points to a real Carry user who
+    /// is still in the group's player list. Guests (no `profileId`) and
+    /// empty assignments both return false — they can't actually score.
+    private func groupHasValidScorer(index: Int) -> Bool {
+        guard index < scorerIDs.count, index < groups.count else { return false }
+        let scorerId = scorerIDs[index]
+        guard scorerId != 0 else { return false }
+        guard let scorerPlayer = groups[index].first(where: { $0.id == scorerId }) else {
+            return false
+        }
+        // Must be a Carry user — guests don't have a profile and can't score.
+        return scorerPlayer.profileId != nil
     }
 
     private func groupCardHeader(index: Int) -> some View {
@@ -2740,19 +2874,28 @@ struct GroupManagerView: View {
                     .frame(height: 1)
                     .padding(.horizontal, 24)
 
-                // Player rows — sorted by net winnings
+                // Player rows — filtered to winners on Last Round tab
                 ScrollView {
                     VStack(spacing: 0) {
-                        ForEach(Array(leaderboardPlayers.enumerated()), id: \.element.id) { idx, player in
+                        let visible = visibleLeaderboardPlayers
+                        ForEach(Array(visible.enumerated()), id: \.element.id) { idx, player in
                             leaderboardRow(player: player)
 
-                            if idx < leaderboardPlayers.count - 1 {
+                            if idx < visible.count - 1 {
                                 Rectangle()
                                     .fill(Color.borderFaint)
                                     .frame(height: 1)
                                     .padding(.leading, 82)
                                     .padding(.trailing, 24)
                             }
+                        }
+
+                        // Inline Round Stats — Last Round tab only. Shows
+                        // every active player (including those with 0 skins)
+                        // so folks can see their handicap, pops and score
+                        // context even when they didn't win anything.
+                        if leaderboardTab == 0, let lastRound = roundHistory.last {
+                            leaderboardStatsSection(lastRound: lastRound)
                         }
                     }
                 }
@@ -2764,6 +2907,123 @@ struct GroupManagerView: View {
         .sheet(isPresented: $showPaywall) {
             PaywallView()
         }
+    }
+
+    /// Inline per-player stats block shown under the Last Round leaderboard.
+    /// Deliberately omits the hole-by-hole score line (birdies/bogeys) — that
+    /// would require fetching round scores which aren't cached on HomeRound.
+    /// Full parity with the post-round Results screen can be added later by
+    /// fetching scores when the sheet opens.
+    private func leaderboardStatsSection(lastRound: HomeRound) -> some View {
+        let statsPlayers = leaderboardPlayers  // all active, unfiltered
+        return VStack(spacing: 0) {
+            // Section separator — visually divides leaderboard from stats
+            Rectangle()
+                .fill(Color.bgPrimary)
+                .frame(height: 8)
+
+            VStack(spacing: 0) {
+                ForEach(Array(statsPlayers.enumerated()), id: \.element.id) { idx, player in
+                    leaderboardStatsRow(player: player, lastRound: lastRound)
+
+                    if idx < statsPlayers.count - 1 {
+                        Rectangle()
+                            .fill(Color.borderFaint)
+                            .frame(height: 1)
+                            .padding(.leading, 72)
+                            .padding(.trailing, 24)
+                    }
+                }
+            }
+            .padding(.vertical, 6)
+        }
+    }
+
+    /// One player's inline stats row. Layout mirrors the post-round Results
+    /// screen: avatar, name + (HC · pops), skins-count + won-holes list,
+    /// money on the right. Pops math falls back to rounded raw index when
+    /// the tee box lacks a usable slope/rating (Quick Games, older data).
+    private func leaderboardStatsRow(player: Player, lastRound: HomeRound) -> some View {
+        let skins = lastRound.playerWonHoles[player.id]?.count ?? 0
+        let holesWon = lastRound.playerWonHoles[player.id] ?? []
+        let money = lastRound.playerWinnings[player.id] ?? 0
+        let pops = leaderboardPops(handicap: player.handicap, teeBox: lastRound.teeBox)
+        let hcLabel = leaderboardHandicapLabel(player.handicap)
+
+        return VStack(alignment: .leading, spacing: 9) {
+            HStack(alignment: .top, spacing: 12) {
+                PlayerAvatar(player: player, size: 38)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(player.shortName)
+                        .font(.carry.bodySemibold)
+                        .foregroundColor(Color.textPrimary)
+                        .lineLimit(1)
+                    Text("\(hcLabel) · \(pops) pops")
+                        .font(.carry.bodySM)
+                        .foregroundColor(Color.textSecondary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                Text(moneyLabel(money))
+                    .font(.carry.bodyLGBold)
+                    .monospacedDigit()
+                    .foregroundColor(
+                        money > 0 ? Color.goldMuted
+                        : money < 0 ? Color.textDisabled
+                        : Color.borderSoft
+                    )
+            }
+
+            Group {
+                if skins > 0 {
+                    let holesList = holesWon.sorted().map { "\($0)" }.joined(separator: ", ")
+                    HStack(spacing: 4) {
+                        Text("\(skins) Skin\(skins == 1 ? "" : "s")")
+                            .foregroundColor(Color.textSecondary)
+                        Text("\u{00B7}")
+                            .foregroundColor(Color.textDisabled)
+                        Text("Holes \(holesList)")
+                            .foregroundColor(Color.textTertiary)
+                    }
+                } else {
+                    Text("No Skins")
+                        .foregroundColor(Color.textSecondary)
+                }
+            }
+            .font(.carry.bodySM)
+            .padding(.leading, 50) // align under the name (38 avatar + 12 spacing)
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 12)
+    }
+
+    private func leaderboardPops(handicap: Double, teeBox: TeeBox?) -> Int {
+        let playingHcp: Int
+        if let teeBox, teeBox.slopeRating > 0, teeBox.courseRating > 0 {
+            playingHcp = teeBox.playingHandicap(
+                forIndex: handicap,
+                percentage: handicapPercentage
+            )
+        } else {
+            playingHcp = Int(handicap.rounded())
+        }
+        return max(playingHcp, 0)
+    }
+
+    private func leaderboardHandicapLabel(_ hcp: Double) -> String {
+        if hcp.sign == .minus {
+            return String(format: "+%.1f", -hcp)
+        }
+        return String(format: "%.1f", hcp)
+    }
+
+    private func moneyLabel(_ amount: Int) -> String {
+        if amount > 0 { return "$\(amount)" }
+        if amount < 0 { return "-$\(-amount)" }
+        return "$0"
     }
 
     private func leaderboardRow(player: Player) -> some View {
@@ -3255,6 +3515,44 @@ struct GroupManagerView: View {
         }
     }
 
+    // MARK: - Reorder Groups by Tee Time
+    //
+    // When a creator edits an individual group's tee time and breaks the
+    // consecutive-interval pattern (independent tee times), the displayed
+    // group order can fall out of chronological order — e.g. Group 2 now
+    // has an earlier tee time than Group 1. This helper reorders ALL
+    // per-group parallel arrays (groups, teeTimes, scorerIDs, startingSides,
+    // selectedTees) together so that position 0 is always the earliest tee
+    // time. Groups without a tee time (nil) sort to the end; ties preserve
+    // their prior order for stability. "Group N" labels are derived from
+    // position, so they update automatically.
+    private func reorderGroupsByTeeTime() {
+        let n = groups.count
+        guard n > 1, teeTimes.count == n else { return }
+
+        let currentOrder = Array(0..<n)
+        let sortedOrder = currentOrder.sorted { a, b in
+            switch (teeTimes[a], teeTimes[b]) {
+            case (nil, nil): return a < b            // stable for nil/nil ties
+            case (nil, _):   return false            // nil goes last
+            case (_, nil):   return true             // nil goes last
+            case (let ta?, let tb?):
+                if ta == tb { return a < b }         // stable for time ties
+                return ta < tb
+            }
+        }
+        guard sortedOrder != currentOrder else { return }
+
+        // Apply the permutation to every per-group parallel array in lock-step.
+        withAnimation(.easeOut(duration: 0.2)) {
+            groups = sortedOrder.map { groups[$0] }
+            teeTimes = sortedOrder.map { teeTimes[$0] }
+            if scorerIDs.count == n { scorerIDs = sortedOrder.map { scorerIDs[$0] } }
+            if startingSides.count == n { startingSides = sortedOrder.map { startingSides[$0] } }
+            if selectedTees.count == n { selectedTees = sortedOrder.map { selectedTees[$0] } }
+        }
+    }
+
     // MARK: - Sync Player Order to Supabase
 
     private func syncPlayerOrderToSupabase() {
@@ -3281,6 +3579,23 @@ struct GroupManagerView: View {
     }
 
     /// Persist group_num assignments to Supabase (Quick Games only).
+    private func syncTeeTimesToSupabase() {
+        // Only the creator owns tee-time edits. Members observe the array
+        // via refresh but must not write it back (RLS would reject anyway,
+        // but this saves a round trip).
+        guard isCreator, let groupId = supabaseGroupId else { return }
+        let snapshot = teeTimes
+        Task {
+            do {
+                try await GroupService().saveTeeTimes(groupId: groupId, teeTimes: snapshot)
+            } catch {
+                #if DEBUG
+                print("[GroupManager] Failed to sync tee times: \(error)")
+                #endif
+            }
+        }
+    }
+
     private func syncGroupNumsToSupabase() {
         guard let groupId = supabaseGroupId else { return }
         var assignments: [(playerId: UUID, groupNum: Int)] = []
@@ -3294,6 +3609,13 @@ struct GroupManagerView: View {
         Task {
             do {
                 try await GroupService().saveGroupNums(groupId: groupId, assignments: assignments)
+                // Keep round_players in lockstep so active/concluded-round
+                // scorecards reflect tee-time rearrangements (e.g. after
+                // reorderGroupsByTeeTime swaps groups).
+                try? await RoundService().syncRoundPlayersGroupNums(
+                    groupId: groupId,
+                    assignments: assignments
+                )
             } catch {
                 #if DEBUG
                 print("[GroupManager] Failed to sync group nums: \(error)")
@@ -4164,3 +4486,175 @@ private struct SwipeToDeleteRow<Content: View>: View {
         }
     }
 }
+
+// MARK: - Group Invite QR Code
+
+/// Canonical invite-link builder. Same URL shape as the Copy Link / SMS /
+/// Share Sheet flows — Universal Link opens the app for installed users,
+/// falls through to `invite.html` → App Store for non-installed users.
+enum GroupInviteLink {
+    static func url(for groupId: UUID) -> URL {
+        URL(string: "https://carryapp.site/invite?group=\(groupId.uuidString)")!
+    }
+}
+
+/// Pure QR-code rasterizer. Returns a pixel-perfect UIImage at the requested
+/// scale. Uses CoreImage's `CIQRCodeGenerator` with medium error correction
+/// (good balance of compactness and scan tolerance) and optional tinting
+/// via `CIFalseColor` so the code can match brand colors.
+enum QRCodeGenerator {
+    /// - Parameters:
+    ///   - string: the payload to encode (URL string, text, etc.)
+    ///   - scale: pixel multiplier per QR module (10 is crisp at 240pt display size)
+    ///   - foreground: color of the dark modules (default black)
+    ///   - background: color of the light modules / quiet zone (default white)
+    static func image(
+        for string: String,
+        scale: CGFloat = 10,
+        foreground: UIColor = .black,
+        background: UIColor = .white
+    ) -> UIImage? {
+        guard let data = string.data(using: .utf8) else { return nil }
+        let generator = CIFilter(name: "CIQRCodeGenerator")
+        generator?.setValue(data, forKey: "inputMessage")
+        generator?.setValue("M", forKey: "inputCorrectionLevel")
+        guard let raw = generator?.outputImage else { return nil }
+
+        let scaled = raw.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+
+        // Tint via CIFalseColor: black → foreground, white → background.
+        let tint = CIFilter(name: "CIFalseColor")
+        tint?.setValue(scaled, forKey: "inputImage")
+        tint?.setValue(CIColor(color: foreground), forKey: "inputColor0")
+        tint?.setValue(CIColor(color: background), forKey: "inputColor1")
+        guard let tinted = tint?.outputImage else { return nil }
+
+        guard let cgImage = CIContext().createCGImage(tinted, from: tinted.extent) else {
+            return nil
+        }
+        return UIImage(cgImage: cgImage)
+    }
+}
+
+/// Reusable QR code view. Renders any string as a scannable square.
+/// Uses `.interpolation(.none)` to keep the modules pixel-sharp when scaled.
+struct QRCodeView: View {
+    let string: String
+    var size: CGFloat = 240
+    var foreground: UIColor = .black
+    var background: UIColor = .white
+
+    var body: some View {
+        if let image = QRCodeGenerator.image(
+            for: string,
+            foreground: foreground,
+            background: background
+        ) {
+            Image(uiImage: image)
+                .interpolation(.none)
+                .resizable()
+                .scaledToFit()
+                .frame(width: size, height: size)
+                .accessibilityLabel("QR code")
+                .accessibilityHint("Scan to open in Carry")
+        } else {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.borderSubtle)
+                .frame(width: size, height: size)
+                .overlay(
+                    Text("QR unavailable")
+                        .font(.carry.bodySM)
+                        .foregroundColor(Color.textSecondary)
+                )
+        }
+    }
+}
+
+// MARK: - Group Invite QR Sheet
+
+/// Bottom sheet that displays a scannable QR code for joining a group.
+/// The QR encodes the same Universal Link the Copy Link / Share Sheet
+/// flows use, so scanning it opens Carry directly for installed users
+/// (and falls through to the App Store page for non-installed users).
+///
+/// Layout per Figma `1124:5297`:
+/// - Light-green rounded card (`successBgLight`, 38pt radius, 32pt padding)
+///   - "Scan to Join" title (24pt regular)
+///   - Dark-green QR on matching light-green background (271pt)
+/// - Dark "Done" button below the card (12pt radius, 56pt tall)
+struct GroupInviteQRSheet: View {
+    let groupId: UUID
+    let groupName: String
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        // Figma 1124:5297 — content-sized layout.
+        //   Card (19pt H margin, 32pt all-side padding, corner 38)
+        //     Title: "Scan to Join" 24pt reg + group name 26pt bold (14pt gap)
+        //     48pt gap → QR 271×271 dark-green on matching light-green
+        //   24pt gap
+        //   Done button (27pt H margin, 56pt tall, 12pt radius)
+        // Sheet uses `.height(...)` detent sized to fit content exactly, so
+        // there's no empty space below the button.
+        VStack(spacing: 24) {
+            // Card
+            VStack(spacing: 48) {
+                VStack(spacing: 14) {
+                    Text("Scan to Join")
+                        .font(.system(size: 24, weight: .regular))
+                        .foregroundColor(Color.textDark)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+
+                    Text(groupName)
+                        .font(.system(size: 26, weight: .bold))
+                        .foregroundColor(Color.deepNavy)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.8)
+                }
+
+                QRCodeView(
+                    string: GroupInviteLink.url(for: groupId).absoluteString,
+                    size: 271,
+                    foreground: UIColor(Color.greenDark),
+                    background: UIColor(Color.successBgLight)
+                )
+            }
+            .padding(32)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 38).fill(Color.successBgLight)
+            )
+            .padding(.horizontal, 19)
+
+            // Done button
+            Button {
+                dismiss()
+            } label: {
+                Text("Done")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 56)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12).fill(Color.textPrimary)
+                    )
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 27)
+        }
+        .padding(.top, 12)
+        .padding(.bottom, 24)
+        .frame(maxWidth: .infinity)
+    }
+}
+
+#if DEBUG
+#Preview("Group Invite QR") {
+    GroupInviteQRSheet(groupId: UUID(), groupName: "Ruby Hill Gc Skins")
+        .presentationDetents([.large])
+}
+#endif

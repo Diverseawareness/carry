@@ -1085,6 +1085,23 @@ struct QuickGameSheet: View {
     }
 
     private func selectPlayerFromSearch(profile: ProfileDTO, groupIndex: Int, slotIndex: Int) {
+        // Defensive dedupe guard. The search-result filter (see searchPlayer)
+        // SHOULD keep already-selected players out of the result list, but if
+        // a stale result is still rendered from a prior search before a slot
+        // was filled, a user could tap it and land the same Carry member in
+        // two slots. Reject the tap silently in that case.
+        let alreadyUsed = slots.prefix(groupCount).enumerated().contains { g, groupSlots in
+            groupSlots.enumerated().contains { s, slot in
+                (g != groupIndex || s != slotIndex) && slot.existingProfileId == profile.id
+            }
+        }
+        guard !alreadyUsed else {
+            playerSearchResults = []
+            activePlayerSearchSlot = nil
+            focusedField = nil
+            return
+        }
+
         slots[groupIndex][slotIndex] = PlayerSlot(
             name: "\(profile.firstName) \(profile.lastName)".trimmingCharacters(in: .whitespaces),
             handicap: String(format: "%.1f", profile.handicap),
@@ -1260,9 +1277,16 @@ struct QuickGameSheet: View {
         if let creatorId = currentUser.profileId {
             ids.insert(creatorId)
         }
-        for g in 0..<groupCount where g != groupIndex {
-            if let pid = slots[g][0].existingProfileId {
-                ids.insert(pid)
+        // Exclude everyone already placed in ANY slot of ANY group, except
+        // the slot being modified (this group's scorer — slot 0). Without
+        // this, a Carry member could be a player in one group AND the
+        // scorer in another group.
+        for g in 0..<groupCount {
+            for s in 0..<4 {
+                if g == groupIndex && s == 0 { continue }
+                if let pid = slots[g][s].existingProfileId {
+                    ids.insert(pid)
+                }
             }
         }
         return ids

@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Carry — Promo Images (4 Variants)</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "SF Pro Display", "Inter", Helvetica, Arial, sans-serif;
+    background: #E5E5E5;
+    padding: 40px;
+    color: #1A1A1A;
+  }
+  h1 { font-size: 28px; margin-bottom: 8px; font-weight: 700; }
+  .sub { color: #6E6E73; margin-bottom: 32px; font-size: 14px; }
+  .promo-grid {
+    display: grid;
+    grid-template-columns: repeat(2, auto);
+    gap: 40px;
+    justify-content: center;
+  }
+  .promo-wrap { text-align: center; }
+  .promo-label {
+    font-size: 14px;
+    font-weight: 600;
+    margin-top: 12px;
+    color: #1A1A1A;
+  }
+  .promo-label small {
+    display: block;
+    font-weight: 400;
+    color: #999;
+    margin-top: 2px;
+  }
+
+  /* Shared promo image base */
+  .promo {
+    width: 512px;
+    height: 512px;
+    border-radius: 48px;
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 44px 36px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+    color: #FFFFFF;
+  }
+
+  .eyebrow {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    margin-bottom: 14px;
+  }
+  .headline {
+    font-size: 52px;
+    font-weight: 800;
+    line-height: 1.0;
+    letter-spacing: -1.5px;
+    text-align: center;
+    margin-bottom: 26px;
+  }
+  .footer {
+    font-size: 15px;
+    font-weight: 500;
+    margin-top: 20px;
+    text-align: center;
+    opacity: 0.9;
+  }
+
+  /* ============ V1: LEADERBOARD ============ */
+  .v1 {
+    background: linear-gradient(180deg, #0A1F0A 0%, #064102 100%);
+  }
+  .v1::before {
+    content: ""; position: absolute; top: -60px; right: -60px;
+    width: 240px; height: 240px; border-radius: 50%;
+    background: #D4A017; opacity: 0.10;
+  }
+  .v1 .eyebrow { color: #C4A450; }
+  .v1 .footer { color: #BCF0B5; }
+
+  .card {
+    background: #FAFAFA;
+    border-radius: 20px;
+    padding: 20px;
+    width: 100%;
+    color: #1A1A1A;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+  }
+  .card-header {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 12px; font-weight: 600; margin-bottom: 12px;
+  }
+  .card-header .meta { color: #999; font-weight: 500; }
+  .lb-row {
+    display: flex; align-items: center; padding: 8px 0;
+    border-bottom: 1px solid #E5E5E5; gap: 10px;
+  }
+  .lb-row:last-child { border-bottom: none; }
+  .avatar {
+    width: 28px; height: 28px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: #FFF; font-size: 11px; font-weight: 700; flex-shrink: 0;
+  }
+  .a-gold { background: #D4A017; }
+  .a-green { background: #4A7C59; }
+  .a-orange { background: #C77B3D; }
+  .a-blue { background: #6B8CB5; }
+  .a-purple { background: #8566A9; }
+  .lb-name { flex: 1; font-size: 13px; font-weight: 600; }
+  .lb-amt { font-size: 13px; font-weight: 700; }
+  .gold-txt { color: #C4A450; }
+  .muted { color: #999; }
+
+  /* ============ V2: ROUND RESULTS ============ */
+  .v2 {
+    background: linear-gradient(180deg, #1A1A1A 0%, #0A0A0A 100%);
+  }
+  .v2::before {
+    content: ""; position: absolute; bottom: -60px; right: -60px;
+    width: 280px; height: 280px; border-radius: 50%;
+    background: #D4A017; opacity: 0.08;
+  }
+  .v2 .eyebrow { color: #4CF7B8; }
+  .v2 .footer { color: #4CF7B8; }
+
+  .result-card {
+    background: #FAFAFA;
+    border-radius: 20px;
+    padding: 24px 20px 20px;
+    width: 100%;
+    color: #1A1A1A;
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+  }
+  .hero-avatar {
+    width: 64px; height: 64px; border-radius: 50%;
+    background: #D4A017;
+    display: flex; align-items: center; justify-content: center;
+    color: #FFF; font-size: 22px; font-weight: 700; position: relative;
+  }
+  .hero-avatar::after {
+    content: "★"; position: absolute; top: -6px; right: -10px;
+    width: 26px; height: 26px; background: #C4A450; color: #FFF;
+    border-radius: 50%; font-size: 14px;
+    display: flex; align-items: center; justify-content: center;
+    border: 2px solid #FAFAFA;
+  }
+  .hero-name { font-size: 20px; font-weight: 700; margin-top: 4px; }
+  .stats-row {
+    display: flex; width: 100%;
+    padding-top: 12px; border-top: 1px solid #E5E5E5; margin-top: 4px;
+  }
+  .stat {
+    flex: 1; text-align: center; border-right: 1px solid #E5E5E5;
+  }
+  .stat:last-child { border-right: none; }
+  .stat-label {
+    font-size: 10px; font-weight: 600; color: #999; letter-spacing: 1px;
+  }
+  .stat-value { font-size: 24px; font-weight: 800; margin-top: 2px; }
+  .stat-value.gold { color: #C4A450; }
+
+  /* ============ V3: LIVE SCORING ============ */
+  .v3 {
+    background: linear-gradient(180deg, #1A2815 0%, #0A1408 100%);
+  }
+  .v3::before {
+    content: ""; position: absolute; top: 60px; left: -80px;
+    width: 240px; height: 240px; border-radius: 50%;
+    background: #BCF0B5; opacity: 0.06;
+  }
+  .v3 .eyebrow { color: #BCF0B5; }
+  .v3 .footer { color: #BCF0B5; }
+
+  .scorecard {
+    background: #FAFAFA; border-radius: 20px; padding: 20px; width: 100%;
+    color: #1A1A1A;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+  }
+  .sc-head {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 12px; font-weight: 600; margin-bottom: 14px;
+  }
+  .sc-pot {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 8px; background: #064102; color: #FFF; border-radius: 10px;
+    font-size: 11px; font-weight: 700;
+  }
+  .sc-hole {
+    display: flex; align-items: center; gap: 10px;
+    background: #FFF; border: 1px solid #E5E5E5;
+    border-radius: 12px; padding: 10px 14px; margin-bottom: 6px;
+  }
+  .sc-hole.won {
+    background: linear-gradient(90deg, #FFF9E6 0%, #FFF 100%);
+    border-color: #D4A017;
+  }
+  .sc-hole.carry {
+    background: #F5F5F5;
+  }
+  .hole-num {
+    font-size: 14px; font-weight: 800; color: #999; width: 32px;
+  }
+  .hole-winner { flex: 1; font-size: 13px; font-weight: 600; color: #1A1A1A; }
+  .hole-winner.muted { color: #999; font-weight: 500; font-style: italic; }
+  .hole-skin {
+    font-size: 13px; font-weight: 700; color: #C4A450;
+  }
+  .hole-skin.muted { color: #999; font-weight: 500; }
+  .pill {
+    display: inline-block; padding: 2px 8px; background: #D4A017;
+    color: #FFF; border-radius: 8px; font-size: 10px; font-weight: 700;
+    margin-left: 6px;
+  }
+
+  /* ============ V5: SHARE SHEET (AUTHENTIC) ============ */
+  .v5 {
+    background: linear-gradient(180deg, #0F2617 0%, #064102 100%);
+  }
+  .v5::before {
+    content: ""; position: absolute; top: -80px; right: -80px;
+    width: 300px; height: 300px; border-radius: 50%;
+    background: #BCF0B5; opacity: 0.05;
+  }
+  .v5 .eyebrow { color: #BCF0B5; }
+  .v5 .footer { color: #BCF0B5; }
+
+  /* Actual share card reproduction */
+  .share-card {
+    width: 100%;
+    background: #1A1A1A;
+    border-radius: 18px;
+    padding: 22px;
+    color: #FFFFFF;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  }
+  .sc-course {
+    font-size: 20px;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+  .sc-meta {
+    font-size: 12px;
+    color: #8C8C8C;
+    font-weight: 500;
+    margin-bottom: 18px;
+  }
+  .sc-divider {
+    height: 1px;
+    background: rgba(255,255,255,0.08);
+    margin: 14px 0;
+  }
+  .sc-col-header {
+    display: flex; align-items: center;
+    font-size: 9px; font-weight: 600;
+    color: #666; letter-spacing: 1.2px;
+    padding-bottom: 8px;
+  }
+  .sc-col-header .ch-player { flex: 1; }
+  .sc-col-header .ch-skins { width: 46px; text-align: center; }
+  .sc-col-header .ch-money { width: 60px; text-align: right; }
+
+  .sc-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 7px 0;
+  }
+  .sc-rank {
+    font-size: 11px; font-weight: 600; color: #666;
+    width: 14px;
+  }
+  .sc-rank.trophy { color: #D9C158; }
+  .sc-avatar {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: #BCF0B5;
+    border: 1.5px solid #A3E09C;
+    display: flex; align-items: center; justify-content: center;
+    color: #064102;
+    font-size: 11px; font-weight: 700;
+    flex-shrink: 0;
+  }
+  .sc-name {
+    flex: 1; font-size: 13px; font-weight: 500;
+  }
+  .sc-name.winner { color: #D9C158; font-weight: 700; }
+  .sc-skins { width: 46px; font-size: 13px; font-weight: 600; text-align: center; }
+  .sc-money { width: 60px; font-size: 13px; font-weight: 700; text-align: right; }
+  .sc-money.pos { color: #D9C158; }
+  .sc-money.neg { color: #666; }
+
+  .sc-pot {
+    font-size: 11px; color: #8C8C8C; font-weight: 500;
+    margin-top: 4px;
+  }
+  .sc-pot strong { color: #AAA; font-weight: 700; }
+
+  .sc-footer {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-top: 10px; padding-top: 14px;
+    border-top: 1px solid rgba(255,255,255,0.08);
+  }
+  .sc-logo {
+    color: #BCF0B5;
+    font-size: 16px;
+    font-weight: 700;
+    font-style: italic;
+    letter-spacing: -0.5px;
+  }
+  .sc-appstore {
+    background: #000;
+    border: 1px solid rgba(255,255,255,0.3);
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 10px;
+    font-weight: 600;
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+
+  /* ============ V4: SKINS GROUPS ============ */
+  .v4 {
+    background: linear-gradient(180deg, #0F1A0F 0%, #1A2B1A 100%);
+  }
+  .v4::before {
+    content: ""; position: absolute; top: -40px; right: -40px;
+    width: 200px; height: 200px; border-radius: 50%;
+    background: #D4A017; opacity: 0.07;
+  }
+  .v4::after {
+    content: ""; position: absolute; bottom: -60px; left: -60px;
+    width: 220px; height: 220px; border-radius: 50%;
+    background: #BCF0B5; opacity: 0.05;
+  }
+  .v4 .eyebrow { color: #C4A450; }
+  .v4 .footer { color: #BCF0B5; }
+
+  .groups-list { width: 100%; display: flex; flex-direction: column; gap: 10px; }
+  .group-card {
+    background: #FAFAFA; border-radius: 16px; padding: 14px 16px;
+    display: flex; align-items: center; gap: 12px;
+    color: #1A1A1A;
+    box-shadow: 0 3px 10px rgba(0,0,0,0.12);
+  }
+  .group-icon {
+    width: 40px; height: 40px; border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px; flex-shrink: 0;
+  }
+  .gi-green { background: #D9F7D2; }
+  .gi-gold  { background: #FFF2D1; }
+  .gi-blue  { background: #E1ECFA; }
+  .group-body { flex: 1; }
+  .group-name { font-size: 14px; font-weight: 700; }
+  .group-meta { font-size: 11px; color: #999; margin-top: 2px; }
+  .group-badge {
+    background: #064102; color: #FFF;
+    padding: 3px 8px; border-radius: 10px; font-size: 11px; font-weight: 700;
+  }
+
+  .instructions {
+    margin-top: 40px;
+    padding: 20px 24px;
+    background: #FFFFFF;
+    border-radius: 16px;
+    max-width: 720px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .instructions h2 { font-size: 18px; margin-bottom: 12px; }
+  .instructions p {
+    font-size: 14px; line-height: 1.5; color: #404142; margin-bottom: 8px;
+  }
+</style>
+</head>
+<body>
+  <h1>Carry — IAP Promo Image Options</h1>
+  <p class="sub">4 variants, each 1024×1024 (shown at 512px). Both IAPs unlock the same features — pick 2 visually distinct ones.</p>
+
+  <div class="promo-grid">
+
+    <!-- V1: SEASON LEADERBOARD -->
+    <div class="promo-wrap">
+      <div class="promo v1">
+        <div class="eyebrow">CARRY PREMIUM</div>
+        <div class="headline">Crown your<br>winners.</div>
+        <div class="card">
+          <div class="card-header">
+            <span>Season Leaderboard</span>
+            <span class="meta">2026</span>
+          </div>
+          <div class="lb-row">
+            <div class="avatar a-gold">JS</div>
+            <div class="lb-name">Jake S.</div>
+            <div class="lb-amt gold-txt">+$248</div>
+          </div>
+          <div class="lb-row">
+            <div class="avatar a-green">MK</div>
+            <div class="lb-name">Mike K.</div>
+            <div class="lb-amt gold-txt">+$185</div>
+          </div>
+          <div class="lb-row">
+            <div class="avatar a-orange">TL</div>
+            <div class="lb-name">Tom L.</div>
+            <div class="lb-amt">+$72</div>
+          </div>
+          <div class="lb-row">
+            <div class="avatar a-blue">DS</div>
+            <div class="lb-name">Daniel S.</div>
+            <div class="lb-amt muted">-$40</div>
+          </div>
+        </div>
+        <div class="footer">Unlimited groups · Full history · All stats</div>
+      </div>
+      <div class="promo-label">
+        V1 — Season Leaderboard
+        <small>Angle: all-time stats</small>
+      </div>
+    </div>
+
+    <!-- V2: ROUND RESULTS -->
+    <div class="promo-wrap">
+      <div class="promo v2">
+        <div class="eyebrow">CARRY PREMIUM</div>
+        <div class="headline">Track your<br>winnings.</div>
+        <div class="result-card">
+          <div class="hero-avatar">JS</div>
+          <div class="hero-name">Jake S.</div>
+          <div class="stats-row">
+            <div class="stat">
+              <div class="stat-label">SKINS</div>
+              <div class="stat-value">6</div>
+            </div>
+            <div class="stat">
+              <div class="stat-label">WON</div>
+              <div class="stat-value gold">+$72</div>
+            </div>
+            <div class="stat">
+              <div class="stat-label">ROUND</div>
+              <div class="stat-value">74</div>
+            </div>
+          </div>
+        </div>
+        <div class="footer">Unlimited groups · Full history · All stats</div>
+      </div>
+      <div class="promo-label">
+        V2 — Round Results
+        <small>Angle: round recap</small>
+      </div>
+    </div>
+
+    <!-- V3: LIVE SCORING -->
+    <div class="promo-wrap">
+      <div class="promo v3">
+        <div class="eyebrow">CARRY PREMIUM</div>
+        <div class="headline">Watch it<br>unfold.</div>
+        <div class="scorecard">
+          <div class="sc-head">
+            <span>Hole by Hole</span>
+            <span class="sc-pot">$80 pot</span>
+          </div>
+          <div class="sc-hole won">
+            <div class="hole-num">5</div>
+            <div class="hole-winner">Jake S.<span class="pill">2x</span></div>
+            <div class="hole-skin">$18</div>
+          </div>
+          <div class="sc-hole carry">
+            <div class="hole-num">6</div>
+            <div class="hole-winner muted">Carried</div>
+            <div class="hole-skin muted">—</div>
+          </div>
+          <div class="sc-hole won">
+            <div class="hole-num">7</div>
+            <div class="hole-winner">Mike K.</div>
+            <div class="hole-skin">$18</div>
+          </div>
+          <div class="sc-hole carry">
+            <div class="hole-num">8</div>
+            <div class="hole-winner muted">Carried</div>
+            <div class="hole-skin muted">—</div>
+          </div>
+        </div>
+        <div class="footer">Unlimited groups · Full history · All stats</div>
+      </div>
+      <div class="promo-label">
+        V3 — Live Scoring
+        <small>Angle: live hole-by-hole</small>
+      </div>
+    </div>
+
+    <!-- V5: AUTHENTIC SHARE CARD -->
+    <div class="promo-wrap">
+      <div class="promo v5">
+        <div class="eyebrow">SHAREABLE RESULTS</div>
+        <div class="headline" style="font-size: 44px; margin-bottom: 22px;">Crown your<br>winners.</div>
+        <div class="share-card">
+          <div class="sc-course">Torrey Pines South</div>
+          <div class="sc-meta">Sat, Apr 12 · Blue at 100%</div>
+
+          <div class="sc-col-header">
+            <span class="ch-player">PLAYER</span>
+            <span class="ch-skins">SKINS</span>
+            <span class="ch-money">MONEY</span>
+          </div>
+
+          <div class="sc-row">
+            <span class="sc-rank trophy">🏆</span>
+            <div class="sc-avatar">JS</div>
+            <span class="sc-name winner">Jake S.</span>
+            <span class="sc-skins">8</span>
+            <span class="sc-money pos">+$96</span>
+          </div>
+          <div class="sc-row">
+            <span class="sc-rank">2</span>
+            <div class="sc-avatar">MK</div>
+            <span class="sc-name">Mike K.</span>
+            <span class="sc-skins">4</span>
+            <span class="sc-money pos">+$48</span>
+          </div>
+          <div class="sc-row">
+            <span class="sc-rank">3</span>
+            <div class="sc-avatar">TL</div>
+            <span class="sc-name">Tom L.</span>
+            <span class="sc-skins">2</span>
+            <span class="sc-money pos">+$24</span>
+          </div>
+          <div class="sc-row">
+            <span class="sc-rank">4</span>
+            <div class="sc-avatar">DS</div>
+            <span class="sc-name">Daniel S.</span>
+            <span class="sc-skins">0</span>
+            <span class="sc-money neg">-$40</span>
+          </div>
+
+          <div class="sc-pot"><strong>Pot: $160</strong> · $40/player</div>
+
+          <div class="sc-footer">
+            <div class="sc-logo">Carry</div>
+            <div class="sc-appstore">🍎 App Store</div>
+          </div>
+        </div>
+        <div class="footer">Share after every round</div>
+      </div>
+      <div class="promo-label">
+        V5 — Authentic Share Card
+        <small>Exactly what the app generates</small>
+      </div>
+    </div>
+
+    <!-- V4: SKINS GROUPS -->
+    <div class="promo-wrap">
+      <div class="promo v4">
+        <div class="eyebrow">CARRY PREMIUM</div>
+        <div class="headline">Unlimited<br>groups.</div>
+        <div class="groups-list">
+          <div class="group-card">
+            <div class="group-icon gi-green">🏌️</div>
+            <div class="group-body">
+              <div class="group-name">Saturday Regulars</div>
+              <div class="group-meta">8 players · 24 rounds</div>
+            </div>
+            <div class="group-badge">Active</div>
+          </div>
+          <div class="group-card">
+            <div class="group-icon gi-gold">⛳</div>
+            <div class="group-body">
+              <div class="group-name">Member-Guest 2026</div>
+              <div class="group-meta">12 players · 6 rounds</div>
+            </div>
+            <div class="group-badge">Active</div>
+          </div>
+          <div class="group-card">
+            <div class="group-icon gi-blue">🏆</div>
+            <div class="group-body">
+              <div class="group-name">Monday League</div>
+              <div class="group-meta">16 players · 18 rounds</div>
+            </div>
+            <div class="group-badge">Active</div>
+          </div>
+        </div>
+        <div class="footer">Unlimited groups · Full history · All stats</div>
+      </div>
+      <div class="promo-label">
+        V4 — Skins Groups
+        <small>Angle: your crews</small>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="instructions">
+    <h2>How to export at 1024×1024</h2>
+    <p>These render at 512px in the browser — Apple requires 1024×1024 PNGs.</p>
+    <p><strong>Option A — DevTools:</strong> Inspect the promo element → Cmd+Shift+P → "Capture node screenshot" (enable 2× device scaling first).</p>
+    <p><strong>Option B — Puppeteer:</strong> Run a headless Chrome script that sets viewport to 1024×1024 and screenshots each .promo element at 2× scale.</p>
+    <p><strong>Option C — Manual:</strong> Rebuild in Figma at 1024×1024 using the same design.</p>
+    <p><strong>Export specs:</strong> 1024×1024 PNG · RGB · no transparency · no rounded corners (remove border-radius before export).</p>
+  </div>
+</body>
+</html>

@@ -268,30 +268,51 @@ struct DebugMenuView: View {
                 actionRow("Dismiss Banner Only (debug)", icon: "stop.circle") {
                     LiveActivityService.shared.endAll()
                 }
+                divider
+                // Reproduces the "Ruby Hill GC" bug: 8 players = 2 full rows
+                // of pills. Tests lock-screen height fits without clipping.
+                actionRow("Start — Live (8 players, 2 rows)", icon: "person.3.fill") {
+                    startMockActivity(state: .live, hole: 7, playerCount: 8)
+                }
+                divider
+                // Larger stress: 12 players triggers the +overflow pill.
+                // Verifies +N pill height matches player pills.
+                actionRow("Start — Done (12 players, +overflow)", icon: "person.3.sequence.fill") {
+                    startMockActivity(state: .done, hole: 18, playerCount: 12)
+                }
             }
             .background(RoundedRectangle(cornerRadius: 14).fill(.white))
         }
     }
 
-    private func startMockActivity(state: CarryRoundAttributes.RoundState, hole: Int) {
+    private func startMockActivity(state: CarryRoundAttributes.RoundState, hole: Int, playerCount: Int = 4) {
         LiveActivityService.shared.start(
             roundId: "debug-\(UUID().uuidString.prefix(8))",
-            courseName: "Pebble Beach",
+            courseName: "Ruby Hill GC",
             groupName: "Saturday Skins",
             totalHoles: 18,
             groupId: nil,
-            initialState: mockState(state: state, hole: hole)
+            initialState: mockState(state: state, hole: hole, playerCount: playerCount)
         )
     }
 
-    private func mockState(state: CarryRoundAttributes.RoundState, hole: Int) -> CarryRoundAttributes.ContentState {
-        let sample = Array(Player.allPlayers.prefix(4))
-        let winnings: [Int]
-        switch state {
-        case .notStarted: winnings = [0, 0, 0, 0]
-        case .live:       winnings = [12, 8, 4, 0]
-        case .pending:    winnings = [14, 10, 6, 2]
-        case .done:       winnings = [20, 12, 6, 4]
+    private func mockState(
+        state: CarryRoundAttributes.RoundState,
+        hole: Int,
+        playerCount: Int = 4
+    ) -> CarryRoundAttributes.ContentState {
+        let sample = Array(Player.allPlayers.prefix(playerCount))
+
+        // Generate varied winnings per state — first few get more.
+        let winnings: [Int] = (0..<playerCount).map { i in
+            let base: [Int]
+            switch state {
+            case .notStarted: return 0
+            case .live:       base = [89, 89, 44, 44, 44, 20, 12, 8, 4, 0, 0, 0]
+            case .pending:    base = [95, 89, 52, 44, 44, 30, 18, 12, 6, 2, 0, 0]
+            case .done:       base = [120, 89, 65, 44, 44, 38, 22, 16, 10, 6, 4, 2]
+            }
+            return i < base.count ? base[i] : 0
         }
 
         let pills = zip(sample, winnings).map { p, w in

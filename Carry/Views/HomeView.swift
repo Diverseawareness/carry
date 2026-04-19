@@ -1278,13 +1278,24 @@ struct HomeView: View {
         let isLiveScoring = !isNotStarted && !isGameDone && !hasPending
         let showGlow = !isNotStarted && !isGameDone  // States 2 & 3 only
 
+        // Spectator mode: group member who isn't in this round's player list.
+        // They can see the live card (follow winnings, current hole, etc.) but
+        // cannot open the scorecard — tapping the card is a no-op for them.
+        // Final results (Game Done / Pending) remain viewable for everyone.
+        let isSpectator = !round.players.contains(where: { $0.id == currentUserId })
+
         return Button {
             if isGameDone {
-                // State 4: Game Done → show final results
+                // State 4: Game Done → show final results (spectators can view)
                 resultsRound = round
             } else if hasPending {
                 // Some groups done, others still playing → show pending results
                 resultsRound = round
+            } else if isSpectator {
+                // Spectator view — no navigation. Card remains visible and
+                // updates in real time via polling, but the scorecard is
+                // reserved for players actually in the round.
+                return
             } else {
                 // Live scoring → Go to scorecard
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
@@ -1374,8 +1385,13 @@ struct HomeView: View {
                 }
                 .padding(.top, 8)
 
-                // Bottom button — differs per state
-                if isNotStarted || isLiveScoring {
+                // Bottom button — differs per state.
+                // Spectators (not in the round's player list) don't get the
+                // "LIVE Scorecard" button — only playing members can enter the
+                // scorecard. Pending/Final result buttons stay visible for
+                // everyone since those open a separate results sheet, not
+                // the scorecard.
+                if (isNotStarted || isLiveScoring) && !isSpectator {
                     // States 1 & 2: "LIVE Scorecard"
                     Button {
                         withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
@@ -1845,19 +1861,27 @@ struct LeaderboardSheet: View {
                 .frame(height: 1)
                 .padding(.horizontal, 24)
 
-            // Player rows
+            // Player rows — filtered to winners on Last Round tab
             ScrollView {
                 VStack(spacing: 0) {
-                    ForEach(Array(rankedPlayers.enumerated()), id: \.element.player.id) { idx, entry in
+                    let visible = visibleRankedPlayers
+                    ForEach(Array(visible.enumerated()), id: \.element.player.id) { idx, entry in
                         leaderboardRow(player: entry.player, skins: entry.skins, won: entry.won)
 
-                        if idx < rankedPlayers.count - 1 {
+                        if idx < visible.count - 1 {
                             Rectangle()
                                 .fill(Color.borderFaint)
                                 .frame(height: 1)
                                 .padding(.leading, 82)
                                 .padding(.trailing, 24)
                         }
+                    }
+
+                    // Inline Round Stats — Last Round tab only. Shows every
+                    // player (including 0-skins) so the full field is visible
+                    // here even though the leaderboard above is winners-only.
+                    if selectedTab == 0 {
+                        leaderboardStatsSection()
                     }
                 }
             }
@@ -1867,6 +1891,138 @@ struct LeaderboardSheet: View {
         .sheet(isPresented: $showPaywall) {
             PaywallView()
         }
+    }
+
+    // MARK: - Visible Players (leaderboard filter)
+
+    /// Ranked players for the current tab. Last Round is narrowed to actual
+    /// skin winners (matches post-round Results); All Time keeps everyone.
+    private var visibleRankedPlayers: [RankedEntry] {
+        guard selectedTab == 0 else { return rankedPlayers }
+        return rankedPlayers.filter { $0.skins > 0 }
+    }
+
+    // MARK: - Inline Round Stats
+
+    /// Per-player inline stats block. Avoids a network fetch by using only
+    /// what HomeRound carries — score-stats line (birdies/bogeys) is
+    /// deliberately skipped because per-hole scores aren't on HomeRound.
+    private func leaderboardStatsSection() -> some View {
+        let statsPlayers = round.players
+            .filter { !$0.isPendingAccept }
+            .sorted { a, b in
+                let aWon = round.playerWinnings[a.id] ?? 0
+                let bWon = round.playerWinnings[b.id] ?? 0
+                if aWon != bWon { return aWon > bWon }
+                let aSkins = round.playerWonHoles[a.id]?.count ?? 0
+                let bSkins = round.playerWonHoles[b.id]?.count ?? 0
+                if aSkins != bSkins { return aSkins > bSkins }
+                return a.name < b.name
+            }
+
+        return VStack(spacing: 0) {
+            Rectangle()
+                .fill(Color.bgPrimary)
+                .frame(height: 8)
+
+            VStack(spacing: 0) {
+                ForEach(Array(statsPlayers.enumerated()), id: \.element.id) { idx, player in
+                    leaderboardStatsRow(player: player)
+
+                    if idx < statsPlayers.count - 1 {
+                        Rectangle()
+                            .fill(Color.borderFaint)
+                            .frame(height: 1)
+                            .padding(.leading, 72)
+                            .padding(.trailing, 24)
+                    }
+                }
+            }
+            .padding(.vertical, 6)
+        }
+    }
+
+    private func leaderboardStatsRow(player: Player) -> some View {
+        let skins = round.playerWonHoles[player.id]?.count ?? 0
+        let holesWon = round.playerWonHoles[player.id] ?? []
+        let money = round.playerWinnings[player.id] ?? 0
+        let pops = leaderboardPops(handicap: player.handicap, teeBox: round.teeBox)
+        let hcLabel = leaderboardHandicapLabel(player.handicap)
+
+        return VStack(alignment: .leading, spacing: 9) {
+            HStack(alignment: .top, spacing: 12) {
+                PlayerAvatar(player: player, size: 38)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(player.shortName)
+                        .font(.carry.bodySemibold)
+                        .foregroundColor(Color.textPrimary)
+                        .lineLimit(1)
+                    Text("\(hcLabel) · \(pops) pops")
+                        .font(.carry.bodySM)
+                        .foregroundColor(Color.textSecondary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                Text(moneyLabel(money))
+                    .font(.carry.bodyLGBold)
+                    .monospacedDigit()
+                    .foregroundColor(
+                        money > 0 ? Color.goldMuted
+                        : money < 0 ? Color.textDisabled
+                        : Color.borderSoft
+                    )
+            }
+
+            Group {
+                if skins > 0 {
+                    let holesList = holesWon.sorted().map { "\($0)" }.joined(separator: ", ")
+                    HStack(spacing: 4) {
+                        Text("\(skins) Skin\(skins == 1 ? "" : "s")")
+                            .foregroundColor(Color.textSecondary)
+                        Text("\u{00B7}")
+                            .foregroundColor(Color.textDisabled)
+                        Text("Holes \(holesList)")
+                            .foregroundColor(Color.textTertiary)
+                    }
+                } else {
+                    Text("No Skins")
+                        .foregroundColor(Color.textSecondary)
+                }
+            }
+            .font(.carry.bodySM)
+            .padding(.leading, 50) // align under the name (38 avatar + 12 spacing)
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 12)
+    }
+
+    private func leaderboardPops(handicap: Double, teeBox: TeeBox?) -> Int {
+        let playingHcp: Int
+        if let teeBox, teeBox.slopeRating > 0, teeBox.courseRating > 0 {
+            playingHcp = teeBox.playingHandicap(
+                forIndex: handicap,
+                percentage: round.skinRules.handicapPercentage
+            )
+        } else {
+            playingHcp = Int(handicap.rounded())
+        }
+        return max(playingHcp, 0)
+    }
+
+    private func leaderboardHandicapLabel(_ hcp: Double) -> String {
+        if hcp.sign == .minus {
+            return String(format: "+%.1f", -hcp)
+        }
+        return String(format: "%.1f", hcp)
+    }
+
+    private func moneyLabel(_ amount: Int) -> String {
+        if amount > 0 { return "$\(amount)" }
+        if amount < 0 { return "-$\(-amount)" }
+        return "$0"
     }
 
     // MARK: - Ranked Players

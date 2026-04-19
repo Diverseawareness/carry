@@ -218,6 +218,33 @@ final class RoundService {
             .value
     }
 
+    /// Sync group_num on round_players for every active or concluded round in
+    /// the given skins group. Called after the creator rearranges tee times so
+    /// scorecards of in-flight rounds reflect the new group assignments.
+    /// Completed rounds are historical and intentionally skipped.
+    func syncRoundPlayersGroupNums(
+        groupId: UUID,
+        assignments: [(playerId: UUID, groupNum: Int)]
+    ) async throws {
+        let rounds: [RoundDTO] = try await client.from("rounds")
+            .select()
+            .eq("group_id", value: groupId.uuidString)
+            .in("status", values: ["active", "concluded"])
+            .execute()
+            .value
+        guard !rounds.isEmpty else { return }
+        for round in rounds {
+            for assignment in assignments {
+                let updates: [String: Int] = ["group_num": assignment.groupNum]
+                _ = try? await client.from("round_players")
+                    .update(updates)
+                    .eq("round_id", value: round.id.uuidString)
+                    .eq("player_id", value: assignment.playerId.uuidString)
+                    .execute()
+            }
+        }
+    }
+
     func fetchPlayerProfiles(playerIds: [UUID]) async throws -> [ProfileDTO] {
         let ids = playerIds.map { $0.uuidString }
         return try await client.from("profiles")

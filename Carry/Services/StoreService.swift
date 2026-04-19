@@ -13,6 +13,21 @@ final class StoreService: ObservableObject {
         "com.diverseawareness.carry.premium.monthly"
     ]
 
+    // MARK: - TestFlight Premium Override
+    //
+    // ⚠️ TESTFLIGHT-ONLY FLAG — remove before App Store submission ⚠️
+    //
+    // When true, grants premium to all users running the app with a sandbox receipt
+    // (i.e. TestFlight builds). This lets internal/external testers try premium
+    // features without paying in sandbox.
+    //
+    // Sandbox receipts are also what Apple reviewers use — so DO NOT ship to App Store
+    // with this on. The plan: keep this on for Build 44 (TestFlight-only), flip to
+    // false before archiving Build 45 for App Store.
+    //
+    // Scoped to !DEBUG so local dev still uses the DebugMenu isPremium toggle.
+    private static let grantPremiumInTestFlight = true
+
     private var transactionListener: Task<Void, Error>?
 
     init() {
@@ -78,10 +93,16 @@ final class StoreService: ObservableObject {
 
     // MARK: - Entitlements
 
-    /// Checks current subscription entitlements. Only grants premium when a valid
-    /// transaction exists — no auto-grant based on sandbox/TestFlight. Apple reviewers
-    /// test using sandbox accounts and must see the real paywall + purchase flow.
+    /// Checks current subscription entitlements. Grants premium when a valid transaction
+    /// exists. Also grants premium in TestFlight (sandbox) when `grantPremiumInTestFlight`
+    /// is true — see the flag's comment above.
     func checkEntitlements() async {
+        if shouldForceTestFlightPremium {
+            NSLog("[StoreService] TestFlight premium override active — granting premium.")
+            isPremium = true
+            return
+        }
+
         var foundEntitlement = false
         for await result in Transaction.currentEntitlements {
             if let transaction = try? Self.checkVerified(result),
@@ -93,6 +114,21 @@ final class StoreService: ObservableObject {
         isPremium = foundEntitlement
     }
 
+    /// True only in Release builds with the override flag on.
+    /// In DEBUG this always returns false so local dev behaves normally.
+    ///
+    /// We intentionally DO NOT check `appStoreReceiptURL` here — that URL can be nil
+    /// on fresh TestFlight installs until a receipt has been issued, which caused
+    /// testers to launch without premium. Flipping `grantPremiumInTestFlight` to
+    /// false before App Store archive is the only safeguard needed.
+    private var shouldForceTestFlightPremium: Bool {
+        #if DEBUG
+        return false
+        #else
+        return Self.grantPremiumInTestFlight
+        #endif
+    }
+
     // MARK: - Transaction Listener
 
     private func listenForTransactions() -> Task<Void, Error> {
@@ -101,7 +137,13 @@ final class StoreService: ObservableObject {
                 do {
                     let transaction = try Self.checkVerified(result)
                     await MainActor.run {
-                        self.isPremium = self.productIDs.contains(transaction.productID)
+                        // Keep premium true if the TestFlight override is active, otherwise
+                        // reflect the real transaction state.
+                        if self.shouldForceTestFlightPremium {
+                            self.isPremium = true
+                        } else {
+                            self.isPremium = self.productIDs.contains(transaction.productID)
+                        }
                     }
                     await transaction.finish()
                 } catch {
