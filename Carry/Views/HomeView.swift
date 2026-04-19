@@ -1789,34 +1789,24 @@ struct LeaderboardSheet: View {
             .padding(.top, 34)
             .padding(.bottom, 24)
 
-            // Last Round | All Time tabs (skins groups only — quick games have a single round)
+            // Last Round | All Time tabs (skins groups only — quick games have a single round).
+            // Free Tier v2: All Time is free — reading historical data should never be paywalled.
             if !round.isQuickGame {
                 HStack(spacing: 16) {
                     ForEach(Array(["Last Round", "All Time"].enumerated()), id: \.offset) { idx, label in
                         Button {
-                            if idx == 1 && !storeService.isPremium {
-                                showPaywall = true
-                            } else {
-                                withAnimation(.easeOut(duration: 0.2)) {
-                                    selectedTab = idx
-                                }
+                            withAnimation(.easeOut(duration: 0.2)) {
+                                selectedTab = idx
                             }
                         } label: {
-                            HStack(spacing: 4) {
-                                Text(label)
-                                    .font(.system(size: 14, weight: .semibold))
-                                if idx == 1 && !storeService.isPremium {
-                                    Image(systemName: "lock.fill")
-                                        .font(.system(size: 10))
-                                        .foregroundColor(Color.goldMuted)
-                                }
-                            }
-                            .foregroundColor(selectedTab == idx ? .white : Color.textPrimary)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 36)
-                            .background(
-                                Capsule().fill(selectedTab == idx ? Color.textPrimary : Color.bgPrimary)
-                            )
+                            Text(label)
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(selectedTab == idx ? .white : Color.textPrimary)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 36)
+                                .background(
+                                    Capsule().fill(selectedTab == idx ? Color.textPrimary : Color.bgPrimary)
+                                )
                         }
                         .buttonStyle(.plain)
                         .accessibilityValue(selectedTab == idx ? "Selected" : "")

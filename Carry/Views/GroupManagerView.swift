@@ -35,6 +35,7 @@ struct GroupManagerView: View {
     @State private var showSettings = false
     @State private var showLeaderboard = false
     @State private var showPaywall = false
+    @State private var paywallTrigger: PaywallTrigger = .general
     @State private var showQRInvite = false
     @State private var leaderboardTab: Int = 0  // 0 = Round, 1 = All Time
     @State private var groupName = "The Friday Skins"  // editable group/event name
@@ -811,18 +812,41 @@ struct GroupManagerView: View {
                     // QR invite button — creator only, and only once the group
                     // has been persisted to Supabase (new groups get their ID on
                     // first save). Without the ID there's no URL to encode.
+                    // Free Tier v2: gated behind Premium for non-premium creators.
                     if isCreator && supabaseGroupId != nil {
                         Button {
-                            showQRInvite = true
+                            if storeService.isPremium {
+                                showQRInvite = true
+                            } else {
+                                presentPaywall(.manageGroup)
+                            }
                         } label: {
-                            Image(systemName: "qrcode")
-                                .font(.system(size: 16, weight: .bold))
-                                .foregroundColor(Color.textPrimary)
-                                .frame(width: 40, height: 40)
-                                .background(Circle().fill(.white))
+                            ZStack(alignment: .topTrailing) {
+                                Image(systemName: "qrcode")
+                                    .font(.system(size: 16, weight: .bold))
+                                    .foregroundColor(Color.textPrimary)
+                                    .frame(width: 40, height: 40)
+                                    .background(Circle().fill(.white))
+                                    .opacity(storeService.isPremium ? 1.0 : 0.5)
+
+                                if !storeService.isPremium {
+                                    Image("premium-crown")
+                                        .resizable()
+                                        .renderingMode(.template)
+                                        .scaledToFit()
+                                        .frame(width: 10, height: 10)
+                                        .foregroundColor(Color.goldAccent)
+                                        .padding(3)
+                                        .background(Circle().fill(Color.white))
+                                        .offset(x: 2, y: -2)
+                                        .accessibilityHidden(true)
+                                }
+                            }
                         }
                         .accessibilityLabel("QR invite")
-                        .accessibilityHint("Shows a scannable QR code to invite players")
+                        .accessibilityHint(storeService.isPremium
+                            ? "Shows a scannable QR code to invite players"
+                            : "QR invite requires Premium subscription")
                     }
 
                     // Group options button — creator only
@@ -996,22 +1020,40 @@ struct GroupManagerView: View {
                         .font(.system(size: 18, weight: .heavy))
                         .foregroundColor(Color.deepNavy)
                     Spacer()
+                    // Free Tier v2: "Invite & Manage" is Premium. Free creators
+                    // see the button dimmed with a crown; tap opens paywall.
                     if isCreator && !isLiveRound && !roundStarted && selectedCount > 0 {
                         Button {
-                            if isQuickGame {
+                            if !storeService.isPremium {
+                                presentPaywall(.manageGroup)
+                            } else if isQuickGame {
                                 showPlayerGroups = true
                             } else {
                                 showManageMembers = true
                             }
                         } label: {
-                            Text("Invite & Manage")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(Color.textPrimary)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 4)
-                                .background(Capsule().strokeBorder(Color.textPrimary, lineWidth: 1))
+                            HStack(spacing: 5) {
+                                Text("Invite & Manage")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(Color.textPrimary)
+                                if !storeService.isPremium {
+                                    Image("premium-crown")
+                                        .resizable()
+                                        .renderingMode(.template)
+                                        .scaledToFit()
+                                        .frame(width: 11, height: 11)
+                                        .foregroundColor(Color.goldAccent)
+                                        .accessibilityHidden(true)
+                                }
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(Capsule().strokeBorder(Color.textPrimary, lineWidth: 1))
+                            .opacity(storeService.isPremium ? 1.0 : 0.6)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("Invite and manage players")
+                        .accessibilityHint(storeService.isPremium ? "" : "Requires Premium subscription")
                     }
                 }
                 .padding(.horizontal, 20)
@@ -1074,12 +1116,18 @@ struct GroupManagerView: View {
             VStack {
                 Spacer()
                 if isCreator {
-                    // Admin: "Start Round" or "Back to Scorecard"
+                    // Admin: "Start Round" or "Back to Scorecard".
+                    // Free Tier v2: starting a new round requires Premium.
+                    // "Back to Scorecard" (live round) and "Needs Schedule"
+                    // (opens settings) are both free — the gate only fires
+                    // when we're actually about to create a new round.
                     Button {
                         if isLiveRound {
                             onBack?()
                         } else if needsNextSchedule {
                             showSettings = true
+                        } else if !storeService.isPremium {
+                            presentPaywall(.startRound)
                         } else {
                             // Check for scorers in groups 2+ that haven't accepted yet
                             let pending = pendingScorerWarnings
@@ -1099,6 +1147,17 @@ struct GroupManagerView: View {
                             }
                             Text(startButtonLabel)
                                 .font(.carry.bodyLGSemibold)
+                            // Crown suffix shown when the tap will hit the
+                            // paywall — signals "this starts a round but
+                            // requires Premium" without disabling the button.
+                            if !storeService.isPremium && !isLiveRound && !needsNextSchedule && canStartRound {
+                                Image("premium-crown")
+                                    .resizable()
+                                    .renderingMode(.template)
+                                    .scaledToFit()
+                                    .frame(width: 14, height: 14)
+                                    .accessibilityHidden(true)
+                            }
                         }
                         .foregroundColor(buttonEnabled ? .white : Color.textSecondary)
                         .frame(width: 322, height: 51)
@@ -2802,34 +2861,24 @@ struct GroupManagerView: View {
             .padding(.top, 34)
             .padding(.bottom, 24)
 
-            // Last Round | All Time tabs (skins groups only — quick games have a single round)
+            // Last Round | All Time tabs (skins groups only — quick games have a single round).
+            // Free Tier v2: All Time is free — reading historical data should never be paywalled.
             if !isQuickGame {
                 HStack(spacing: 16) {
                     ForEach(Array(["Last Round", "All Time"].enumerated()), id: \.offset) { idx, label in
                         Button {
-                            if idx == 1 && !storeService.isPremium {
-                                showPaywall = true
-                            } else {
-                                withAnimation(.easeOut(duration: 0.2)) {
-                                    leaderboardTab = idx
-                                }
+                            withAnimation(.easeOut(duration: 0.2)) {
+                                leaderboardTab = idx
                             }
                         } label: {
-                            HStack(spacing: 4) {
-                                Text(label)
-                                    .font(.system(size: 14, weight: .semibold))
-                                if idx == 1 && !storeService.isPremium {
-                                    Image(systemName: "lock.fill")
-                                        .font(.system(size: 10))
-                                        .foregroundColor(Color.goldMuted)
-                                }
-                            }
-                            .foregroundColor(leaderboardTab == idx ? .white : Color.textPrimary)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 36)
-                            .background(
-                                Capsule().fill(leaderboardTab == idx ? Color.textPrimary : Color.bgPrimary)
-                            )
+                            Text(label)
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(leaderboardTab == idx ? .white : Color.textPrimary)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 36)
+                                .background(
+                                    Capsule().fill(leaderboardTab == idx ? Color.textPrimary : Color.bgPrimary)
+                                )
                         }
                         .buttonStyle(.plain)
                     }
@@ -2905,8 +2954,17 @@ struct GroupManagerView: View {
 
         }
         .sheet(isPresented: $showPaywall) {
-            PaywallView()
+            PaywallView(trigger: paywallTrigger)
         }
+    }
+
+    /// Open the paywall with a specific trigger so the sheet shows the
+    /// contextual subtitle ("Starting rounds is a Premium feature" etc.).
+    /// Keeps the two-step "set trigger then flip sheet flag" dance in one
+    /// place so call sites don't forget to set one.
+    private func presentPaywall(_ trigger: PaywallTrigger) {
+        paywallTrigger = trigger
+        showPaywall = true
     }
 
     /// Inline per-player stats block shown under the Last Round leaderboard.
