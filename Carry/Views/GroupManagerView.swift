@@ -3721,6 +3721,7 @@ struct GroupOptionsSheet: View {
     @State private var localBuyIn: String
     @State private var showCarriesInfo = false
     @State private var showLeaveDeleteConfirm = false
+    @State private var showPaywall = false
     @State private var localCourse: SelectedCourse?
     @State private var showCourseSelector = false
     @State private var showOptTeeTimePicker = false
@@ -3799,7 +3800,16 @@ struct GroupOptionsSheet: View {
                                 .foregroundColor(Color.textTertiary)
                         }
                         Spacer()
+                        // Free Tier v2: creators must be Premium to save edits.
+                        // Non-premium creators can still tap fields and explore,
+                        // but tapping Save routes through the paywall instead of
+                        // persisting — protects the group data model and pushes
+                        // upgrade at the moment of intent.
                         Button {
+                            if isCreator && !storeService.isPremium {
+                                showPaywall = true
+                                return
+                            }
                             let rec: GameRecurrence? = {
                                 guard optScheduleMode == 1 else { return nil }
                                 switch optRepeatMode {
@@ -3828,9 +3838,20 @@ struct GroupOptionsSheet: View {
                                 winningsDisplay: localWinningsDisplay
                             ))
                         } label: {
-                            Text("Save")
-                                .font(.carry.bodySemibold)
-                                .foregroundColor(Color.textPrimary)
+                            HStack(spacing: 5) {
+                                Text("Save")
+                                    .font(.carry.bodySemibold)
+                                    .foregroundColor(Color.textPrimary)
+                                if isCreator && !storeService.isPremium {
+                                    Image("premium-crown")
+                                        .resizable()
+                                        .renderingMode(.template)
+                                        .scaledToFit()
+                                        .frame(width: 11, height: 11)
+                                        .foregroundColor(Color.goldAccent)
+                                        .accessibilityHidden(true)
+                                }
+                            }
                         }
                     }
                 }
@@ -3854,6 +3875,10 @@ struct GroupOptionsSheet: View {
                 }
             }
             .navigationBarHidden(true)
+            .sheet(isPresented: $showPaywall) {
+                PaywallView(trigger: .manageGroup)
+                    .environmentObject(storeService)
+            }
         }
     }
 
@@ -3892,6 +3917,50 @@ struct GroupOptionsSheet: View {
     private var creatorContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
+                // Premium banner — surfaces above all editable fields when a
+                // non-premium creator opens the sheet. Tap jumps straight to
+                // the paywall so they don't have to fiddle then be blocked.
+                // Delete Group below is intentionally OUTSIDE this gated
+                // section and stays accessible.
+                if !storeService.isPremium {
+                    Button {
+                        showPaywall = true
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image("premium-crown")
+                                .resizable()
+                                .renderingMode(.template)
+                                .scaledToFit()
+                                .frame(width: 16, height: 16)
+                                .foregroundColor(Color.goldAccent)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Editing requires Premium")
+                                    .font(.carry.bodySMBold)
+                                    .foregroundColor(Color.textPrimary)
+                                Text("Upgrade to change group settings")
+                                    .font(.carry.caption)
+                                    .foregroundColor(Color.textSecondary)
+                            }
+                            Spacer()
+                            Text("Upgrade")
+                                .font(.carry.captionLG)
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(Capsule().fill(Color.goldAccent))
+                        }
+                        .padding(14)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(Color.bgSecondary)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 20)
+                    .accessibilityLabel("Upgrade to Premium to edit group settings")
+                }
+
                 // Group Name (hidden for quick games)
                 if !isQuickGame {
                 VStack(alignment: .leading, spacing: 6) {

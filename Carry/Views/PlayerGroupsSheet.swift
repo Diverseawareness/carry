@@ -15,6 +15,8 @@ struct PlayerGroupsResult {
 /// Extracted Player Groups management sheet — has its own @State so typing
 /// doesn't re-render the parent GroupManagerView (4000+ lines).
 struct PlayerGroupsSheet: View {
+    @EnvironmentObject var storeService: StoreService
+
     // Initial data — copied into local @State on appear
     let initialGroups: [[Player]]
     let initialScorerIDs: [Int]
@@ -58,6 +60,7 @@ struct PlayerGroupsSheet: View {
 
     @State private var showRemoveGroupConfirm = false
     @State private var removeGroupIndex: Int? = nil
+    @State private var showPaywall = false
 
     @State private var showHCPicker = false
     @State private var hcPickerValue: Double = 0
@@ -101,15 +104,33 @@ struct PlayerGroupsSheet: View {
                     }
                     Spacer()
                     Button {
+                        // Free Tier v2: Save requires Premium. Non-premium
+                        // creators can open the sheet and see current state,
+                        // but persisting changes routes through the paywall.
+                        if !storeService.isPremium {
+                            showPaywall = true
+                            return
+                        }
                         if canSave {
                             Task { await saveAndDismiss() }
                         } else if let hint = saveHint {
                             ToastManager.shared.error(hint)
                         }
                     } label: {
-                        Text("Save")
-                            .font(.carry.bodySemibold)
-                            .foregroundColor(canSave ? Color.textPrimary : Color.textDisabled)
+                        HStack(spacing: 5) {
+                            Text("Save")
+                                .font(.carry.bodySemibold)
+                                .foregroundColor(canSave ? Color.textPrimary : Color.textDisabled)
+                            if !storeService.isPremium {
+                                Image("premium-crown")
+                                    .resizable()
+                                    .renderingMode(.template)
+                                    .scaledToFit()
+                                    .frame(width: 11, height: 11)
+                                    .foregroundColor(Color.goldAccent)
+                                    .accessibilityHidden(true)
+                            }
+                        }
                     }
                 }
             }
@@ -120,6 +141,49 @@ struct PlayerGroupsSheet: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
+                    // Premium banner — surfaces when a non-premium creator
+                    // opens the sheet. Tap jumps straight to the paywall.
+                    // The groupCards below stay interactive so users can
+                    // explore the UI, but Save routes through the paywall.
+                    if !storeService.isPremium {
+                        Button {
+                            showPaywall = true
+                        } label: {
+                            HStack(spacing: 10) {
+                                Image("premium-crown")
+                                    .resizable()
+                                    .renderingMode(.template)
+                                    .scaledToFit()
+                                    .frame(width: 16, height: 16)
+                                    .foregroundColor(Color.goldAccent)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Managing groups requires Premium")
+                                        .font(.carry.bodySMBold)
+                                        .foregroundColor(Color.textPrimary)
+                                    Text("Upgrade to save changes")
+                                        .font(.carry.caption)
+                                        .foregroundColor(Color.textSecondary)
+                                }
+                                Spacer()
+                                Text("Upgrade")
+                                    .font(.carry.captionLG)
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                    .background(Capsule().fill(Color.goldAccent))
+                            }
+                            .padding(14)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(Color.bgSecondary)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 8)
+                        .accessibilityLabel("Upgrade to Premium to manage groups")
+                    }
+
                     ForEach(Array(groups.enumerated()), id: \.offset) { groupIdx, groupPlayers in
                         groupCard(groupIndex: groupIdx, players: groupPlayers)
                     }
@@ -169,6 +233,10 @@ struct PlayerGroupsSheet: View {
                 hcPickerCommit?(hcPickerValue, hcPickerIsPlus)
                 hcPickerCommit = nil
             }
+        }
+        .sheet(isPresented: $showPaywall) {
+            PaywallView(trigger: .manageGroup)
+                .environmentObject(storeService)
         }
         .onAppear {
             guard !didInit else { return }

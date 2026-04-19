@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct ScorecardView: View {
+    @EnvironmentObject var storeService: StoreService
+
     let config: RoundConfig
     @State private var isViewer: Bool
     var onBack: (() -> Void)?
@@ -34,6 +36,7 @@ struct ScorecardView: View {
     @State private var activeToast: GameEvent?
     // Share sheet removed — sharing handled in RoundCompleteView
     @State private var showScoringInfo = false
+    @State private var showPaywall = false
 
     private static let scoringInfoKeyPrefix = "scoringInfoShownCount"
 
@@ -287,6 +290,10 @@ struct ScorecardView: View {
                 .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
                 .presentationBackground(.white)
+        }
+        .sheet(isPresented: $showPaywall) {
+            PaywallView(trigger: .scoreRound)
+                .environmentObject(storeService)
         }
     }
 
@@ -846,7 +853,16 @@ struct ScorecardView: View {
                     showInput = false; inputPlayer = nil
                 }
             }
+            // Free Tier v2: scoring requires Premium. The scorer-role check
+            // happens here at the UI layer — we don't write a score, we open
+            // the paywall with the .scoreRound trigger and dismiss the input
+            // so the user returns to the scorecard cleanly.
             let onSelect: (Int) -> Void = { score in
+                guard storeService.isPremium else {
+                    dismiss()
+                    showPaywall = true
+                    return
+                }
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                     viewModel.enterScore(playerId: player.id, holeNum: hole, score: score)
                 }
@@ -854,6 +870,11 @@ struct ScorecardView: View {
             }
             let nextTarget = nextUnscoredTarget(after: player, hole: hole)
             let onScoreNext: ((Int) -> Void) = { score in
+                guard storeService.isPremium else {
+                    dismiss()
+                    showPaywall = true
+                    return
+                }
                 viewModel.enterScore(playerId: player.id, holeNum: hole, score: score)
                 if let (nextP, nextH) = nextTarget, nextH == hole {
                     // Same hole — rotate to next unscored player
