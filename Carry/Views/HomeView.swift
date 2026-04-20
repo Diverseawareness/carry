@@ -2179,6 +2179,14 @@ struct ResultsSheet: View {
                                 FinalResultsRowDivider()
                             }
                         }
+
+                        // Round Stats — every active player (winners + 0-skins
+                        // participants) with HC · pops, Skins · Holes, and
+                        // money. Spectators get the full picture here; in-round
+                        // players see the same data + birdies/bogeys on the
+                        // RoundCompleteView (which has access to scores).
+                        resultsStatsSection
+                            .padding(.top, 24)
                     } else {
                         // PENDING — per-hole won skins + pending leaders
                         let wonHoles = wonHoleRows
@@ -2359,6 +2367,132 @@ struct ResultsSheet: View {
 
     private func formatHandicap(_ h: Double) -> String {
         h == h.rounded() ? String(format: "%.0f", h) : String(format: "%.1f", h)
+    }
+
+    // MARK: - Inline Round Stats (every active player)
+
+    /// Full-field stats block: avatar + name + HC · pops + "X Skins · Holes
+    /// N, N, N" (or "No Skins") + money. Uses only HomeRound data — no
+    /// per-hole scores, so birdies/bogeys are skipped. Matches the pattern
+    /// used in the Leaderboard sheet's Last Round tab. Leaderboard
+    /// unification TODO tracks consolidating all three copies of this.
+    @ViewBuilder
+    private var resultsStatsSection: some View {
+        let statsPlayers = round.players
+            .filter { !$0.isPendingAccept }
+            .sorted { a, b in
+                let aWon = round.playerWinnings[a.id] ?? 0
+                let bWon = round.playerWinnings[b.id] ?? 0
+                if aWon != bWon { return aWon > bWon }
+                let aSkins = round.playerWonHoles[a.id]?.count ?? 0
+                let bSkins = round.playerWonHoles[b.id]?.count ?? 0
+                if aSkins != bSkins { return aSkins > bSkins }
+                return a.name < b.name
+            }
+
+        VStack(spacing: 0) {
+            Rectangle()
+                .fill(Color.bgPrimary)
+                .frame(height: 8)
+
+            VStack(spacing: 0) {
+                ForEach(Array(statsPlayers.enumerated()), id: \.element.id) { idx, player in
+                    resultsStatsRow(player: player)
+
+                    if idx < statsPlayers.count - 1 {
+                        Rectangle()
+                            .fill(Color.borderFaint)
+                            .frame(height: 1)
+                            .padding(.leading, 72)
+                            .padding(.trailing, 24)
+                    }
+                }
+            }
+            .padding(.vertical, 6)
+        }
+    }
+
+    private func resultsStatsRow(player: Player) -> some View {
+        let skins = round.playerWonHoles[player.id]?.count ?? 0
+        let holesWon = round.playerWonHoles[player.id] ?? []
+        let money = round.playerWinnings[player.id] ?? 0
+        let pops = resultsPops(handicap: player.handicap, teeBox: round.teeBox)
+        let hcLabel = resultsHandicapLabel(player.handicap)
+
+        return VStack(alignment: .leading, spacing: 9) {
+            HStack(alignment: .top, spacing: 12) {
+                PlayerAvatar(player: player, size: 38)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(player.shortName)
+                        .font(.carry.bodySemibold)
+                        .foregroundColor(Color.textPrimary)
+                        .lineLimit(1)
+                    Text("\(hcLabel) · \(pops) pops")
+                        .font(.carry.bodySM)
+                        .foregroundColor(Color.textSecondary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                Text(resultsMoneyLabel(money))
+                    .font(.carry.bodyLGBold)
+                    .monospacedDigit()
+                    .foregroundColor(
+                        money > 0 ? Color.goldMuted
+                        : money < 0 ? Color.textDisabled
+                        : Color.borderSoft
+                    )
+            }
+
+            Group {
+                if skins > 0 {
+                    let holesList = holesWon.sorted().map { "\($0)" }.joined(separator: ", ")
+                    HStack(spacing: 4) {
+                        Text("\(skins) Skin\(skins == 1 ? "" : "s")")
+                            .foregroundColor(Color.textSecondary)
+                        Text("\u{00B7}")
+                            .foregroundColor(Color.textDisabled)
+                        Text("Holes \(holesList)")
+                            .foregroundColor(Color.textTertiary)
+                    }
+                } else {
+                    Text("No Skins")
+                        .foregroundColor(Color.textSecondary)
+                }
+            }
+            .font(.carry.bodySM)
+            .padding(.leading, 50) // align under the name (38 avatar + 12 spacing)
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 12)
+    }
+
+    private func resultsPops(handicap: Double, teeBox: TeeBox?) -> Int {
+        let playingHcp: Int
+        if let teeBox, teeBox.slopeRating > 0, teeBox.courseRating > 0 {
+            playingHcp = teeBox.playingHandicap(
+                forIndex: handicap,
+                percentage: round.skinRules.handicapPercentage
+            )
+        } else {
+            playingHcp = Int(handicap.rounded())
+        }
+        return max(playingHcp, 0)
+    }
+
+    private func resultsHandicapLabel(_ hcp: Double) -> String {
+        if hcp.sign == .minus {
+            return String(format: "+%.1f", -hcp)
+        }
+        return String(format: "%.1f", hcp)
+    }
+
+    private func resultsMoneyLabel(_ amount: Int) -> String {
+        if amount > 0 { return "$\(amount)" }
+        if amount < 0 { return "-$\(-amount)" }
+        return "$0"
     }
 }
 
