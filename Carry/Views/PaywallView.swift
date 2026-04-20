@@ -121,7 +121,7 @@ struct PaywallView: View {
                     // see the feature list cold, so we lead with "Unlimited".
                     VStack(alignment: .leading, spacing: 14) {
                         if storeService.hadPremium {
-                            Text("For continued access to:")
+                            Text("Keep your:")
                                 .font(.system(size: 15, weight: .medium))
                                 .foregroundColor(Color.textSecondary)
                                 .padding(.bottom, 2)
