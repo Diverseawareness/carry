@@ -1061,8 +1061,6 @@ struct RoundStatsView: View {
     let teeBox: TeeBox?
     let handicapPercentage: Double
 
-    @State private var isExpanded = true
-
     /// par per hole number (built once per render)
     private var parsByHole: [Int: Int] {
         Dictionary(uniqueKeysWithValues: holes.map { ($0.num, $0.par) })
@@ -1101,58 +1099,29 @@ struct RoundStatsView: View {
     }
 
     var body: some View {
+        // Inline full-width stats — matches ResultsSheet's spectator view.
+        // No header/card/collapse — just a thin gray separator bar above
+        // the rows and full-field stats below.
         VStack(spacing: 0) {
-            // Header strip — tinted gray, tap to collapse/expand
-            Button {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                    isExpanded.toggle()
-                }
-            } label: {
-                HStack {
-                    Text("Round Stats")
-                        .font(.carry.headline)
-                        .foregroundColor(Color.textPrimary)
-                    Spacer()
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(Color.textSecondary)
-                        .rotationEffect(.degrees(isExpanded ? 180 : 0))
-                }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 16)
-                .frame(maxWidth: .infinity)
-                .background(Color.bgSecondary)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
+            Rectangle()
+                .fill(Color.bgPrimary)
+                .frame(height: 8)
 
-            // Body — white, rows with thin separators
-            if isExpanded {
-                VStack(spacing: 0) {
-                    ForEach(Array(sortedPlayers.enumerated()), id: \.element.id) { index, player in
-                        playerStatRow(player)
+            VStack(spacing: 0) {
+                ForEach(Array(sortedPlayers.enumerated()), id: \.element.id) { index, player in
+                    playerStatRow(player)
 
-                        if index < sortedPlayers.count - 1 {
-                            Rectangle()
-                                .fill(Color.borderFaint)
-                                .frame(height: 1)
-                                .padding(.leading, 68) // row 18 + avatar 38 + spacing 12 = 68 (under the name)
-                                .padding(.trailing, 18)
-                        }
+                    if index < sortedPlayers.count - 1 {
+                        Rectangle()
+                            .fill(Color.borderFaint)
+                            .frame(height: 1)
+                            .padding(.leading, 68) // row 18 + avatar 38 + spacing 12
+                            .padding(.trailing, 18)
                     }
                 }
-                .padding(.top, 6)
-                .padding(.bottom, 18)
-                .frame(maxWidth: .infinity)
-                .background(Color.white)
             }
+            .padding(.vertical, 6)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .strokeBorder(Color.borderFaint, lineWidth: 1)
-        )
-        .padding(.horizontal, 24)
     }
 
     // MARK: - Row
