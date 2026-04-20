@@ -119,22 +119,34 @@ struct PaywallView: View {
                     // neutral "Skins Game Groups" label (they already know
                     // it's unlimited from their trial); first-time users
                     // see the feature list cold, so we lead with "Unlimited".
-                    // Alignment also differs: trial-ended centers the whole
-                    // list to feel reassuring/focused, first-time lists
-                    // stay left-aligned to read like a feature checklist.
-                    VStack(alignment: storeService.hadPremium ? .center : .leading, spacing: 14) {
+                    // For trial-ended users the block is horizontally
+                    // centered on the sheet with rows left-aligned inside
+                    // (checkmarks line up); first-time users get the
+                    // traditional left-aligned feature checklist.
+                    Group {
                         if storeService.hadPremium {
-                            Text("Keep your:")
-                                .font(.system(size: 15, weight: .semibold))
-                                .foregroundColor(Color.textPrimary)
-                                .padding(.bottom, 2)
+                            HStack {
+                                Spacer()
+                                VStack(alignment: .leading, spacing: 14) {
+                                    Text("Keep your:")
+                                        .font(.system(size: 15, weight: .semibold))
+                                        .foregroundColor(Color.textPrimary)
+                                        .padding(.bottom, 2)
+                                    featureRow("Skins Game Groups")
+                                    featureRow("Full round history & winnings")
+                                    featureRow("All-time season leaderboard")
+                                }
+                                Spacer()
+                            }
+                        } else {
+                            VStack(alignment: .leading, spacing: 14) {
+                                featureRow("Unlimited skins game groups")
+                                featureRow("Full round history & winnings")
+                                featureRow("All-time season leaderboard")
+                            }
+                            .padding(.horizontal, 36)
                         }
-                        featureRow(storeService.hadPremium ? "Skins Game Groups" : "Unlimited skins game groups")
-                        featureRow("Full round history & winnings")
-                        featureRow("All-time season leaderboard")
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.horizontal, 36)
                     .padding(.top, 24)
 
                     // Extras
