@@ -124,6 +124,7 @@ struct PaywallView: View {
                             Text("Keep your:")
                                 .font(.system(size: 15, weight: .medium))
                                 .foregroundColor(Color.textSecondary)
+                                .frame(maxWidth: .infinity, alignment: .center)
                                 .padding(.bottom, 2)
                         }
                         featureRow(storeService.hadPremium ? "Skins Game Groups" : "Unlimited skins game groups")
