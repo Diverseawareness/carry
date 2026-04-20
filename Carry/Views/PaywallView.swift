@@ -122,8 +122,8 @@ struct PaywallView: View {
                     VStack(alignment: .leading, spacing: 14) {
                         if storeService.hadPremium {
                             Text("Keep your:")
-                                .font(.system(size: 15, weight: .medium))
-                                .foregroundColor(Color.textSecondary)
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundColor(Color.textPrimary)
                                 .frame(maxWidth: .infinity, alignment: .center)
                                 .padding(.bottom, 2)
                         }
