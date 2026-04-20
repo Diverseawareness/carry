@@ -131,6 +131,7 @@ struct PaywallView: View {
                                     Text("Keep your:")
                                         .font(.system(size: 15, weight: .semibold))
                                         .foregroundColor(Color.textPrimary)
+                                        .frame(maxWidth: .infinity, alignment: .center)
                                         .padding(.bottom, 2)
                                     featureRow("Skins Game Groups")
                                     featureRow("Full round history & winnings")
