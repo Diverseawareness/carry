@@ -47,7 +47,7 @@ struct PaywallView: View {
     /// get the reassuring framing (you had this, you can have it back)
     /// instead of a cold first-time pitch.
     private var heroTitle: String {
-        storeService.hadPremium ? "Your Premium trial ended" : "Go Premium"
+        storeService.hadPremium ? "Premium Trial Ended" : "Go Premium"
     }
 
     /// CTA button label flips for post-trial users — "Try It Free" would
@@ -115,9 +115,18 @@ struct PaywallView: View {
                     }
                     .padding(.top, 8)
 
-                    // Features
+                    // Features. Trial-ended users get an intro line and a
+                    // neutral "Skins Game Groups" label (they already know
+                    // it's unlimited from their trial); first-time users
+                    // see the feature list cold, so we lead with "Unlimited".
                     VStack(alignment: .leading, spacing: 14) {
-                        featureRow("Unlimited skins game groups")
+                        if storeService.hadPremium {
+                            Text("For continued access to:")
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundColor(Color.textSecondary)
+                                .padding(.bottom, 2)
+                        }
+                        featureRow(storeService.hadPremium ? "Skins Game Groups" : "Unlimited skins game groups")
                         featureRow("Full round history & winnings")
                         featureRow("All-time season leaderboard")
                     }
