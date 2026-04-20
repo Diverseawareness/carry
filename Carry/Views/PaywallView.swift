@@ -127,15 +127,21 @@ struct PaywallView: View {
                         if storeService.hadPremium {
                             HStack {
                                 Spacer()
-                                VStack(alignment: .leading, spacing: 14) {
+                                // Outer VStack (default .center alignment) centers
+                                // "Keep your:" above the inner VStack. Inner VStack
+                                // (alignment .leading) keeps the checkmark rows
+                                // left-aligned together. Net result: block centers
+                                // on the sheet, header centers above, rows align.
+                                VStack(spacing: 14) {
                                     Text("Keep your:")
                                         .font(.system(size: 15, weight: .semibold))
                                         .foregroundColor(Color.textPrimary)
-                                        .frame(maxWidth: .infinity, alignment: .center)
                                         .padding(.bottom, 2)
-                                    featureRow("Skins Game Groups")
-                                    featureRow("Full round history & winnings")
-                                    featureRow("All-time season leaderboard")
+                                    VStack(alignment: .leading, spacing: 14) {
+                                        featureRow("Skins Game Groups")
+                                        featureRow("Full round history & winnings")
+                                        featureRow("All-time season leaderboard")
+                                    }
                                 }
                                 Spacer()
                             }
