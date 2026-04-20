@@ -199,12 +199,18 @@ struct PaywallView: View {
                         .padding(.top, 24)
                     }
 
-                    // Selected plan summary + CTA (only when products loaded)
+                    // Selected plan summary + CTA (only when products loaded).
+                    // Hidden for post-trial users — the plan card above
+                    // already shows the price, and they're not getting a
+                    // trial so there's no extra "30 days free" context to
+                    // add above the Subscribe button.
                     if !storeService.products.isEmpty {
-                        Text(ctaSummary)
-                            .font(.system(size: 14))
-                            .foregroundColor(Color.textSecondary)
-                            .padding(.top, 20)
+                        if !storeService.hadPremium {
+                            Text(ctaSummary)
+                                .font(.system(size: 14))
+                                .foregroundColor(Color.textSecondary)
+                                .padding(.top, 20)
+                        }
 
                         Button {
                             purchaseSelected()
