@@ -16,10 +16,9 @@ import SwiftUI
 /// }
 /// ```
 ///
-/// The paywall sheet is presented from this view via `.sheet`, so no
-/// parent plumbing is required. Callers who already host a paywall sheet
-/// should use `.manualPaywall` to opt out of auto-presenting and handle
-/// the trigger themselves (see `onGatedTap` parameter).
+/// Paywall sheet is presented from this view — no parent plumbing needed.
+/// Callers that already host a paywall sheet should skip this component
+/// and use a plain Button with inline gate logic to avoid stacking sheets.
 struct PremiumGatedButton<Label: View>: View {
     @EnvironmentObject var storeService: StoreService
 
@@ -27,20 +26,12 @@ struct PremiumGatedButton<Label: View>: View {
     let action: () -> Void
     let label: () -> Label
 
-    /// Optional callback invoked when a free user taps the button. When set,
-    /// the paywall sheet is NOT presented automatically — the caller is
-    /// responsible for opening one. Useful when the caller manages its own
-    /// `showPaywall` state to avoid stacking sheets.
-    var onGatedTap: ((PaywallTrigger) -> Void)? = nil
-
     @State private var showPaywall = false
 
     var body: some View {
         Button {
             if storeService.isPremium {
                 action()
-            } else if let onGatedTap {
-                onGatedTap(trigger)
             } else {
                 showPaywall = true
             }

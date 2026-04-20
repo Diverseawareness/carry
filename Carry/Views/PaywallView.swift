@@ -50,6 +50,22 @@ struct PaywallView: View {
         storeService.hadPremium ? "Your Premium trial ended" : "Go Premium"
     }
 
+    /// CTA button label flips for post-trial users — "Try It Free" would
+    /// be false advertising since Apple won't grant a second trial on the
+    /// same Apple ID.
+    private var ctaButtonLabel: String {
+        storeService.hadPremium ? "Subscribe" : "Try It Free"
+    }
+
+    /// Auto-renewal disclosure (required by App Store Guideline 3.1.2).
+    /// Post-trial users see shorter copy without the trial-conversion line.
+    private var autoRenewalDisclosure: String {
+        if storeService.hadPremium {
+            return "Payment will be charged to your Apple ID at confirmation of purchase. Your subscription renews automatically unless cancelled at least 24 hours before the end of the current period. Manage in Settings > Apple ID > Subscriptions."
+        }
+        return "Payment will be charged to your Apple ID at confirmation of purchase. Your 30-day free trial converts to a paid subscription that renews automatically unless cancelled at least 24 hours before the end of the current period. Manage in Settings > Apple ID > Subscriptions."
+    }
+
     var body: some View {
         ZStack {
             Color.white.ignoresSafeArea()
@@ -193,7 +209,7 @@ struct PaywallView: View {
                         Button {
                             purchaseSelected()
                         } label: {
-                            Text("Try It Free")
+                            Text(ctaButtonLabel)
                                 .font(.system(size: 18, weight: .bold))
                                 .foregroundColor(.white)
                                 .frame(maxWidth: .infinity)
@@ -215,8 +231,9 @@ struct PaywallView: View {
                             .padding(.top, 8)
                     }
 
-                    // Auto-renewal disclosure (required by App Store Guideline 3.1.2)
-                    Text("Payment will be charged to your Apple ID at confirmation of purchase. Your 7-day free trial converts to a paid subscription that renews automatically unless cancelled at least 24 hours before the end of the current period. Manage in Settings > Apple ID > Subscriptions.")
+                    // Auto-renewal disclosure (required by App Store Guideline 3.1.2).
+                    // Copy adapts to trial-available vs post-trial state.
+                    Text(autoRenewalDisclosure)
                         .font(.system(size: 11))
                         .foregroundColor(Color.textDisabled)
                         .multilineTextAlignment(.center)
@@ -328,12 +345,21 @@ struct PaywallView: View {
 
     private var annualSubtitle: String {
         guard let product = storeService.annualProduct else { return "" }
-        return "7 days free, then \(product.displayPrice)/year"
+        // Post-trial users no longer qualify for the free trial — Apple
+        // enforces one per Apple ID. Showing "30 days free" to them would
+        // be misleading (the system purchase sheet charges them immediately).
+        if storeService.hadPremium {
+            return "\(product.displayPrice)/year"
+        }
+        return "30 days free, then \(product.displayPrice)/year"
     }
 
     private var monthlySubtitle: String {
         guard let product = storeService.monthlyProduct else { return "" }
-        return "7 days free, then \(product.displayPrice)/month"
+        if storeService.hadPremium {
+            return "\(product.displayPrice)/month"
+        }
+        return "30 days free, then \(product.displayPrice)/month"
     }
 
     private var ctaSummary: String {

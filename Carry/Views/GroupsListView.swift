@@ -1571,12 +1571,12 @@ private struct GroupsAlertModifiers: ViewModifier {
                 Text("Turn this into a recurring group and invite your crew to join on Carry.")
             }
             .alert("You've used your 3 free games", isPresented: $showQuickGameLimit) {
-                Button("Start a Group — 7 Days Free") {
+                Button("Start a Group — 30 Days Free") {
                     showPaywall = true
                 }
                 Button("Maybe Later", role: .cancel) { }
             } message: {
-                Text("Your crew played 3 rounds this month. Create a group so everyone gets their own experience — free for 7 days.")
+                Text("Your crew played 3 rounds this month. Create a group so everyone gets their own experience — free for 30 days.")
             }
     }
 }

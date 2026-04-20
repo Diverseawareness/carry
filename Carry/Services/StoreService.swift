@@ -8,7 +8,8 @@ final class StoreService: ObservableObject {
             // Sticky flag — once a user has been premium on this device,
             // `hadPremium` stays true forever. Used by the paywall to show
             // "Your Premium trial ended" framing instead of a generic upsell.
-            if isPremium {
+            if isPremium && !hadPremium {
+                hadPremium = true
                 UserDefaults.standard.set(true, forKey: "hadPremium")
             }
         }
@@ -17,12 +18,10 @@ final class StoreService: ObservableObject {
     @Published var isLoading: Bool = false
     @Published var fetchError: String?
 
-    /// True if this device has ever seen `isPremium = true`. Never flips
-    /// back to false on its own — gives the paywall context that the user
-    /// had premium before and is now post-trial or lapsed.
-    var hadPremium: Bool {
-        UserDefaults.standard.bool(forKey: "hadPremium")
-    }
+    /// True if this device has ever seen `isPremium = true`. Cached from
+    /// UserDefaults on init and kept in sync by `isPremium.didSet`. Read
+    /// from SwiftUI bodies without hitting disk.
+    @Published private(set) var hadPremium: Bool = UserDefaults.standard.bool(forKey: "hadPremium")
 
     private let productIDs: Set<String> = [
         "com.diverseawareness.carry.premium.annual",
@@ -189,6 +188,16 @@ final class StoreService: ObservableObject {
     var monthlyProduct: Product? {
         products.first { $0.id.contains("monthly") }
     }
+
+    #if DEBUG
+    /// Debug-only override for previewing the paywall in its two states
+    /// (new user vs post-trial). Flips the sticky flag + UserDefaults so
+    /// both the in-session view and future launches see the change.
+    func _debugSetHadPremium(_ value: Bool) {
+        hadPremium = value
+        UserDefaults.standard.set(value, forKey: "hadPremium")
+    }
+    #endif
 }
 
 enum StoreError: LocalizedError {

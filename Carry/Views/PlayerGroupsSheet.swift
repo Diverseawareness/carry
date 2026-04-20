@@ -104,9 +104,9 @@ struct PlayerGroupsSheet: View {
                     }
                     Spacer()
                     Button {
-                        // Free Tier v2: Save requires Premium. Non-premium
-                        // creators can open the sheet and see current state,
-                        // but persisting changes routes through the paywall.
+                        // Non-premium creators can open the sheet and see
+                        // current state, but Save routes through the paywall
+                        // — keeps server-side group data clean.
                         if !storeService.isPremium {
                             showPaywall = true
                             return

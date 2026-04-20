@@ -1790,7 +1790,7 @@ struct LeaderboardSheet: View {
             .padding(.bottom, 24)
 
             // Last Round | All Time tabs (skins groups only — quick games have a single round).
-            // Free Tier v2: All Time is free — reading historical data should never be paywalled.
+            // All Time is free for everyone — reading historical data should never be paywalled.
             if !round.isQuickGame {
                 HStack(spacing: 16) {
                     ForEach(Array(["Last Round", "All Time"].enumerated()), id: \.offset) { idx, label in

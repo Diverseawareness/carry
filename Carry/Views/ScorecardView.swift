@@ -853,10 +853,9 @@ struct ScorecardView: View {
                     showInput = false; inputPlayer = nil
                 }
             }
-            // Free Tier v2: scoring requires Premium. The scorer-role check
-            // happens here at the UI layer — we don't write a score, we open
-            // the paywall with the .scoreRound trigger and dismiss the input
-            // so the user returns to the scorecard cleanly.
+            // Scoring is gated at the UI layer — we don't write the score,
+            // we open the paywall with the .scoreRound trigger and dismiss
+            // the input so the user returns to the scorecard cleanly.
             let onSelect: (Int) -> Void = { score in
                 guard storeService.isPremium else {
                     dismiss()

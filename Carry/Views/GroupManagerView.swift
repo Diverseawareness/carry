@@ -809,10 +809,9 @@ struct GroupManagerView: View {
                     .accessibilityLabel("Leaderboard")
                     .accessibilityHint("Shows round and all-time leaderboard")
 
-                    // QR invite button — creator only, and only once the group
-                    // has been persisted to Supabase (new groups get their ID on
+                    // QR invite — creator only, and only once the group has
+                    // been persisted to Supabase (new groups get their ID on
                     // first save). Without the ID there's no URL to encode.
-                    // Free Tier v2: gated behind Premium for non-premium creators.
                     if isCreator && supabaseGroupId != nil {
                         Button {
                             if storeService.isPremium {
@@ -1020,8 +1019,6 @@ struct GroupManagerView: View {
                         .font(.system(size: 18, weight: .heavy))
                         .foregroundColor(Color.deepNavy)
                     Spacer()
-                    // Free Tier v2: "Invite & Manage" is Premium. Free creators
-                    // see the button dimmed with a crown; tap opens paywall.
                     if isCreator && !isLiveRound && !roundStarted && selectedCount > 0 {
                         Button {
                             if !storeService.isPremium {
@@ -1116,11 +1113,10 @@ struct GroupManagerView: View {
             VStack {
                 Spacer()
                 if isCreator {
-                    // Admin: "Start Round" or "Back to Scorecard".
-                    // Free Tier v2: starting a new round requires Premium.
+                    // Admin: "Start Round" or "Back to Scorecard". The Premium
+                    // gate only fires when we're actually creating a new round —
                     // "Back to Scorecard" (live round) and "Needs Schedule"
-                    // (opens settings) are both free — the gate only fires
-                    // when we're actually about to create a new round.
+                    // (opens settings) both stay free.
                     Button {
                         if isLiveRound {
                             onBack?()
@@ -2862,7 +2858,7 @@ struct GroupManagerView: View {
             .padding(.bottom, 24)
 
             // Last Round | All Time tabs (skins groups only — quick games have a single round).
-            // Free Tier v2: All Time is free — reading historical data should never be paywalled.
+            // All Time is free for everyone — reading historical data should never be paywalled.
             if !isQuickGame {
                 HStack(spacing: 16) {
                     ForEach(Array(["Last Round", "All Time"].enumerated()), id: \.offset) { idx, label in
@@ -3800,11 +3796,10 @@ struct GroupOptionsSheet: View {
                                 .foregroundColor(Color.textTertiary)
                         }
                         Spacer()
-                        // Free Tier v2: creators must be Premium to save edits.
-                        // Non-premium creators can still tap fields and explore,
-                        // but tapping Save routes through the paywall instead of
-                        // persisting — protects the group data model and pushes
-                        // upgrade at the moment of intent.
+                        // Non-premium creators can tap fields and explore,
+                        // but Save routes through the paywall instead of
+                        // persisting — keeps the group data model clean and
+                        // surfaces the upgrade at the moment of intent.
                         Button {
                             if isCreator && !storeService.isPremium {
                                 showPaywall = true

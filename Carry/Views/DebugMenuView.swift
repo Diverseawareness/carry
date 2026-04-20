@@ -10,6 +10,12 @@ struct DebugMenuView: View {
     @State private var showPaywallPreview = false
     @State private var showShareCardPreview = false
     @State private var shareCardDarkMode = true
+    // Spectator-mode previews — the spectator Home card itself lives on
+    // HomeView (no-op tap when !isSpectator), but pending/final results
+    // sheets need separate preview entry points since they're triggered
+    // from card taps only when the round is concluded/done.
+    @State private var showSpectatorPending = false
+    @State private var showSpectatorFinal = false
 
     var activeScenario: DebugScenario?
     var onNavigate: (DebugScenario) -> Void
@@ -37,6 +43,7 @@ struct DebugMenuView: View {
                 VStack(spacing: 24) {
                     navigationSection
                     subscriptionSection
+                    spectatorSection
                     authSection
                     roundDataSection
                     liveActivitySection
@@ -49,6 +56,39 @@ struct DebugMenuView: View {
             }
         }
         .background(Color.bgSecondary)
+    }
+
+    // MARK: - Spectator Mode
+
+    /// Previews the two sheets a non-playing group member can land on
+    /// when they tap the active round card. The live-state spectator
+    /// view is the home card itself (no sheet — just a no-op tap with
+    /// the card still visible), so it doesn't need a debug entry point.
+    private var spectatorSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionHeader("SPECTATOR (NON-PLAYING MEMBER)")
+
+            VStack(spacing: 0) {
+                actionRow("Spectator: Pending Results", icon: "hourglass") {
+                    showSpectatorPending = true
+                }
+                divider
+                actionRow("Spectator: Final Results", icon: "flag.checkered") {
+                    showSpectatorFinal = true
+                }
+            }
+            .background(RoundedRectangle(cornerRadius: 14).fill(.white))
+        }
+        .sheet(isPresented: $showSpectatorPending) {
+            ResultsSheet(round: HomeRound.demoPendingResults, currentUserId: 1)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showSpectatorFinal) {
+            ResultsSheet(round: HomeRound.demoGameDone, currentUserId: 1)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        }
     }
 
     // MARK: - Navigate To
@@ -80,7 +120,23 @@ struct DebugMenuView: View {
                     storeService.isPremium.toggle()
                 }
                 divider
-                actionRow("Show Paywall", icon: "crown") {
+                toggleRow("hadPremium (sticky)", value: storeService.hadPremium) {
+                    storeService._debugSetHadPremium(!storeService.hadPremium)
+                }
+                divider
+                // Forces hadPremium=false so the paywall renders its
+                // first-time state: "Go Premium" hero, "30 days free"
+                // plan subtitles, "Try It Free" CTA.
+                actionRow("Show Paywall — New User (Trial)", icon: "crown") {
+                    storeService._debugSetHadPremium(false)
+                    showPaywallPreview = true
+                }
+                divider
+                // Forces hadPremium=true so the paywall renders its
+                // post-trial state: "Your Premium trial ended" hero,
+                // plan subtitles without "30 days free", "Subscribe" CTA.
+                actionRow("Show Paywall — Trial Ended", icon: "crown.fill") {
+                    storeService._debugSetHadPremium(true)
                     showPaywallPreview = true
                 }
                 divider
@@ -92,6 +148,7 @@ struct DebugMenuView: View {
         }
         .sheet(isPresented: $showPaywallPreview) {
             PaywallView()
+                .environmentObject(storeService)
         }
         .sheet(isPresented: $showShareCardPreview) {
             shareCardPreview
