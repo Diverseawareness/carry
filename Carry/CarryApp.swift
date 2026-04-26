@@ -35,6 +35,17 @@ class CarryAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCente
         // End any Live Activities orphaned by a previous force-quit or crash.
         // If the user opens a scorecard this session, setupLiveActivity() starts fresh.
         LiveActivityService.shared.cleanupOrphanedActivities()
+
+        // Always register on launch. Apple says this is a no-op if the user
+        // hasn't authorized notifications yet, but refreshes the device token
+        // whenever it has changed — including when the aps-environment
+        // entitlement flips between development and production (e.g., when a
+        // user upgrades from a dev/TestFlight build to an App Store build, or
+        // restores from a backup). Without this, a stale sandbox token can
+        // linger in the backend after a prod build is installed, causing
+        // pushes to silently fail.
+        UIApplication.shared.registerForRemoteNotifications()
+
         return true
     }
 
