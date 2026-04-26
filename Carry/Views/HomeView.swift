@@ -365,7 +365,6 @@ struct HomeView: View {
     @EnvironmentObject var appRouter: AppRouter
     @Binding var selectedTab: MainTabView.Tab
     @Binding var skinGameGroups: [SavedGroup]
-    @Binding var showTabBar: Bool
     var isLoadingGroups: Bool = false
     @Binding var pendingActiveGroupId: UUID?
     @State private var showPaywall = false
@@ -711,9 +710,10 @@ struct HomeView: View {
             }
         }
         .animation(.spring(response: 0.45, dampingFraction: 0.9), value: selectedRound?.id)
-        .onChange(of: selectedRound) { _, newValue in
-            showTabBar = (newValue == nil)
-        }
+        // Hide the parent tab bar whenever a round is fullscreen-presented.
+        // Re-publishes on every body recomputation, so unmounting the view
+        // (e.g. switching tabs) automatically clears the contribution.
+        .preference(key: TabBarHiddenKey.self, value: selectedRound != nil)
         .onChange(of: storeService.isPremium) { _, newValue in
             // User completed the forced paywall (trial started or subscribed).
             // Auto-accept the invite that triggered the paywall so they don't
@@ -2762,7 +2762,6 @@ extension HomeRound: Equatable {
     HomeView(
         selectedTab: .constant(.home),
         skinGameGroups: .constant([]),
-        showTabBar: .constant(true),
         pendingActiveGroupId: .constant(nil)
     )
     .environmentObject(AuthService())
@@ -2773,7 +2772,6 @@ extension HomeRound: Equatable {
     HomeView(
         selectedTab: .constant(.home),
         skinGameGroups: .constant(SavedGroup.demo),
-        showTabBar: .constant(true),
         pendingActiveGroupId: .constant(nil)
     )
     .environmentObject(AuthService())

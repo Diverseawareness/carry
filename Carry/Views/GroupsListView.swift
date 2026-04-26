@@ -5,7 +5,6 @@ struct GroupsListView: View {
     @EnvironmentObject var storeService: StoreService
     @EnvironmentObject var appRouter: AppRouter
     @Binding var groups: [SavedGroup]
-    @Binding var showTabBar: Bool
     @Binding var pendingActiveGroupId: UUID?
     var isLoadingGroups: Bool = false
     @State private var showCreateGroup = false
@@ -56,9 +55,11 @@ struct GroupsListView: View {
 
     var body: some View {
         gamesContentWithAlerts
-            .onChange(of: activeGroup?.id) { _, id in
-                showTabBar = (id == nil)
-            }
+            // Hide the parent tab bar whenever the user has drilled into a
+            // specific group's detail view. Re-publishes on every body
+            // recomputation, so unmounting the tab automatically clears the
+            // contribution — no stale state can linger across tab switches.
+            .preference(key: TabBarHiddenKey.self, value: activeGroup != nil)
             .onChange(of: groups) { _, newGroups in
                 // Late arrival — a pending "open this group" target (set by
                 // the scanner or a deep link) that wasn't in `groups` when
@@ -3749,13 +3750,13 @@ struct CreateGroupSheet: View {
 
 #if DEBUG
 #Preview("1 - Empty (first run)") {
-    GroupsListView(groups: .constant([]), showTabBar: .constant(true), pendingActiveGroupId: .constant(nil))
+    GroupsListView(groups: .constant([]), pendingActiveGroupId: .constant(nil))
         .environmentObject(AuthService())
         .environmentObject(StoreService())
 }
 
 #Preview("2 - Populated") {
-    GroupsListView(groups: .constant(SavedGroup.demo), showTabBar: .constant(true), pendingActiveGroupId: .constant(nil))
+    GroupsListView(groups: .constant(SavedGroup.demo), pendingActiveGroupId: .constant(nil))
         .environmentObject(AuthService())
         .environmentObject(StoreService())
 }

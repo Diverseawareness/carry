@@ -1,5 +1,29 @@
 import SwiftUI
 
+/// SwiftUI preference key used by tab content (HomeView, GroupsListView) to
+/// publish whether they're currently in a "fullscreen" state where the tab
+/// bar should be hidden — i.e. HomeView when an active round is selected,
+/// GroupsListView when the user has drilled into a specific group.
+///
+/// Why this exists: previously a `Binding<Bool>` named `showTabBar` was
+/// passed to both children and they wrote to it via `.onChange`. That had a
+/// fatal bug class — `.onChange` only fires on value transitions, so when a
+/// tab mounted with its tracked value already in the "no fullscreen" state
+/// (e.g. nil → nil on first launch), nothing fired and the previous tab's
+/// stale value lingered. First impression: app launches with tab bar
+/// invisible. Reopening the app fixes it (state resets), but no first-time
+/// user would ever come back.
+///
+/// Preference keys are SwiftUI's native upward-data-flow mechanism. They
+/// re-publish on every body recomputation, so a tab's contribution
+/// disappears the instant it unmounts — no stale-state lingering possible.
+struct TabBarHiddenKey: PreferenceKey {
+    static var defaultValue: Bool = false
+    static func reduce(value: inout Bool, nextValue: () -> Bool) {
+        value = value || nextValue()
+    }
+}
+
 struct MainTabView: View {
     @EnvironmentObject var authService: AuthService
     @EnvironmentObject var appRouter: AppRouter
@@ -205,15 +229,25 @@ struct MainTabView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
+        // Single source of truth for tab-bar visibility. Children publish
+        // their fullscreen state via `.preference(key: TabBarHiddenKey.self,
+        // value: ...)`; we mirror that into local `showTabBar` here. Because
+        // preferences re-publish on every render of the contributing view,
+        // unmounting a tab automatically clears its contribution — switching
+        // tabs always reflects the new tab's actual state, never the prior
+        // tab's leftover writes.
+        .onPreferenceChange(TabBarHiddenKey.self) { hidden in
+            showTabBar = !hidden
+        }
     }
 
     @ViewBuilder
     private var tabContent: some View {
         switch selectedTab {
         case .home:
-            HomeView(selectedTab: $selectedTab, skinGameGroups: $skinGameGroups, showTabBar: $showTabBar, isLoadingGroups: isLoadingGroups, pendingActiveGroupId: $pendingActiveGroupId)
+            HomeView(selectedTab: $selectedTab, skinGameGroups: $skinGameGroups, isLoadingGroups: isLoadingGroups, pendingActiveGroupId: $pendingActiveGroupId)
         case .skinGames:
-            GroupsListView(groups: $skinGameGroups, showTabBar: $showTabBar, pendingActiveGroupId: $pendingActiveGroupId, isLoadingGroups: isLoadingGroups)
+            GroupsListView(groups: $skinGameGroups, pendingActiveGroupId: $pendingActiveGroupId, isLoadingGroups: isLoadingGroups)
         case .profile:
             ProfileView(skinGameGroups: $skinGameGroups)
         }
