@@ -690,17 +690,28 @@ struct GroupManagerView: View {
     }
 
     private var leaderboardPlayers: [Player] {
-        // Source the roster from `leaderboardRounds` so historical participants
-        // show up even when they're no longer current members — e.g. after a
-        // Quick Game → Group conversion, the original Quick Game players are
-        // 'invited' (pending) in the new group until they re-accept, and guest
-        // players may not exist in group_members at all. Prefer the player
-        // record from the current roster (has latest name/avatar) when both
-        // sources agree, falling back to the record embedded in the round.
+        // Roster = players who are CURRENT members of this group (active or
+        // invited). We still iterate `leaderboardRounds` to discover the union
+        // of historical participants, but we filter each one against
+        // `rosterById` — a former participant who isn't a member of this
+        // group anymore should not appear on the leaderboard.
+        //
+        // The previous version included historical-only players so they'd
+        // render alongside current members. That over-corrected: after a
+        // Quick Game → Group conversion, every Quick Game guest who was NOT
+        // ported into the new group still appeared on the leaderboard as
+        // "invited" — confusing testers because those people were never
+        // invited to this group at all.
+        //
+        // Stats aggregation is unchanged. `cumulativeStats` continues to
+        // sum across all rounds (the migrated QG counts toward Daniel /
+        // Emese / Ziggy's totals); we just don't render rows for players
+        // who aren't in the current roster.
         let rosterById = Dictionary(uniqueKeysWithValues: allAvailable.map { ($0.id, $0) })
         var playersById: [Int: Player] = [:]
         for round in leaderboardRounds {
             for player in round.players {
+                guard rosterById[player.id] != nil else { continue }
                 if playersById[player.id] == nil {
                     playersById[player.id] = rosterById[player.id] ?? player
                 }
