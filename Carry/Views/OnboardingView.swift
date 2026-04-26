@@ -194,10 +194,23 @@ struct OnboardingView: View {
             Button {
                 let isNotifStep = hasAppleName ? step == 1 : step == 2
                 if isNotifStep && !notificationRequested {
-                    // First tap: request permission, then change button to "Continue"
-                    UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in
+                    // First tap: request permission, register for remote notifications,
+                    // then change button to "Continue".
+                    //
+                    // We MUST call registerForRemoteNotifications after a granted
+                    // authorization — requestAuthorization alone doesn't generate a
+                    // device token. Without this, new users finished onboarding with
+                    // permission granted but no APNs token uploaded to the backend, so
+                    // they missed all push notifications during their first session.
+                    // The token would only arrive on the next app launch (via the
+                    // didFinishLaunchingWithOptions fix), making the first impression
+                    // unreliable.
+                    UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
                         DispatchQueue.main.async {
                             notificationRequested = true
+                            if granted {
+                                UIApplication.shared.registerForRemoteNotifications()
+                            }
                         }
                     }
                 } else {
