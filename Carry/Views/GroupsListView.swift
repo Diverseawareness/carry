@@ -2300,7 +2300,6 @@ struct GroupsListView: View {
 
                     Button {
                         showDebugCreateGroupCard = false
-                        ToastManager.shared.success("Single Game tapped")
                     } label: {
                         Text("Skip")
                             .font(.system(size: 16, weight: .semibold))
