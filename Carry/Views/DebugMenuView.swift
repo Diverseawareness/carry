@@ -80,12 +80,16 @@ struct DebugMenuView: View {
             .background(RoundedRectangle(cornerRadius: 14).fill(.white))
         }
         .sheet(isPresented: $showSpectatorPending) {
-            ResultsSheet(round: HomeRound.demoPendingResults, currentUserId: 1)
+            // Spectator = non-playing group member. Pass a sentinel ID that
+            // won't match any player in the demo round so ResultsSheet's
+            // viewerIsParticipant check returns false and the hero is hidden
+            // (spectators only get the winners list).
+            ResultsSheet(round: HomeRound.demoPendingResults, currentUserId: -1)
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showSpectatorFinal) {
-            ResultsSheet(round: HomeRound.demoGameDone, currentUserId: 1)
+            ResultsSheet(round: HomeRound.demoGameDone, currentUserId: -1)
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
@@ -205,6 +209,11 @@ struct DebugMenuView: View {
                 actionRow("Clear Profile", icon: "person.slash") {
                     authService.currentUser = nil
                 }
+                divider
+                actionRow("Send Test Welcome Email", icon: "envelope.badge") {
+                    let name = authService.currentUser?.firstName ?? "Daniel"
+                    Task { await authService.sendWelcomeEmail(firstName: name) }
+                }
             }
             .background(RoundedRectangle(cornerRadius: 14).fill(.white))
         }
@@ -235,16 +244,6 @@ struct DebugMenuView: View {
                     }
                 }
                 divider
-                actionRow("Show Quick Game Limit", icon: "exclamationmark.triangle") {
-                    dismiss()
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-                        appRouter.navigateToTab = "skinGames"
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                            appRouter.debugShowQuickGameLimit = true
-                        }
-                    }
-                }
-                divider
                 actionRow("Show Create Group Card", icon: "person.3.fill") {
                     dismiss()
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
@@ -261,6 +260,57 @@ struct DebugMenuView: View {
                         appRouter.navigateToTab = "skinGames"
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                             appRouter.debugShowInviteSheet = true
+                        }
+                    }
+                }
+                divider
+                actionRow("Show Convert → Prompt (Phase 1)", icon: "questionmark.bubble") {
+                    dismiss()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                        appRouter.navigateToTab = "skinGames"
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            appRouter.debugShowConvertPrompt = true
+                        }
+                    }
+                }
+                divider
+                actionRow("Show Convert → Invite Crew (Phase 2)", icon: "person.2.wave.2") {
+                    dismiss()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                        appRouter.navigateToTab = "skinGames"
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            appRouter.debugShowConvertInviteCrew = true
+                        }
+                    }
+                }
+                divider
+                actionRow("Preview Fullscreen QR (Shake)", icon: "qrcode") {
+                    // Simulates the Release-build shake-to-QR flow without
+                    // needing a Release archive. Only fires if the user is
+                    // currently viewing a group detail (GroupManagerView).
+                    dismiss()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        NotificationCenter.default.post(name: .debugPreviewFullScreenQR, object: nil)
+                    }
+                }
+                divider
+                actionRow("Simulate Post-Install Clipboard Invite", icon: "doc.on.clipboard") {
+                    // Reproduces the non-Carry-user flow: web page copies
+                    // the invite URL to clipboard, user installs + opens
+                    // Carry, the Home tab surfaces the "Open your invite"
+                    // banner. Uses the first persisted group id if one
+                    // exists so tapping the banner actually joins
+                    // end-to-end (idempotent if already an active member);
+                    // otherwise a dummy UUID is used and the tap will
+                    // error-toast — which is itself a useful visual test.
+                    let groupId: UUID = GroupStorage.shared.load().first?.id ?? UUID()
+                    let inviteURL = "https://carryapp.site/invite?group=\(groupId.uuidString)"
+                    UIPasteboard.general.string = inviteURL
+                    dismiss()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        appRouter.navigateToTab = "home"
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            appRouter.debugSimulateClipboardInvite = true
                         }
                     }
                 }

@@ -83,10 +83,10 @@ struct FinalResultsWinnerRow: View {
                 if isYou {
                     Text("You")
                         .font(Font.system(size: 12, weight: .semibold))
-                        .foregroundColor(Color.gold)
+                        .foregroundColor(Color.textDark)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 1)
-                        .background(Capsule().fill(Color.gold.opacity(0.10)))
+                        .background(Capsule().fill(Color.textDark.opacity(0.10)))
                 }
             }
 

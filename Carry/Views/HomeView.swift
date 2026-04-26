@@ -77,9 +77,15 @@ struct HomeRound: Identifiable {
     var activePlayerCount: Int = 0  // players who actually scored (set by GroupService)
     var potTotal: Int { buyIn * (activePlayerCount > 0 ? activePlayerCount : players.count) }
 
-    /// All groups have finished scoring all 18 holes
+    /// The round is finished — either all groups scored every hole OR the
+    /// host force-ended early (status flips to `.concluded` / `.completed`).
+    /// Previously this only counted 18-hole completions, so a force-ended
+    /// round at hole 5 still rendered as "live scoring" on the home card
+    /// and the results sheet said "Pending Results." Respecting server
+    /// status here fixes both.
     var isGameDone: Bool {
-        completedGroups == totalGroups && totalGroups > 0
+        if status == .concluded || status == .completed { return true }
+        return completedGroups == totalGroups && totalGroups > 0
     }
 
     /// At least one group finished all 18, but not all
@@ -356,6 +362,7 @@ struct HomeRound: Identifiable {
 struct HomeView: View {
     @EnvironmentObject var authService: AuthService
     @EnvironmentObject var storeService: StoreService
+    @EnvironmentObject var appRouter: AppRouter
     @Binding var selectedTab: MainTabView.Tab
     @Binding var skinGameGroups: [SavedGroup]
     @Binding var showTabBar: Bool
@@ -363,6 +370,24 @@ struct HomeView: View {
     @Binding var pendingActiveGroupId: UUID?
     @State private var showPaywall = false
     @State private var showCreateGroup = false
+    @State private var showQRScanner = false
+    /// When the user arrives from `invite.html` → App Store download → install,
+    /// the invite URL is copied to their clipboard by the web page (see
+    /// `site/invite.html`). Post-onboarding we surface a one-tap banner on
+    /// Home so they can complete the join without rescanning the QR.
+    /// The `hasURLs` check is privacy-preserving — it does NOT trigger the
+    /// iOS paste banner. That prompt only fires when the user taps the
+    /// banner, at which point we read the URL and route through the same
+    /// `handleScannedInvite` path as the QR scanner.
+    @State private var clipboardInviteAvailable = false
+    @State private var didDismissClipboardInvite = false
+    /// System-wide `UIPasteboard.changeCount` value at the moment the user
+    /// last acknowledged the clipboard invite alert (either tapped Join or
+    /// Cancel). Stored via `@AppStorage` so it persists across app launches
+    /// and across HomeView re-creations (SwiftUI destroys + rebuilds the
+    /// view on tab switches, which would otherwise reset session flags and
+    /// re-fire the alert for the same clipboard content).
+    @AppStorage("clipboardInviteAckdChangeCount") private var clipboardInviteAckdChangeCount: Int = -1
     @State private var invitedRounds: [HomeRound] = []
     @State private var pendingInvites: [InviteDTO] = []  // raw Supabase invites
     @State private var selectedRound: HomeRound?
@@ -377,6 +402,10 @@ struct HomeView: View {
     @State private var guestClaimId: UUID? = nil  // triggers .sheet(item:)
     @State private var pendingClaimRound: HomeRound? = nil
     @State private var acceptingInviteId: UUID? = nil  // round ID currently being accepted
+    /// Invite the user was trying to accept when the paywall forced them to
+    /// subscribe first. Auto-accepted in the onChange(of: isPremium) handler
+    /// once the trial/subscription activates, so tapping Join once is enough.
+    @State private var pendingInviteAfterPaywall: HomeRound? = nil
 
     private let roundService = RoundService()
     @State private var homePoller: Timer?
@@ -465,6 +494,17 @@ struct HomeView: View {
                         .transaction { $0.animation = nil }
                         .accessibilityAddTraits(.isHeader)
                     Spacer()
+                    Button {
+                        showQRScanner = true
+                    } label: {
+                        Image(systemName: "qrcode.viewfinder")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 34, height: 34)
+                            .foregroundColor(Color.textPrimary)
+                            .frame(width: 44, height: 44)
+                    }
+                    .accessibilityLabel("Scan invite QR code")
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 16)
@@ -494,15 +534,19 @@ struct HomeView: View {
                                     NotificationCenter.default.post(name: .showNewGamePicker, object: nil)
                                 }
                             } label: {
-                                Text("New Skins Game")
-                                    .font(.carry.bodySMBold)
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 24)
-                                    .padding(.vertical, 12)
-                                    .background(
-                                        Capsule()
-                                            .fill(Color.pureBlack)
-                                    )
+                                HStack(spacing: 6) {
+                                    Image(systemName: "plus")
+                                        .font(.system(size: 13, weight: .bold))
+                                    Text("New Skins Game")
+                                        .font(.carry.bodySMBold)
+                                }
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 24)
+                                .padding(.vertical, 12)
+                                .background(
+                                    Capsule()
+                                        .fill(Color.pureBlack)
+                                )
                             }
                             .padding(.top, 8)
                         }
@@ -630,6 +674,7 @@ struct HomeView: View {
                         // Supabase. Concluded rounds stay pinned until user taps Save.
                         withAnimation(.spring(response: 0.45, dampingFraction: 0.9)) {
                             selectedRound = nil
+                            selectedTab = .skinGames
                         }
                         // Refresh groups to get updated data from Supabase
                         if authService.isAuthenticated, let userId = authService.currentUser?.id {
@@ -653,7 +698,12 @@ struct HomeView: View {
                         }
                     },
                     isViewer: (round.status == .active || round.status == .concluded) && authService.currentPlayerId != (round.scorerPlayerId ?? round.creatorId) && authService.currentPlayerId != round.creatorId,
-                    isQuickGame: skinGameGroups.first(where: { $0.activeRound?.id == round.id || $0.concludedRound?.id == round.id })?.isQuickGame ?? false
+                    isQuickGame: skinGameGroups.first(where: { $0.activeRound?.id == round.id || $0.concludedRound?.id == round.id })?.isQuickGame ?? false,
+                    onDeclineGroup: {
+                        if let idx = skinGameGroups.firstIndex(where: { $0.activeRound?.id == round.id || $0.concludedRound?.id == round.id }) {
+                            skinGameGroups[idx].archiveConcludedRound()
+                        }
+                    }
                 )
                 .ignoresSafeArea()
                 .transition(.move(edge: .bottom))
@@ -664,6 +714,15 @@ struct HomeView: View {
         .onChange(of: selectedRound) { _, newValue in
             showTabBar = (newValue == nil)
         }
+        .onChange(of: storeService.isPremium) { _, newValue in
+            // User completed the forced paywall (trial started or subscribed).
+            // Auto-accept the invite that triggered the paywall so they don't
+            // have to tap Join a second time.
+            if newValue, let pending = pendingInviteAfterPaywall {
+                pendingInviteAfterPaywall = nil
+                acceptInvite(pending)
+            }
+        }
         .sheet(item: $leaderboardRound) { round in
             let groupHistory = skinGameGroups.first(where: { $0.name == round.groupName })?.roundHistory ?? []
             LeaderboardSheet(round: round, groupRoundHistory: groupHistory)
@@ -672,10 +731,16 @@ struct HomeView: View {
                 .presentationBackground(.white)
         }
         .sheet(item: $resultsRound) { round in
+            // Only the creator can finalize the round (flip active/concluded
+            // → completed). Members see the results but have no finalize
+            // button — that's the host's call. `canSaveResults` returns false
+            // when `onSaveResults` is nil, so the button stays hidden for
+            // non-creators.
+            let isRoundCreator = currentUserId == round.creatorId
             ResultsSheet(
                 round: round,
                 currentUserId: currentUserId,
-                onSaveResults: {
+                onSaveResults: isRoundCreator ? {
                     // Mark the round as completed so it moves from active → recent
                     Task {
                         try? await RoundService().updateRoundStatus(roundId: round.id, status: "completed")
@@ -687,7 +752,7 @@ struct HomeView: View {
                         }
                     }
                     resultsRound = nil
-                }
+                } : nil
             )
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
@@ -727,6 +792,28 @@ struct HomeView: View {
             .presentationDragIndicator(.visible)
             .presentationBackground(.white)
         }
+        .fullScreenCover(isPresented: $showQRScanner) {
+            QRScannerView { payload in
+                handleScannedInvite(payload)
+            }
+        }
+        // Post-install bridge for scan-via-iPhone-Camera → install → open
+        // Carry. Fires once per session when the clipboard holds a URL
+        // (hasURLs is privacy-preserving — no paste banner here). Tapping
+        // Join triggers the "Allow Paste" prompt and routes the URL
+        // through the same `handleScannedInvite` path as a QR scan,
+        // landing the user directly inside the group.
+        .alert("Join Skins Game", isPresented: Binding(
+            get: { clipboardInviteAvailable && !didDismissClipboardInvite },
+            set: { if !$0 { markClipboardInviteAcknowledged() } }
+        )) {
+            Button("Join") { consumeClipboardInvite() }
+            Button("Cancel", role: .cancel) {
+                markClipboardInviteAcknowledged()
+            }
+        } message: {
+            Text("Someone invited you to a skins game. Tap Join to accept.")
+        }
         .alert("Leave Group?", isPresented: Binding(
             get: { roundToLeave != nil },
             set: { if !$0 { roundToLeave = nil } }
@@ -757,7 +844,23 @@ struct HomeView: View {
                 Task { await loadInvites(userId: userId) }
             }
             startHomePoller()
+            // Post-install bridge: did invite.html copy a URL to the
+            // clipboard that we can surface as a one-tap banner?
+            checkClipboardForInvite()
         }
+        #if DEBUG
+        .onChange(of: appRouter.debugSimulateClipboardInvite) { _, shouldSimulate in
+            guard shouldSimulate else { return }
+            appRouter.debugSimulateClipboardInvite = false
+            // Reset both the session dismissal flag AND the persisted
+            // `changeCount` acknowledgement so the debug action can always
+            // re-trigger the alert even if we previously dismissed it for
+            // the same clipboard content.
+            didDismissClipboardInvite = false
+            clipboardInviteAckdChangeCount = -1
+            checkClipboardForInvite()
+        }
+        #endif
         .onReceive(NotificationCenter.default.publisher(for: .showDebugGuestClaim)) { _ in
             let mockProfiles = [
                 ProfileDTO(id: UUID(), firstName: "Tyson", lastName: "Briner", username: nil, displayName: "Tyson Briner", initials: "TB", color: "#E67E22", avatar: "", handicap: 0.9, ghinNumber: nil, homeClub: nil, homeClubId: nil, avatarUrl: nil, email: nil, isClubMember: nil, isGuest: true, createdBy: nil, createdAt: nil, updatedAt: nil),
@@ -921,6 +1024,81 @@ struct HomeView: View {
             pendingInvites = allPendingInvites
             withAnimation(.easeOut(duration: 0.25)) {
                 invitedRounds = allInvites
+            }
+        }
+    }
+
+    // MARK: - Clipboard Invite (post-install bridge)
+
+    /// Called on appear. Uses `hasURLs` (no consent prompt) so we can
+    /// decide whether to surface the "Join Skins Game" alert without
+    /// triggering the "Allow Paste" dialog. The actual paste only
+    /// happens when the user taps Join in the alert. Compares the
+    /// current pasteboard `changeCount` against the last value the user
+    /// already acknowledged so the alert doesn't re-fire for the same
+    /// clipboard content — which previously happened on tab switches
+    /// (HomeView @State resets when SwiftUI rebuilds the view).
+    private func checkClipboardForInvite() {
+        let current = UIPasteboard.general.changeCount
+        clipboardInviteAvailable = UIPasteboard.general.hasURLs
+            && current != clipboardInviteAckdChangeCount
+    }
+
+    /// Records the current pasteboard `changeCount` as acknowledged so the
+    /// alert won't re-fire for this clipboard content — whether the user
+    /// tapped Join or Cancel.
+    private func markClipboardInviteAcknowledged() {
+        clipboardInviteAckdChangeCount = UIPasteboard.general.changeCount
+        didDismissClipboardInvite = true
+        clipboardInviteAvailable = false
+    }
+
+    /// Invoked from the alert's Join button. Reads the clipboard — this is
+    /// where iOS shows the single "Allow Paste" prompt — validates that
+    /// the URL parses as a Carry invite, and routes through the same
+    /// flow as a QR scan. Non-Carry URLs dismiss silently (no error
+    /// toast for incidental clipboard contents).
+    private func consumeClipboardInvite() {
+        markClipboardInviteAcknowledged()
+        guard let url = UIPasteboard.general.url ?? UIPasteboard.general.string.flatMap(URL.init(string:)),
+              GroupInviteParser.parse(url) != nil else {
+            return
+        }
+        handleScannedInvite(url.absoluteString)
+    }
+
+    /// Scanned QR payload handler. Mirrors `GroupsListView.handleScannedInvite`
+    /// — the in-app scan is explicit consent so we skip the `invited → active`
+    /// handshake and land the user directly inside the group with a success
+    /// toast. The creator sees the standard "X joined" toast on their end
+    /// when the new active member shows up in the next group refresh.
+    private func handleScannedInvite(_ payload: String) {
+        showQRScanner = false
+
+        guard
+            let url = URL(string: payload),
+            let invite = GroupInviteParser.parse(url),
+            let groupId = invite.groupId
+        else {
+            ToastManager.shared.error("That QR isn't a Carry invite.")
+            return
+        }
+
+        Task {
+            guard let userId = try? await SupabaseManager.shared.client.auth.session.user.id else { return }
+            let service = GroupService()
+            do {
+                let groupName = try await service.joinGroupViaInvite(groupId: groupId, playerId: userId)
+                await MainActor.run {
+                    ToastManager.shared.success("Joined \(groupName)")
+                    appRouter.shouldRefreshGroups = true
+                    appRouter.pendingRoundGroupId = groupId
+                    selectedTab = .skinGames
+                }
+            } catch {
+                await MainActor.run {
+                    ToastManager.shared.error("Couldn't join that group. Try again.")
+                }
             }
         }
     }
@@ -1216,6 +1394,11 @@ struct HomeView: View {
         config.supabaseRoundId = round.id
         config.supabaseGroupId = round.supabaseGroupId
         config.scoringMode = round.scoringMode
+        config.isQuickGame = round.isQuickGame
+        // HomeRound.scheduledDate is already resolved to the CURRENT user's
+        // tee time (buildHomeRound picks teeTimes[userGroup-1] per memory).
+        // Pipe through to the scorecard header's subtitle.
+        config.scorerTeeTime = round.scheduledDate
         return config
     }
 
@@ -1566,7 +1749,17 @@ struct HomeView: View {
             // Action buttons
             VStack(spacing: 0) {
                 Button {
-                    acceptInvite(round)
+                    // Force paywall before joining. New downloaders see "Try It
+                    // Free" (starts trial → grants Premium); lapsed users see
+                    // "Subscribe". Either path flips isPremium → true, and the
+                    // onChange handler auto-accepts the pending invite so the
+                    // user doesn't have to tap Join twice.
+                    if storeService.isPremium {
+                        acceptInvite(round)
+                    } else {
+                        pendingInviteAfterPaywall = round
+                        showPaywall = true
+                    }
                 } label: {
                     Group {
                         if acceptingInviteId == round.id {
@@ -1915,6 +2108,17 @@ struct LeaderboardSheet: View {
                 .fill(Color.bgPrimary)
                 .frame(height: 8)
 
+            // Section header — matches the "Leaderboard" header style so
+            // Stats reads as its own labeled section under the table above.
+            Text("Stats")
+                .font(Font.system(size: 24, weight: .bold))
+                .foregroundColor(Color.textPrimary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 24)
+                .padding(.top, 20)
+                .padding(.bottom, 4)
+                .accessibilityAddTraits(.isHeader)
+
             VStack(spacing: 0) {
                 ForEach(Array(statsPlayers.enumerated()), id: \.element.id) { idx, player in
                     leaderboardStatsRow(player: player)
@@ -1923,7 +2127,7 @@ struct LeaderboardSheet: View {
                         Rectangle()
                             .fill(Color.borderFaint)
                             .frame(height: 1)
-                            .padding(.leading, 72)
+                            .padding(.leading, 82)
                             .padding(.trailing, 24)
                     }
                 }
@@ -1956,14 +2160,18 @@ struct LeaderboardSheet: View {
 
                 Spacer()
 
+                // Match the leaderboard "Won" column: same font weight/size
+                // and 72pt fixed trailing-aligned width so the amounts line
+                // up vertically with the rows above.
                 Text(moneyLabel(money))
-                    .font(.carry.bodyLGBold)
+                    .font(Font.system(size: 17, weight: .medium))
                     .monospacedDigit()
                     .foregroundColor(
                         money > 0 ? Color.goldMuted
                         : money < 0 ? Color.textDisabled
                         : Color.borderSoft
                     )
+                    .frame(width: 72, alignment: .trailing)
             }
 
             Group {
@@ -1975,7 +2183,7 @@ struct LeaderboardSheet: View {
                         Text("\u{00B7}")
                             .foregroundColor(Color.textDisabled)
                         Text("Holes \(holesList)")
-                            .foregroundColor(Color.textTertiary)
+                            .foregroundColor(Color.textPrimary)
                     }
                 } else {
                     Text("No Skins")
@@ -1985,7 +2193,7 @@ struct LeaderboardSheet: View {
             .font(.carry.bodySM)
             .padding(.leading, 50) // align under the name (38 avatar + 12 spacing)
         }
-        .padding(.horizontal, 18)
+        .padding(.horizontal, 24)
         .padding(.vertical, 12)
     }
 
@@ -2152,8 +2360,14 @@ struct ResultsSheet: View {
             // Scrollable content
             ScrollView {
                 VStack(spacing: 0) {
-                    // Hero — current user (shared component)
-                    if let currentPlayer = round.players.first(where: { $0.id == currentUserId }) ?? round.players.first {
+                    // Hero — shown only when the viewer is a participant.
+                    // Spectators (non-playing group members viewing the round)
+                    // skip the big-circle hero entirely — it's meaningless as
+                    // a "featured you" moment when you weren't in the round.
+                    // They just see the winners list directly.
+                    let viewerIsParticipant = round.players.contains(where: { $0.id == currentUserId })
+                    if viewerIsParticipant,
+                       let currentPlayer = round.players.first(where: { $0.id == currentUserId }) {
                         FinalResultsHero(
                             player: currentPlayer,
                             skinsWon: round.playerWonHoles[currentPlayer.id]?.count ?? 0,
@@ -2318,10 +2532,10 @@ struct ResultsSheet: View {
                 if entry.isYou {
                     Text("You")
                         .font(Font.system(size: 12, weight: .semibold))
-                        .foregroundColor(Color.gold)
+                        .foregroundColor(Color.textDark)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 1)
-                        .background(Capsule().fill(Color.gold.opacity(0.10)))
+                        .background(Capsule().fill(Color.textDark.opacity(0.10)))
                 }
             }
 
@@ -2395,6 +2609,15 @@ struct ResultsSheet: View {
                 .fill(Color.bgPrimary)
                 .frame(height: 8)
 
+            Text("Stats")
+                .font(Font.system(size: 24, weight: .bold))
+                .foregroundColor(Color.textPrimary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 24)
+                .padding(.top, 20)
+                .padding(.bottom, 4)
+                .accessibilityAddTraits(.isHeader)
+
             VStack(spacing: 0) {
                 ForEach(Array(statsPlayers.enumerated()), id: \.element.id) { idx, player in
                     resultsStatsRow(player: player)
@@ -2403,7 +2626,7 @@ struct ResultsSheet: View {
                         Rectangle()
                             .fill(Color.borderFaint)
                             .frame(height: 1)
-                            .padding(.leading, 72)
+                            .padding(.leading, 82)
                             .padding(.trailing, 24)
                     }
                 }
@@ -2437,13 +2660,14 @@ struct ResultsSheet: View {
                 Spacer()
 
                 Text(resultsMoneyLabel(money))
-                    .font(.carry.bodyLGBold)
+                    .font(Font.system(size: 17, weight: .medium))
                     .monospacedDigit()
                     .foregroundColor(
                         money > 0 ? Color.goldMuted
                         : money < 0 ? Color.textDisabled
                         : Color.borderSoft
                     )
+                    .frame(width: 72, alignment: .trailing)
             }
 
             Group {
@@ -2455,7 +2679,7 @@ struct ResultsSheet: View {
                         Text("\u{00B7}")
                             .foregroundColor(Color.textDisabled)
                         Text("Holes \(holesList)")
-                            .foregroundColor(Color.textTertiary)
+                            .foregroundColor(Color.textPrimary)
                     }
                 } else {
                     Text("No Skins")
@@ -2465,7 +2689,7 @@ struct ResultsSheet: View {
             .font(.carry.bodySM)
             .padding(.leading, 50) // align under the name (38 avatar + 12 spacing)
         }
-        .padding(.horizontal, 18)
+        .padding(.horizontal, 24)
         .padding(.vertical, 12)
     }
 

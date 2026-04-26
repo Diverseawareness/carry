@@ -3,6 +3,12 @@ import SwiftUI
 struct MainTabView: View {
     @EnvironmentObject var authService: AuthService
     @EnvironmentObject var appRouter: AppRouter
+    /// Used to pause the 15s auto-refresh poll while the app is backgrounded
+    /// or inactive. Previously the timer kept firing (and hitting Supabase)
+    /// while the user was in another app — wasted network, battery, and
+    /// Supabase quota. Active-phase gating brings the work down to zero
+    /// whenever Carry isn't on screen.
+    @Environment(\.scenePhase) private var scenePhase
 
     enum Tab {
         case home, skinGames, profile
@@ -17,6 +23,14 @@ struct MainTabView: View {
     @State private var isLoadingGroups: Bool = false
     @State private var pendingActiveGroupId: UUID? = nil
     @State private var refreshTimer: Timer? = nil
+    /// Name of a group this user was just removed from (creator kicked them).
+    /// Triggers a one-shot alert explaining the absence; cleared after display.
+    @State private var removedFromGroupName: String? = nil
+    /// Debounce for the removal alert: we only fire once a group has been
+    /// missing for two consecutive polls. Guards against transient states
+    /// during fresh group creation (skins_groups INSERT lands before the
+    /// creator's group_members row), eventual consistency, and partial writes.
+    @State private var pendingKickedGroupId: UUID? = nil
 
     private let groupService = GroupService()
 
@@ -72,7 +86,51 @@ struct MainTabView: View {
                         }
                     }
                     #endif
-                    skinGameGroups = groups
+                    // Detect "I was removed from a group." Guards before we
+                    // surface the alert:
+                    //   1. Debounce — the group must be missing from the
+                    //      fresh fetch for two consecutive polls. A single
+                    //      miss is often transient: the two-step create
+                    //      flow (skins_groups INSERT lands before the
+                    //      creator's group_members row), eventual consistency,
+                    //      a partial write, or a brief RLS/auth blip.
+                    //   2. Explicit `"removed"` status required — the
+                    //      status column carries intent ("active" / "invited"
+                    //      / "declined" / "removed"). Only `"removed"` means
+                    //      the creator actually kicked the user. Everything
+                    //      else — including `"active"` (the fetch was wrong
+                    //      but the user is still in) and `nil` (uncertain) —
+                    //      should NOT fire the alert. The previous logic
+                    //      fired whenever status != "invited", which
+                    //      surfaced a false alarm any time the fetch
+                    //      transiently returned empty.
+                    // On the first miss we also defer the state stomp so
+                    // the currently visible group card doesn't flicker out
+                    // before we've confirmed anything.
+                    let freshIds = Set(groups.map(\.id))
+                    let missingNow = skinGameGroups.first(where: { !freshIds.contains($0.id) })
+                    if let missing = missingNow {
+                        if pendingKickedGroupId == missing.id {
+                            let status = await groupService.membershipStatus(groupId: missing.id, userId: userId)
+                            if status == "removed" {
+                                removedFromGroupName = missing.name
+                            }
+                            pendingKickedGroupId = nil
+                            // Only stomp local state when the user really is
+                            // gone. If status is still "active" or nil the
+                            // fetch misbehaved — keep the card visible and
+                            // let the next poll correct itself.
+                            if status == "removed" || status == "invited" || status == "declined" {
+                                skinGameGroups = groups
+                            }
+                        } else {
+                            pendingKickedGroupId = missing.id
+                            // Defer stomp until next poll confirms
+                        }
+                    } else {
+                        pendingKickedGroupId = nil
+                        skinGameGroups = groups
+                    }
                 } catch {
                     #if DEBUG
                     print("[AutoRefresh] loadGroups failed: \(error)")
@@ -91,7 +149,27 @@ struct MainTabView: View {
             .onReceive(NotificationCenter.default.publisher(for: .didEndRound)) { _ in clearCacheAndReload() }
             .onReceive(NotificationCenter.default.publisher(for: .didCancelRound)) { _ in clearCacheAndReload() }
             .onChange(of: selectedTab) { handleTabChanged() }
+            .onChange(of: scenePhase) { _, phase in handleScenePhaseChange(phase) }
             .onDisappear { refreshTimer?.invalidate(); refreshTimer = nil }
+    }
+
+    /// Pause the auto-refresh poll when the app goes to background or
+    /// becomes inactive; resume when active. Mirrors the existing
+    /// tab-switch gating (`handleTabChanged`) so the timer only burns
+    /// cycles while the user is actually looking at the Games tab of a
+    /// foregrounded Carry.
+    private func handleScenePhaseChange(_ phase: ScenePhase) {
+        switch phase {
+        case .active:
+            if selectedTab == .skinGames && refreshTimer == nil {
+                startAutoRefresh()
+            }
+        case .background, .inactive:
+            refreshTimer?.invalidate()
+            refreshTimer = nil
+        @unknown default:
+            break
+        }
     }
 
     private var mainContentWithDataHandlers: some View {
@@ -103,6 +181,17 @@ struct MainTabView: View {
             .onChange(of: appRouter.shouldRefreshGroups) { handleRefreshRequest() }
             .onChange(of: appRouter.navigateToTab) { handleTabNavigation() }
             .onChange(of: appRouter.pendingRoundGroupId) { handlePendingRound() }
+            .alert(
+                "Removed from \(removedFromGroupName ?? "group")",
+                isPresented: Binding(
+                    get: { removedFromGroupName != nil },
+                    set: { if !$0 { removedFromGroupName = nil } }
+                )
+            ) {
+                Button("OK", role: .cancel) { removedFromGroupName = nil }
+            } message: {
+                Text("The creator removed you from this game. It's no longer on your Home tab.")
+            }
     }
 
     private var mainLayout: some View {

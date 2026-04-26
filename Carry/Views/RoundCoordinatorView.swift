@@ -11,6 +11,7 @@ struct RoundCoordinatorView: View {
     var onLeaveGroup: (() -> Void)?
     var onDeleteGroup: (() -> Void)?
     var onCreateGroup: (() -> Void)?
+    var onDeclineGroup: (() -> Void)?
     var startInActiveMode: Bool
     var skipCourseSelection: Bool
     var preselectedCourse: SelectedCourse?
@@ -66,7 +67,8 @@ struct RoundCoordinatorView: View {
         isQuickGame: Bool = false,
         showInviteCrewOnAppear: Bool = false,
         onGroupRefreshed: ((SavedGroup) -> Void)? = nil,
-        onCreateGroup: (() -> Void)? = nil
+        onCreateGroup: (() -> Void)? = nil,
+        onDeclineGroup: (() -> Void)? = nil
     ) {
         self.initialMembers = initialMembers
         self._groupName = State(initialValue: groupName)
@@ -96,6 +98,7 @@ struct RoundCoordinatorView: View {
         self.showInviteCrewOnAppear = showInviteCrewOnAppear
         self.onGroupRefreshed = onGroupRefreshed
         self.onCreateGroup = onCreateGroup
+        self.onDeclineGroup = onDeclineGroup
         // Determine starting phase and initial course
         self._selectedCourse = State(initialValue: preselectedCourse)
         if initialRoundConfig != nil {
@@ -267,7 +270,9 @@ struct RoundCoordinatorView: View {
                     // Creator wants to convert Quick Game to a group — exit to trigger conversion flow
                     onCreateGroup?()
                 }, onDeclineGroup: {
-                    // Creator declined — just exit
+                    // Creator declined — surface to parent so it can hide the
+                    // Quick Game from the Games tab immediately (before async reload).
+                    onDeclineGroup?()
                 }, isQuickGame: isQuickGame, currentUserId: currentUserId, demoMode: initialDemoMode, isViewer: isViewer)
                 .transition(.move(edge: .bottom))
                 } else {
@@ -629,7 +634,6 @@ struct RoundCoordinatorView: View {
                         if idx < allPlayers.count - 1 {
                             Rectangle()
                                 .fill(Color.borderFaint)
-                                .frame(height: 1)
                                 .frame(height: 1)
                                 .padding(.leading, 82)
                                 .padding(.trailing, 24)

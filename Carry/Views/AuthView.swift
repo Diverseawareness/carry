@@ -31,17 +31,17 @@ struct AuthView: View {
                         .frame(height: h * 0.077)
 
                     // Text block
-                    VStack(spacing: 8) {
+                    VStack(spacing: 12) {
                         Text("Track Your Skins Games")
-                            .font(.system(size: 23, weight: .bold))
+                            .font(.system(size: 30, weight: .bold))
                             .foregroundColor(.white)
                             .tracking(CarryTracking.tight)
 
                         Text("Set up skins games in seconds,\nfollow the action live,\n& crown your winners.")
-                            .font(.carry.bodyLG)
+                            .font(.system(size: 20, weight: .medium))
                             .foregroundColor(.white)
                             .tracking(CarryTracking.tight)
-                            .lineSpacing(4)
+                            .lineSpacing(6)
                     }
                     .multilineTextAlignment(.center)
 

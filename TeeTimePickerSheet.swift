@@ -18,9 +18,9 @@ struct TeeTimePickerSheet: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(spacing: 0) {
-                    // Tab toggle: Single Game / Recurring
+                    // Tab toggle: Next Game / Recurring
                     HStack(spacing: 0) {
-                        ForEach(Array(["Single Game", "Recurring"].enumerated()), id: \.offset) { idx, label in
+                        ForEach(Array(["Next Game", "Recurring"].enumerated()), id: \.offset) { idx, label in
                             Button {
                                 withAnimation(.easeOut(duration: 0.2)) {
                                     scheduleMode = idx

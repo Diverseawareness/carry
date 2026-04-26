@@ -3,9 +3,16 @@ import PostHog
 
 // MARK: - Shake Gesture Detection
 
-#if DEBUG
+// Shake fires a notification in ALL builds.
+// - Release builds: GroupManagerView listens to show a fullscreen QR (so
+//   members in the same foursome can scan to join without passing phones).
+// - Debug builds: CarryApp listens to open the Debug menu (see below).
 extension NSNotification.Name {
     static let deviceDidShake = NSNotification.Name("deviceDidShake")
+    /// Fired by the Debug menu's "Preview Fullscreen QR" action so Debug
+    /// builds can exercise the Release-only shake-to-QR flow without
+    /// triggering the Debug menu itself. GroupManagerView listens for this.
+    static let debugPreviewFullScreenQR = NSNotification.Name("debugPreviewFullScreenQR")
 }
 
 extension UIWindow {
@@ -16,7 +23,6 @@ extension UIWindow {
         }
     }
 }
-#endif
 
 // MARK: - App Delegate (Push Notification Token)
 
@@ -138,17 +144,28 @@ struct CarryApp: App {
     private let groupService = GroupService()
 
     init() {
-        let config = PostHogConfig(
-            apiKey: "phc_sIOBZwKpwwF00BJCj0ElU90sCdHsVVmGNcxYolduaRb",
-            host: "https://us.i.posthog.com"
-        )
-        config.captureApplicationLifecycleEvents = true
-        config.captureScreenViews = true
-        PostHogSDK.shared.setup(config)
-
-        // Increase URL cache for avatar images
+        // URLCache setup is trivially fast — keep it sync so avatars can
+        // start caching on first fetch.
         URLCache.shared.memoryCapacity = 50 * 1024 * 1024   // 50 MB
         URLCache.shared.diskCapacity = 200 * 1024 * 1024    // 200 MB
+
+        // PostHog setup runs on a detached background task. Its setup() kicks
+        // off a feature-flag config fetch that has caused 8-22s startup hangs
+        // on iPhone 12 when us-assets.i.posthog.com is slow. Doing this off
+        // main means the UI renders and stays responsive regardless of
+        // PostHog's reachability. A small delay before setup also gives
+        // SwiftUI's first frame room to paint before PostHog touches the
+        // URL loading system.
+        Task.detached(priority: .background) {
+            try? await Task.sleep(nanoseconds: 500_000_000)  // 0.5s
+            let config = PostHogConfig(
+                apiKey: "phc_sIOBZwKpwwF00BJCj0ElU90sCdHsVVmGNcxYolduaRb",
+                host: "https://us.i.posthog.com"
+            )
+            config.captureApplicationLifecycleEvents = true
+            config.captureScreenViews = true
+            PostHogSDK.shared.setup(config)
+        }
     }
 
     var body: some Scene {

@@ -92,6 +92,14 @@ struct ScorerAssignmentView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Remove scorer")
+            } else {
+                // Creator's scorer slot is locked — show a lock icon on the
+                // right to signal it can't be cleared, matching the lock on
+                // the creator's Scorer pill in the tee table.
+                Image(systemName: "lock.fill")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(Color.textDisabled)
+                    .accessibilityLabel("Locked")
             }
         }
         .padding(.horizontal, 15)

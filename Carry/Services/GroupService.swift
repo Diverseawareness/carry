@@ -135,12 +135,75 @@ final class GroupService {
         return groups
     }
 
+    /// Returns the user's current status in a group, or nil if no row exists.
+    /// Used to distinguish "you were kicked" from "you were demoted to invited"
+    /// (e.g. Quick Game → Group conversion flips active members to invited).
+    func membershipStatus(groupId: UUID, userId: UUID) async -> String? {
+        let rows: [GroupMemberDTO]? = try? await client.from("group_members")
+            .select()
+            .eq("group_id", value: groupId.uuidString)
+            .eq("player_id", value: userId.uuidString)
+            .limit(1)
+            .execute()
+            .value
+        return rows?.first?.status
+    }
+
     /// Fetch all active and invited members of a group.
     func fetchGroupMembers(groupId: UUID) async throws -> [GroupMemberDTO] {
-        try await client.from("group_members")
+        let rows: [GroupMemberDTO] = try await client.from("group_members")
             .select()
             .eq("group_id", value: groupId.uuidString)
             .in("status", values: ["active", "invited"])
+            .execute()
+            .value
+        return Self.dedupeMembers(rows)
+    }
+
+    /// Fan-in variant for the Games-feed poll: returns all active+invited
+    /// memberships across N groups in a single query. Caller groups the
+    /// result by `groupId` locally. Replaces N per-group fetches.
+    func fetchGroupMembersForGroups(groupIds: [UUID]) async throws -> [GroupMemberDTO] {
+        guard !groupIds.isEmpty else { return [] }
+        let rows: [GroupMemberDTO] = try await client.from("group_members")
+            .select()
+            .in("group_id", values: groupIds.map(\.uuidString))
+            .in("status", values: ["active", "invited"])
+            .execute()
+            .value
+        return Self.dedupeMembers(rows)
+    }
+
+    /// Deduplicate `group_members` rows where the same (group_id, player_id)
+    /// pair has both an `active` and an `invited` row. Observed 2026-04-23
+    /// after a Quick Game scorer assignment wrote an `active` row on top of
+    /// an existing `invited` row instead of updating it — the client then
+    /// saw the player flicker on every refresh. `active` wins; phone-only
+    /// invites (rows with `invited_phone` set) are keyed separately so they
+    /// don't collide with the profile-based rows for the same inviter UUID.
+    private static func dedupeMembers(_ rows: [GroupMemberDTO]) -> [GroupMemberDTO] {
+        var best: [String: GroupMemberDTO] = [:]
+        for row in rows {
+            let key = "\(row.groupId.uuidString)|\(row.playerId.uuidString)|\(row.invitedPhone ?? "")"
+            if let existing = best[key] {
+                if existing.status == "active" { continue }
+                if row.status == "active" { best[key] = row; continue }
+            } else {
+                best[key] = row
+            }
+        }
+        return Array(best.values)
+    }
+
+    /// Fan-in variant for `round_players` — one query returns all round
+    /// players for every round id. Used by the Games-feed poll to
+    /// pre-populate the quick-game backfill cache without firing a per-group
+    /// query. Caller groups the result by `roundId` locally.
+    func fetchRoundPlayersForRounds(roundIds: [UUID]) async throws -> [RoundPlayerDTO] {
+        guard !roundIds.isEmpty else { return [] }
+        return try await client.from("round_players")
+            .select()
+            .in("round_id", values: roundIds.map(\.uuidString))
             .execute()
             .value
     }
@@ -241,14 +304,28 @@ final class GroupService {
 
     /// Invite a member to a group (status = "invited"). Skips if already a member.
     func inviteMember(groupId: UUID, playerId: UUID) async throws {
-        // Check for existing membership (any status)
+        // Check for existing membership (any status).
         let existing: [GroupMemberDTO] = try await client.from("group_members")
             .select()
             .eq("group_id", value: groupId.uuidString)
             .eq("player_id", value: playerId.uuidString)
             .execute()
             .value
-        guard existing.isEmpty else { return }
+
+        if let row = existing.first {
+            // Ghost `status='removed'` row from an earlier soft-delete
+            // (before `removeMember` was switched to hard-DELETE) still
+            // blocks fresh re-invites. Resurrect it to 'invited' so the
+            // user can be added again without requiring manual DB
+            // cleanup. Active and invited rows are left alone — no-op.
+            if row.status == "removed" {
+                try await client.from("group_members")
+                    .update(["status": "invited"] as [String: String])
+                    .eq("id", value: row.id.uuidString)
+                    .execute()
+            }
+            return
+        }
 
         try await client.from("group_members")
             .insert(GroupMemberInsert(
@@ -335,8 +412,125 @@ final class GroupService {
             .value
     }
 
+    /// Explicit-consent join for the in-app QR scanner and tap-to-join
+    /// invite links: create a membership if missing, otherwise promote an
+    /// existing invited/declined row to active, and return the group's
+    /// display name so the caller can confirm to the scanner with a toast.
+    /// Scanning a QR is itself the accept — skipping the invited → active
+    /// two-step that the Universal Link push flow uses.
+    @discardableResult
+    func joinGroupViaInvite(groupId: UUID, playerId: UUID) async throws -> String {
+        // Insert the invited membership FIRST — a brand-new scanner has no
+        // `skins_groups` read access until they're at least an invited
+        // member (per RLS). If we SELECTed the group before inserting,
+        // the row would come back empty and this method would throw a
+        // spurious "Group not found" before the join could succeed.
+        // `inviteMember` is idempotent: no-op on an existing membership,
+        // inserts status='invited' otherwise.
+        do {
+            try await inviteMember(groupId: groupId, playerId: playerId)
+        } catch {
+            #if DEBUG
+            print("[joinGroupViaInvite] inviteMember failed (continuing to SELECT): \(error)")
+            #endif
+        }
+
+        // Now readable via the "Invited users can see invited groups"
+        // policy (or the active-membership policy if the user was already
+        // in the group).
+        let groups: [SkinsGroupDTO]
+        do {
+            groups = try await client.from("skins_groups")
+                .select()
+                .eq("id", value: groupId.uuidString)
+                .execute()
+                .value
+        } catch {
+            #if DEBUG
+            print("[joinGroupViaInvite] skins_groups SELECT failed: \(error)")
+            #endif
+            throw error
+        }
+        guard let group = groups.first else {
+            #if DEBUG
+            print("[joinGroupViaInvite] skins_groups SELECT returned empty for groupId=\(groupId) — RLS likely denied read (user isn't a member yet)")
+            #endif
+            throw NSError(domain: "GroupService", code: 404,
+                          userInfo: [NSLocalizedDescriptionKey: "Group not found"])
+        }
+
+        // Promote to active (auto-placing into the first non-full tee-time
+        // group) via the shared accept helper.
+        let rows: [GroupMemberDTO]
+        do {
+            rows = try await client.from("group_members")
+                .select()
+                .eq("group_id", value: groupId.uuidString)
+                .eq("player_id", value: playerId.uuidString)
+                .execute()
+                .value
+        } catch {
+            #if DEBUG
+            print("[joinGroupViaInvite] group_members SELECT (self) failed: \(error)")
+            #endif
+            throw error
+        }
+        if let row = rows.first, row.status != "active" {
+            do {
+                try await acceptGroupInvite(membershipId: row.id)
+            } catch {
+                #if DEBUG
+                print("[joinGroupViaInvite] acceptGroupInvite failed (membershipId=\(row.id), currentStatus=\(row.status)): \(error)")
+                #endif
+                throw error
+            }
+        }
+
+        return group.name
+    }
+
     /// Accept a group invite — sets status to "active".
+    /// If the row was inserted without a `group_num` (e.g. self-invite via
+    /// QR scan or invite link, where the invitee never picked a tee-time
+    /// slot), auto-place them top-to-bottom: fill Group 1 to 4 players,
+    /// then Group 2, etc., up to the 5-group cap. The creator can still
+    /// drag them to a different group after they accept.
     func acceptGroupInvite(membershipId: UUID) async throws {
+        // Fetch the membership row first to know which group + whether
+        // group_num is already set (e.g. by manual placement at invite time).
+        let rows: [GroupMemberDTO] = try await client.from("group_members")
+            .select()
+            .eq("id", value: membershipId.uuidString)
+            .execute()
+            .value
+        guard let row = rows.first else { return }
+
+        if row.groupNum == nil {
+            // Count current active/invited members per group_num so the new
+            // joiner lands in the first non-full group.
+            let allMembers: [GroupMemberDTO] = (try? await client.from("group_members")
+                .select()
+                .eq("group_id", value: row.groupId.uuidString)
+                .in("status", values: ["active", "invited"])
+                .execute()
+                .value) ?? []
+            var counts: [Int: Int] = [:]
+            for m in allMembers {
+                if let g = m.groupNum { counts[g, default: 0] += 1 }
+            }
+            let maxGroupSize = 4
+            let maxGroups = 5
+            var assignedGroup = 1
+            for g in 1...maxGroups where (counts[g] ?? 0) < maxGroupSize {
+                assignedGroup = g
+                break
+            }
+            try await client.from("group_members")
+                .update(["group_num": assignedGroup])
+                .eq("id", value: membershipId.uuidString)
+                .execute()
+        }
+
         try await client.from("group_members")
             .update(["status": "active"])
             .eq("id", value: membershipId.uuidString)
@@ -384,12 +578,35 @@ final class GroupService {
     }
 
     /// Remove a member from a group (sets status to 'removed').
+    /// Hard-DELETE the membership row. Previously this soft-deleted via
+    /// `status='removed'`, but the ghost row blocked `inviteMember` (which
+    /// no-ops on any existing row), so leaving a group and then being
+    /// re-invited silently did nothing. Deleting the row clears the path
+    /// for a clean re-invite, whether the removal came from self-leave or
+    /// from the long-press permanent-remove action in Manage Members.
+    ///
+    /// Also cascades to `round_players` for every active/concluded round of
+    /// this group — otherwise `loadSingleGroup`'s round_players → members
+    /// backfill resurrects the removed player on the next refresh.
     func removeMember(groupId: UUID, playerId: UUID) async throws {
         try await client.from("group_members")
-            .update(["status": "removed"])
+            .delete()
             .eq("group_id", value: groupId.uuidString)
             .eq("player_id", value: playerId.uuidString)
             .execute()
+
+        let rounds: [RoundDTO] = (try? await client.from("rounds")
+            .select()
+            .eq("group_id", value: groupId.uuidString)
+            .execute()
+            .value) ?? []
+        for round in rounds {
+            try? await client.from("round_players")
+                .delete()
+                .eq("round_id", value: round.id.uuidString)
+                .eq("player_id", value: playerId.uuidString)
+                .execute()
+        }
     }
 
     /// Save player sort order for a group. Takes an array of (playerId, sortOrder) tuples.
@@ -442,17 +659,118 @@ final class GroupService {
     // MARK: - High-Level: Load SavedGroups
 
     /// Load all groups for a user, fully hydrated as SavedGroup objects.
-    /// This is the main entry point for authenticated group loading.
+    /// This is the main entry point for authenticated group loading and the
+    /// backbone of the 15s Games-feed poll.
+    ///
+    /// Performance model: the previous implementation fanned out
+    /// `loadSingleGroup` in parallel per group, and each `loadSingleGroup`
+    /// fired 5-9 Supabase queries (group row, members, profiles, rounds,
+    /// round_players backfill, extra profiles, tee box, scores, ...). For a
+    /// user in 10 groups that was 50-90 HTTP round-trips every 15 seconds —
+    /// heavy on battery, data, and Supabase quota, and a risk at launch if
+    /// the app sees a traffic spike.
+    ///
+    /// This version batches the top-level fetches into **5 Supabase
+    /// round-trips total, regardless of group count**:
+    ///   1. `fetchMyGroups` — memberships + group rows
+    ///   2. `fetchGroupMembersForGroups` — all active/invited memberships
+    ///   3. `fetchRoundsForGroups` — all rounds across every group
+    ///   4. `fetchRoundPlayersForRounds` — all round_players in one call
+    ///   5. `fetchMemberProfiles` — every profile needed by members OR
+    ///      round_players, deduped
+    ///
+    /// The prefetched dicts are then handed to `loadSingleGroup` so it
+    /// skips its own top-level fetches. Inner per-round score + tee_box
+    /// fetches inside `buildHomeRound` remain (future optimization if
+    /// needed) but are a small constant per round, not multiplied by group
+    /// count.
     func loadGroups(userId: UUID) async throws -> [SavedGroup] {
-        let groups = try await fetchMyGroups(userId: userId)
-        guard !groups.isEmpty else { return [] }
+        let groupDTOs = try await fetchMyGroups(userId: userId)
+        guard !groupDTOs.isEmpty else { return [] }
+        let groupIds = groupDTOs.map(\.id)
 
-        // Load all groups in parallel for faster startup
+        // Fan-in: members + rounds in parallel. Two queries, any group count.
+        // Track success per-batch so a batch failure falls back cleanly —
+        // we pass `nil` prefetched to `loadSingleGroup` instead of an
+        // empty array, which would otherwise be indistinguishable from
+        // "no data" and block the per-group recovery fetch.
+        async let membersTask: [GroupMemberDTO] = fetchGroupMembersForGroups(groupIds: groupIds)
+        async let roundsTask: [RoundDTO] = roundService.fetchRoundsForGroups(groupIds: groupIds)
+
+        var membersByGroup: [UUID: [GroupMemberDTO]]? = nil
+        var roundsByGroup: [UUID: [RoundDTO]]? = nil
+        var allMembers: [GroupMemberDTO] = []
+        var allRounds: [RoundDTO] = []
+
+        do {
+            allMembers = try await membersTask
+            membersByGroup = Dictionary(grouping: allMembers, by: \.groupId)
+        } catch {
+            #if DEBUG
+            print("[loadGroups] batched members fetch failed — each group will fall back to its own fetch: \(error)")
+            #endif
+        }
+        do {
+            allRounds = try await roundsTask
+            // `RoundDTO.groupId` is `UUID?` (nil for pre-conversion Quick
+            // Games). Drop nils when bucketing — the Games-feed poll only
+            // cares about rounds attached to an actual group.
+            var byGroup: [UUID: [RoundDTO]] = [:]
+            for round in allRounds {
+                guard let gid = round.groupId else { continue }
+                byGroup[gid, default: []].append(round)
+            }
+            roundsByGroup = byGroup
+        } catch {
+            #if DEBUG
+            print("[loadGroups] batched rounds fetch failed — each group will fall back to its own fetch: \(error)")
+            #endif
+        }
+
+        // Round players for every round in one call (used by the Quick Game
+        // backfill inside `loadSingleGroup` AND by `buildHomeRound` via the
+        // `preloadedRoundPlayers` parameter — prefetching here satisfies both).
+        let roundIds = allRounds.map(\.id)
+        let allRoundPlayers = roundIds.isEmpty ? [] : ((try? await fetchRoundPlayersForRounds(roundIds: roundIds)) ?? [])
+        let roundPlayersByRoundId: [UUID: [RoundPlayerDTO]]? = roundIds.isEmpty
+            ? nil
+            : Dictionary(grouping: allRoundPlayers, by: \.roundId)
+
+        // Consolidated profile fetch: union member + round_player player_ids.
+        // One query replaces (a) per-group `fetchMemberProfiles` and (b) the
+        // per-group "extra profiles for round_players missing from members"
+        // fetch inside `loadSingleGroup`.
+        let memberPlayerIds = allMembers
+            .filter { $0.invitedPhone == nil || ($0.invitedPhone ?? "").isEmpty }
+            .map(\.playerId)
+        let roundPlayerIds = allRoundPlayers.map(\.playerId)
+        let dedupedProfileIds = Array(Set(memberPlayerIds + roundPlayerIds))
+        let allProfiles = dedupedProfileIds.isEmpty
+            ? []
+            : ((try? await fetchMemberProfiles(playerIds: dedupedProfileIds)) ?? [])
+        let profilesByUUID: [UUID: ProfileDTO]? = dedupedProfileIds.isEmpty
+            ? nil
+            : Dictionary(uniqueKeysWithValues: allProfiles.map { ($0.id, $0) })
+
         return await withTaskGroup(of: SavedGroup?.self) { taskGroup in
-            for group in groups {
-                let service = self
+            for groupDTO in groupDTOs {
+                // Nil prefetched param → `loadSingleGroup` falls back to
+                // its original per-group fetch. Pass only when the batch
+                // succeeded so a transient batch failure doesn't starve
+                // all groups of data.
+                let prefMembers = membersByGroup?[groupDTO.id]
+                let prefRounds = roundsByGroup?[groupDTO.id]?
+                    .sorted { ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast) }
                 taskGroup.addTask {
-                    try? await service.loadSingleGroup(groupId: group.id, userId: userId)
+                    try? await self.loadSingleGroup(
+                        groupId: groupDTO.id,
+                        userId: userId,
+                        prefetchedGroup: groupDTO,
+                        prefetchedMembers: prefMembers,
+                        prefetchedProfiles: profilesByUUID,
+                        prefetchedRounds: prefRounds,
+                        prefetchedRoundPlayers: roundPlayersByRoundId
+                    )
                 }
             }
             var results: [SavedGroup] = []
@@ -584,7 +902,8 @@ final class GroupService {
                         teeBox: lastCourse?.teeBox,
                         supabaseGroupId: group.id,
                         winningsDisplay: group.winningsDisplay,
-                        isQuickGame: group.isQuickGame ?? false
+                        isQuickGame: group.isQuickGame ?? false,
+                        groupScorerIds: group.scorerIds
                     )
 
                     switch roundDTO.status {
@@ -648,24 +967,73 @@ final class GroupService {
 
     /// Load a single group by ID, fully hydrated as a SavedGroup.
     /// Used for pull-to-refresh and polling in the group detail view.
-    func loadSingleGroup(groupId: UUID, userId: UUID) async throws -> SavedGroup? {
-        let groups: [SkinsGroupDTO] = try await client.from("skins_groups")
-            .select()
-            .eq("id", value: groupId.uuidString)
-            .execute()
-            .value
-        guard let group = groups.first else { return nil }
+    ///
+    /// The optional `prefetched*` parameters let the Games-feed `loadGroups`
+    /// batch-fetch top-level DTOs once across every group the user is in,
+    /// then hand them off here instead of firing a separate Supabase call
+    /// per group. When nil (the default), each parameter falls back to its
+    /// original per-group fetch — preserving behavior for existing callers
+    /// like `GroupManagerView.refreshGroupData` that load one group at a
+    /// time on pull-to-refresh.
+    func loadSingleGroup(
+        groupId: UUID,
+        userId: UUID,
+        prefetchedGroup: SkinsGroupDTO? = nil,
+        prefetchedMembers: [GroupMemberDTO]? = nil,
+        prefetchedProfiles: [UUID: ProfileDTO]? = nil,
+        prefetchedRounds: [RoundDTO]? = nil,
+        prefetchedRoundPlayers: [UUID: [RoundPlayerDTO]]? = nil
+    ) async throws -> SavedGroup? {
+        let group: SkinsGroupDTO
+        if let prefetched = prefetchedGroup {
+            group = prefetched
+        } else {
+            let groups: [SkinsGroupDTO] = try await client.from("skins_groups")
+                .select()
+                .eq("id", value: groupId.uuidString)
+                .execute()
+                .value
+            guard let g = groups.first else { return nil }
+            group = g
+        }
 
-        let members = try await fetchGroupMembers(groupId: group.id)
+        // `??` on the RHS is an autoclosure that Swift forbids `try`/`await`
+        // inside — resolve with an explicit branch.
+        let members: [GroupMemberDTO]
+        if let prefetched = prefetchedMembers {
+            members = prefetched
+        } else {
+            members = try await fetchGroupMembers(groupId: group.id)
+        }
 
         // Separate phone-invited members from regular members
         let phoneInvites = members.filter { $0.invitedPhone != nil && !($0.invitedPhone ?? "").isEmpty && $0.status == "invited" }
         let regularMembers = members.filter { $0.invitedPhone == nil || ($0.invitedPhone ?? "").isEmpty }
 
         let profileIds = regularMembers.map(\.playerId)
-        let profiles = try await fetchMemberProfiles(playerIds: profileIds)
+        let profiles: [ProfileDTO]
+        if let byId = prefetchedProfiles {
+            // Use the batched dict — preserves original order via profileIds.
+            // If a profile is missing from the batch (partial failure,
+            // race, or edge case), fall back to a targeted query for
+            // just the missing ids instead of silently dropping members.
+            let hits = profileIds.compactMap { byId[$0] }
+            let missing = profileIds.filter { byId[$0] == nil }
+            if missing.isEmpty {
+                profiles = hits
+            } else {
+                let missingProfiles = (try? await fetchMemberProfiles(playerIds: missing)) ?? []
+                profiles = hits + missingProfiles
+            }
+        } else {
+            profiles = try await fetchMemberProfiles(playerIds: profileIds)
+        }
         let invitedIds = Set(regularMembers.filter { $0.status == "invited" }.map(\.playerId))
         let groupNumMap = Dictionary(uniqueKeysWithValues: regularMembers.map { ($0.playerId, $0.groupNum ?? 1) })
+        let sortOrderMap: [UUID: Int] = Dictionary(uniqueKeysWithValues: regularMembers.compactMap { m in
+            guard let order = m.sortOrder else { return nil }
+            return (m.playerId, order)
+        })
         var players = profiles.map { profile -> Player in
             var player = Player(from: profile)
             if invitedIds.contains(profile.id) {
@@ -673,6 +1041,18 @@ final class GroupService {
             }
             player.group = groupNumMap[profile.id] ?? 1
             return player
+        }
+        // Sort by persisted sort_order so the tee-table position the creator
+        // arranged actually sticks across refreshes. Without this, Supabase
+        // returns rows in arbitrary order and refresh randomly reshuffles
+        // players within a group. UUID tiebreaker keeps order deterministic
+        // when sort_order is missing or duplicated (a brand-new member that
+        // hasn't been written to yet).
+        players.sort { a, b in
+            let orderA = sortOrderMap[a.profileId ?? UUID()] ?? Int.max
+            let orderB = sortOrderMap[b.profileId ?? UUID()] ?? Int.max
+            if orderA != orderB { return orderA < orderB }
+            return (a.profileId?.uuidString ?? "") < (b.profileId?.uuidString ?? "")
         }
 
         // Add phone-invited members as pending invite players
@@ -737,6 +1117,64 @@ final class GroupService {
         var activeRound: HomeRound? = nil
         var concludedRound: HomeRound? = nil
         var roundHistory: [HomeRound] = []
+
+        let rounds: [RoundDTO]
+        if let prefetched = prefetchedRounds {
+            rounds = prefetched
+        } else {
+            rounds = (try? await roundService.fetchRoundsForGroup(groupId: group.id)) ?? []
+        }
+
+        // Quick Games occasionally end up with players in `round_players` that
+        // were never written to `group_members` (atomicity gap during creation).
+        // Without this backfill, scorers referencing those missing players get
+        // wiped by syncScorerIDs because `groupPlayerIDs.contains(scorerIDs[i])`
+        // fails. Seed the cache from prefetched round_players when available
+        // (Games-feed batch path) so we don't re-query `round_players` for the
+        // same round, then fall back to a per-group query for single-group
+        // callers like GroupManagerView.
+        var roundPlayersCache: [UUID: [RoundPlayerDTO]] = prefetchedRoundPlayers ?? [:]
+        let backfillRoundDTO = rounds.first { $0.status == "active" || $0.status == "concluded" || $0.status == "completed" }
+        if let backfillRoundDTO,
+           roundPlayersCache[backfillRoundDTO.id] == nil,
+           let rpDTOs: [RoundPlayerDTO] = try? await client.from("round_players")
+            .select()
+            .eq("round_id", value: backfillRoundDTO.id.uuidString)
+            .execute()
+            .value, !rpDTOs.isEmpty {
+            roundPlayersCache[backfillRoundDTO.id] = rpDTOs
+        }
+        if let backfillRoundDTO, let rpDTOs = roundPlayersCache[backfillRoundDTO.id], !rpDTOs.isEmpty {
+            let existingIds = Set(players.compactMap(\.profileId))
+            let missingIds = rpDTOs.map(\.playerId).filter { !existingIds.contains($0) }
+            if !missingIds.isEmpty {
+                // Prefer the batched profile dict if provided — the
+                // Games-feed path already union'd member + round_player
+                // ids into a single consolidated profile fetch, so no
+                // extra network here.
+                let extraProfiles: [ProfileDTO]
+                if let byId = prefetchedProfiles {
+                    extraProfiles = missingIds.compactMap { byId[$0] }
+                } else {
+                    extraProfiles = (try? await client.from("profiles")
+                        .select()
+                        .in("id", values: missingIds.map(\.uuidString))
+                        .execute()
+                        .value) ?? []
+                }
+                for profile in extraProfiles {
+                    var player = Player(from: profile)
+                    if let rp = rpDTOs.first(where: { $0.playerId == profile.id }) {
+                        player.group = rp.groupNum
+                    }
+                    players.append(player)
+                }
+                #if DEBUG
+                print("[loadSingleGroup] Backfilled \(extraProfiles.count) players from round_players (missing from group_members) for group \(group.name)")
+                #endif
+            }
+        }
+
         let activePlayers = players.filter { !$0.isPendingAccept }
 
         // Compute per-group tee times once so every round in this group can
@@ -746,35 +1184,56 @@ final class GroupService {
             groupCount: Set(players.map(\.group)).count
         )
 
-        if let rounds = try? await roundService.fetchRoundsForGroup(groupId: group.id) {
+        // Build all rounds in parallel — each `buildHomeRound` fires several
+        // independent Supabase queries (tee_box, holes, scores, round_players).
+        // Sequentially this multiplied the per-group latency by N rounds; in
+        // a parallel TaskGroup the whole group finishes in ~one round's worth
+        // of network round-trip. Materially improves cold-start time on the
+        // Games tab, which was the dominant load bottleneck.
+        let currentPlayerIntId = Player.stableId(from: userId)
+        let groupScorerIds = group.scorerIds
+        let builtRounds: [(RoundDTO, HomeRound)] = await withTaskGroup(of: (RoundDTO, HomeRound).self) { taskGroup in
             for roundDTO in rounds {
-                let currentPlayerIntId = Player.stableId(from: userId)
-                let homeRound = await buildHomeRound(
-                    from: roundDTO,
-                    groupName: group.name,
-                    courseName: group.lastCourseName ?? "Unknown Course",
-                    players: activePlayers,
-                    creatorId: creatorId,
-                    buyIn: roundDTO.buyIn,
-                    scheduledDate: group.scheduledDate,
-                    teeTimes: groupTeeTimes,
-                    currentUserId: currentPlayerIntId,
-                    teeBox: lastCourse?.teeBox,
-                    supabaseGroupId: group.id,
-                    winningsDisplay: group.winningsDisplay,
-                    isQuickGame: group.isQuickGame ?? false
-                )
-                switch roundDTO.status {
-                case "active":
-                    if activeRound == nil { activeRound = homeRound }
-                case "concluded":
-                    // Concluded rounds stay pinned until user saves results — no auto-archive.
-                    if concludedRound == nil { concludedRound = homeRound }
-                case "completed":
-                    roundHistory.append(homeRound)
-                default:
-                    break
+                taskGroup.addTask {
+                    let homeRound = await self.buildHomeRound(
+                        from: roundDTO,
+                        groupName: group.name,
+                        courseName: group.lastCourseName ?? "Unknown Course",
+                        players: activePlayers,
+                        creatorId: creatorId,
+                        buyIn: roundDTO.buyIn,
+                        scheduledDate: group.scheduledDate,
+                        teeTimes: groupTeeTimes,
+                        currentUserId: currentPlayerIntId,
+                        teeBox: lastCourse?.teeBox,
+                        supabaseGroupId: group.id,
+                        winningsDisplay: group.winningsDisplay,
+                        isQuickGame: group.isQuickGame ?? false,
+                        preloadedRoundPlayers: roundPlayersCache[roundDTO.id],
+                        groupScorerIds: groupScorerIds
+                    )
+                    return (roundDTO, homeRound)
                 }
+            }
+            var collected: [(RoundDTO, HomeRound)] = []
+            for await result in taskGroup { collected.append(result) }
+            return collected
+        }
+        // Restore the original `rounds` order so active/concluded picks
+        // (first-of-status) match the pre-parallelization behavior.
+        let builtById = Dictionary(uniqueKeysWithValues: builtRounds.map { ($0.0.id, $0.1) })
+        for roundDTO in rounds {
+            guard let homeRound = builtById[roundDTO.id] else { continue }
+            switch roundDTO.status {
+            case "active":
+                if activeRound == nil { activeRound = homeRound }
+            case "concluded":
+                // Concluded rounds stay pinned until user saves results — no auto-archive.
+                if concludedRound == nil { concludedRound = homeRound }
+            case "completed":
+                roundHistory.append(homeRound)
+            default:
+                break
             }
         }
 
@@ -813,7 +1272,8 @@ final class GroupService {
             scorerIds: group.scorerIds,
             teeTimes: teeTimes,
             teeTimeInterval: group.teeTimeInterval,
-            winningsDisplay: group.winningsDisplay ?? "gross"
+            winningsDisplay: group.winningsDisplay ?? "gross",
+            todayDeselectedIds: group.todayDeselectedIds ?? []
         )
     }
 
@@ -913,6 +1373,29 @@ final class GroupService {
     // MARK: - Round → HomeRound Builder
 
     /// Build a HomeRound from a RoundDTO by fetching its scores and computing skins summary.
+    /// Resolves the scorer of the current user's tee-time group. Fixes the
+    /// Quick Game bug where a non-creator scorer (e.g. Group 2 scorer when
+    /// the creator is teeing off in Group 2 themselves) got locked out of
+    /// scoring after a refresh. `HomeRound.scorerPlayerId` used to stay
+    /// nil on refresh because `buildHomeRound` never populated it, and
+    /// HomeView's `isViewer` check then fell back to `creatorId` — which
+    /// doesn't match the actual Group 1 scorer on non-creator devices.
+    /// Returns nil if the user isn't in the round or if no scorer IDs
+    /// are available (nothing breaks — HomeView falls back to creatorId,
+    /// which is correct behavior for single-group rounds).
+    private func resolveCurrentGroupScorer(
+        currentUserId: Int?,
+        roundPlayers: [Player],
+        groupScorerIds: [Int]?
+    ) -> Int? {
+        guard let uid = currentUserId,
+              let me = roundPlayers.first(where: { $0.id == uid }),
+              let scorers = groupScorerIds,
+              me.group >= 1, me.group <= scorers.count else { return nil }
+        let scorerId = scorers[me.group - 1]
+        return scorerId == 0 ? nil : scorerId
+    }
+
     private func buildHomeRound(
         from roundDTO: RoundDTO,
         groupName: String,
@@ -926,7 +1409,9 @@ final class GroupService {
         teeBox: TeeBox? = nil,
         supabaseGroupId: UUID? = nil,
         winningsDisplay: String? = nil,
-        isQuickGame: Bool = false
+        isQuickGame: Bool = false,
+        preloadedRoundPlayers: [RoundPlayerDTO]? = nil,
+        groupScorerIds: [Int]? = nil  // per-group scorer IDs from skins_groups.scorer_ids
     ) async -> HomeRound {
         // Fetch tee box from round if not provided
         var resolvedTeeBox = teeBox
@@ -956,11 +1441,17 @@ final class GroupService {
         // merging with group_members for any extras. This ensures scorers who are still
         // "pending" in group_members are included.
         var roundPlayers = players
-        if let rpDTOs: [RoundPlayerDTO] = try? await client.from("round_players")
-            .select()
-            .eq("round_id", value: roundDTO.id.uuidString)
-            .execute()
-            .value, !rpDTOs.isEmpty {
+        let fetchedRpDTOs: [RoundPlayerDTO]?
+        if let preloaded = preloadedRoundPlayers {
+            fetchedRpDTOs = preloaded
+        } else {
+            fetchedRpDTOs = try? await client.from("round_players")
+                .select()
+                .eq("round_id", value: roundDTO.id.uuidString)
+                .execute()
+                .value
+        }
+        if let rpDTOs = fetchedRpDTOs, !rpDTOs.isEmpty {
             let existingIds = Set(players.compactMap(\.profileId))
             let missingIds = rpDTOs.map(\.playerId).filter { !existingIds.contains($0) }
             if !missingIds.isEmpty {
@@ -1048,6 +1539,12 @@ final class GroupService {
             emptyRound.scoringMode = ScoringMode(rawValue: roundDTO.scoringMode ?? "single") ?? .single
             emptyRound.skinRules = SkinRules(net: roundDTO.net, carries: roundDTO.carries, outright: roundDTO.outright, handicapPercentage: roundDTO.handicapPercentage)
             emptyRound.winningsDisplay = winningsDisplay ?? "gross"
+            emptyRound.isQuickGame = isQuickGame
+            emptyRound.scorerPlayerId = resolveCurrentGroupScorer(
+                currentUserId: currentUserId,
+                roundPlayers: roundPlayers,
+                groupScorerIds: groupScorerIds
+            )
             return emptyRound
         }
 
@@ -1220,6 +1717,11 @@ final class GroupService {
         )
         round.teeBox = resolvedTeeBox
         round.supabaseGroupId = supabaseGroupId
+        round.scorerPlayerId = resolveCurrentGroupScorer(
+            currentUserId: currentUserId,
+            roundPlayers: roundPlayers,
+            groupScorerIds: groupScorerIds
+        )
         round.scoringMode = ScoringMode(rawValue: roundDTO.scoringMode ?? "single") ?? .single
         round.skinRules = SkinRules(
             net: roundDTO.net,

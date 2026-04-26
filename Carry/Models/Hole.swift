@@ -69,7 +69,11 @@ struct Hole: Identifiable, Hashable, Codable {
         for i in 0..<18 {
             let holeNum = i + 1
             let apiHole = first18[i]
-            let par = apiHole.par!
+            // Defensive: the `allValid` guard above already ensures par is
+            // non-nil and > 0, so the `!` was safe — but belt-and-suspenders.
+            // If the invariant ever breaks (API contract drift, etc.) we fall
+            // back to par 4 rather than crashing in production.
+            let par = apiHole.par ?? 4
             let hcp = apiHole.handicap ?? holeNum
             result.append(Hole(id: holeNum, num: holeNum, par: par, hcp: hcp))
         }

@@ -9,14 +9,20 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="icon" type="image/png" href="appicon.png">
-    <link rel="apple-touch-icon" href="appicon.png">
+    <link rel="icon" type="image/png" href="../appicon.png">
+    <link rel="apple-touch-icon" href="../appicon.png">
 
     <!-- Open Graph -->
     <meta property="og:title" content="You're Invited — Carry">
     <meta property="og:description" content="Join a skins game on Carry. Track skins. Settle up. Play on.">
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://carryapp.site/invite">
+
+    <!-- Apple Smart App Banner. If Carry is installed, Safari shows a
+         native banner at the top of the page with an "Open" button that
+         deep-links straight into the invite flow. The app-argument is
+         augmented on load with the full URL so Carry receives the group id. -->
+    <meta id="itunes-app-banner" name="apple-itunes-app" content="app-id=6760993864">
 
     <style>
         :root {
@@ -69,7 +75,7 @@
             justify-content: center;
             gap: 10px;
             width: 100%;
-            padding: 16px 24px;
+            padding: 16px 20px;
             background: var(--green-light);
             color: var(--green-dark);
             font-size: 17px;
@@ -77,6 +83,7 @@
             border-radius: 14px;
             text-decoration: none;
             transition: opacity 0.15s;
+            white-space: nowrap;
         }
         .cta-button:hover { opacity: 0.85; }
         .cta-button svg { flex-shrink: 0; }
@@ -93,29 +100,63 @@
 </head>
 <body>
     <div class="invite-card">
-        <img src="appicon.png" alt="Carry" class="app-icon">
+        <img src="../appicon.png" alt="Carry" class="app-icon">
         <h1>You're Invited</h1>
         <p class="subtitle">You've been invited to a skins game on Carry. Download the app to join.</p>
 
         <!-- App Store link — update href after Apple assigns ID -->
         <a id="cta" href="https://apps.apple.com/app/carry/id6760993864" class="cta-button">
             <svg width="20" height="24" viewBox="0 0 17 20" fill="#064102"><path d="M13.545 10.418c-.024-2.524 2.06-3.732 2.153-3.792-1.17-1.713-2.997-1.947-3.647-1.974-1.552-.157-3.03.914-3.818.914-.788 0-2.003-.891-3.293-.867-1.695.024-3.259.986-4.132 2.506-1.762 3.057-.451 7.586 1.266 10.066.839 1.213 1.84 2.575 3.154 2.527 1.265-.051 1.743-.818 3.273-.818 1.53 0 1.96.818 3.29.793 1.361-.024 2.224-1.237 3.06-2.452.964-1.406 1.362-2.767 1.386-2.838-.03-.014-2.659-1.021-2.685-4.05v-.015zM11.015 3.082c.698-.846 1.168-2.021 1.04-3.193-1.004.041-2.22.669-2.94 1.514-.647.749-1.213 1.947-1.062 3.096 1.121.087 2.264-.569 2.962-1.417z"/></svg>
-            Download Carry on the App Store
+            Download on the App Store
         </a>
 
         <p class="footer-text">Free to download · <a href="/">Learn more</a></p>
     </div>
 
     <script>
-        // Try to open the app via deep link on iOS
         (function() {
             var params = new URLSearchParams(window.location.search);
             var groupId = params.get('group');
-            if (groupId && /iPhone|iPad|iPod/.test(navigator.userAgent)) {
-                // Attempt deep link — if app is installed, iOS will open it
-                // If not, nothing happens and user sees the download page
-                var deepLink = 'carry://join-group?id=' + encodeURIComponent(groupId);
-                window.location.href = deepLink;
+            var fullInviteURL = window.location.href;
+
+            // Hand the Smart App Banner the full invite URL so Safari's
+            // "Open" button deep-links the installed app straight into the
+            // join flow (instead of just launching Carry cold).
+            if (groupId) {
+                var banner = document.getElementById('itunes-app-banner');
+                if (banner) {
+                    banner.setAttribute(
+                        'content',
+                        'app-id=6760993864, app-argument=' + encodeURI(fullInviteURL)
+                    );
+                }
+            }
+
+            // Deliberately NOT forcing `window.location.href = 'carry://...'`
+            // as a fallback deep-link. On devices without Carry installed,
+            // Safari surfaces an alert ("Safari cannot open the page because
+            // the address is invalid"), which is an ugly error state for
+            // exactly the user we're trying to help (the new user who needs
+            // the download CTA). Universal Links already handle the
+            // app-installed case at the OS level before Safari ever loads
+            // this page, and the Smart App Banner above covers users who
+            // revisit the page with the app already installed.
+
+            // Clipboard hand-off: when the user taps "Download Carry", copy
+            // the full invite URL to the clipboard. After the user installs
+            // Carry and finishes onboarding, the app checks the clipboard
+            // (via the privacy-preserving `hasURLs` API) and surfaces a
+            // one-tap "Open your invite" banner on the Home tab. This
+            // bridges the post-install gap without App Clips.
+            var cta = document.getElementById('cta');
+            if (cta && navigator.clipboard && groupId) {
+                cta.addEventListener('click', function() {
+                    navigator.clipboard.writeText(fullInviteURL).catch(function() {
+                        // Clipboard API can reject in some privacy modes —
+                        // silently fall through, the user still gets the
+                        // App Store link and can rescan the QR post-install.
+                    });
+                });
             }
         })();
     </script>

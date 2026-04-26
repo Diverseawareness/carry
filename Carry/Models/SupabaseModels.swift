@@ -390,6 +390,7 @@ struct SkinsGroupDTO: Codable, Identifiable {
     var teeTimesJson: String?  // JSON-encoded [String?] of ISO8601 timestamps, per-group
     var lastTeeBoxHolesJson: String?  // per-hole par/hcp data, saved at course selection
     var winningsDisplay: String?  // 'gross' (default) or 'net' — how winnings are shown
+    var todayDeselectedIds: [UUID]?  // profile UUIDs the creator swiped off today's tee sheet
     let createdAt: Date?
     var updatedAt: Date?
 
@@ -434,6 +435,7 @@ struct SkinsGroupDTO: Codable, Identifiable {
         case teeTimesJson = "tee_times_json"
         case lastTeeBoxHolesJson = "last_tee_box_holes_json"
         case winningsDisplay = "winnings_display"
+        case todayDeselectedIds = "today_deselected_ids"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
     }
@@ -503,6 +505,7 @@ struct SkinsGroupUpdate: Codable {
     var clearTeeTimesJson: Bool = false  // when true, sends null for tee_times_json column
     var lastTeeBoxHolesJson: String?
     var winningsDisplay: String?
+    var todayDeselectedIds: [UUID]?
 
     enum CodingKeys: String, CodingKey {
         case name
@@ -523,6 +526,7 @@ struct SkinsGroupUpdate: Codable {
         case teeTimesJson = "tee_times_json"
         case lastTeeBoxHolesJson = "last_tee_box_holes_json"
         case winningsDisplay = "winnings_display"
+        case todayDeselectedIds = "today_deselected_ids"
     }
 
     func encode(to encoder: Encoder) throws {
@@ -557,6 +561,7 @@ struct SkinsGroupUpdate: Codable {
         }
         if let lastTeeBoxHolesJson { try container.encode(lastTeeBoxHolesJson, forKey: .lastTeeBoxHolesJson) }
         if let winningsDisplay { try container.encode(winningsDisplay, forKey: .winningsDisplay) }
+        if let todayDeselectedIds { try container.encode(todayDeselectedIds, forKey: .todayDeselectedIds) }
     }
 }
 

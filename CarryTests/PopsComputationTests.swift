@@ -107,8 +107,11 @@ final class PopsComputationTests: XCTestCase {
 
     func testPops_noTeeBox_usesRoundedIndex() {
         // Quick Games without a tee box should still show a sensible pops
-        // number — rounded raw index.
-        XCTAssertEqual(computePops(handicap: 6.5, teeBox: nil, percentage: 1.0), 6)  // .rounded default
+        // number — rounded raw index. Swift's `Double.rounded()` defaults
+        // to `.toNearestOrAwayFromZero` (classic arithmetic rounding, NOT
+        // banker's), so 6.5 → 7. Production uses the same default, so the
+        // test mirrors it.
+        XCTAssertEqual(computePops(handicap: 6.5, teeBox: nil, percentage: 1.0), 7)
         XCTAssertEqual(computePops(handicap: 14.0, teeBox: nil, percentage: 1.0), 14)
         XCTAssertEqual(computePops(handicap: 36.0, teeBox: nil, percentage: 1.0), 36)
     }

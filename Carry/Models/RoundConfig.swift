@@ -46,7 +46,12 @@ struct RoundConfig {
     var supabaseGroupId: UUID? = nil
     var scorerProfileId: UUID? = nil  // UUID of the designated scorer
     var scoringMode: ScoringMode = .single
+    var isQuickGame: Bool = false  // Quick Game flag — lifts the sequential-hole scoring gate so multi-group parallel play can score any hole at any time
     var winningsDisplay: String = "gross"  // "gross" or "net" — controls scorecard cash bar display
+    /// Tee time for the scorer's group. Rendered in the scorecard header
+    /// subtitle before the course name so scorers in Group 2+ see their own
+    /// time (not the round's earliest). nil when tee times aren't set.
+    var scorerTeeTime: Date? = nil
 
     func role(for userId: Int) -> UserRole {
         creatorId == userId ? .creator : .participant

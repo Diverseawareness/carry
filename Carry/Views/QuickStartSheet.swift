@@ -664,7 +664,7 @@ struct QuickGameSheet: View {
                     }
                 }
 
-                Slider(value: $buyInAmount, in: 0...1000, step: 5)
+                Slider(value: $buyInAmount, in: 0...500, step: 5)
                     .tint(Color.goldAccent)
 
                 HStack {

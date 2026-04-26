@@ -280,6 +280,27 @@ final class AuthService: ObservableObject {
         UserDefaults.standard.set(true, forKey: "onboardingCompleted")
         isOnboarded = true
         isNewUser = true
+
+        // Fire welcome email. Failure must not block onboarding — we log and continue.
+        if isAuthenticated {
+            Task { await sendWelcomeEmail(firstName: firstName) }
+        }
+    }
+
+    // MARK: - Welcome email
+
+    func sendWelcomeEmail(firstName: String) async {
+        struct Body: Encodable { let firstName: String }
+        do {
+            try await client.functions.invoke(
+                "send-welcome-email",
+                options: FunctionInvokeOptions(body: Body(firstName: firstName))
+            )
+            Analytics.welcomeEmailSent()
+        } catch {
+            print("Welcome email failed (non-blocking): \(error)")
+            Analytics.welcomeEmailFailed(reason: String(describing: error))
+        }
     }
 
     // MARK: - Username

@@ -84,6 +84,10 @@ struct ResultsShareCard: View {
     let data: ShareCardData
     var theme: ShareCardTheme = .dark
     var showAppStoreBadge: Bool = true
+    /// Fixed render width. Defaults to 390 so the image-rendering path (social
+    /// share card) produces consistent dimensions. Pass nil to let the card
+    /// flex to its container — used when embedding in the invite sheet.
+    var fixedWidth: CGFloat? = 390
 
     private static let dateFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -112,7 +116,7 @@ struct ResultsShareCard: View {
                 .padding(.top, 16)
         }
         .padding(28)
-        .frame(width: 390)
+        .frame(width: fixedWidth)
         .background(theme.background)
     }
 

@@ -142,46 +142,6 @@ struct ProfileView: View {
 
             ScrollView {
                 VStack(spacing: 0) {
-                    // MARK: Subscription / Upgrade
-                    if storeService.isPremium {
-                        capsHeader("SUBSCRIPTION")
-                        settingsGroup {
-                            plainRow("Manage Subscription", trailingSymbol: "chevron.right") {
-                                if let url = URL(string: "https://apps.apple.com/account/subscriptions") {
-                                    UIApplication.shared.open(url)
-                                }
-                            }
-                            groupDivider()
-                            plainRow("Restore Purchases", trailingSymbol: "chevron.right") {
-                                Task { try? await AppStore.sync() }
-                            }
-                        }
-                    } else {
-                        Button {
-                            showPaywall = true
-                        } label: {
-                            HStack(spacing: 10) {
-                                Image("premium-crown")
-                                    .resizable()
-                                    .scaledToFit()
-                                    .frame(width: 20, height: 20)
-                                Text("Upgrade to Premium")
-                                    .font(.system(size: 16, weight: .semibold))
-                                    .foregroundColor(Color.deepNavy)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 56)
-                            .background(
-                                RoundedRectangle(cornerRadius: 16)
-                                    .strokeBorder(Color.deepNavy, lineWidth: 1.5)
-                            )
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 1)
-                    }
-
                     // MARK: Account
                     capsHeader("ACCOUNT")
                     settingsGroup {
@@ -248,6 +208,48 @@ struct ProfileView: View {
                                 UIApplication.shared.open(url)
                             }
                         }
+                    }
+
+                    // MARK: Subscription / Upgrade
+                    if storeService.isPremium {
+                        capsHeader("SUBSCRIPTION")
+                        settingsGroup {
+                            plainRow("Manage Subscription", trailingSymbol: "chevron.right") {
+                                Task {
+                                    guard let scene = UIApplication.shared.connectedScenes
+                                        .first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene else { return }
+                                    try? await AppStore.showManageSubscriptions(in: scene)
+                                }
+                            }
+                            groupDivider()
+                            plainRow("Restore Purchases", trailingSymbol: "chevron.right") {
+                                Task { try? await AppStore.sync() }
+                            }
+                        }
+                    } else {
+                        Button {
+                            showPaywall = true
+                        } label: {
+                            HStack(spacing: 10) {
+                                Image("premium-crown")
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 20, height: 20)
+                                Text("Upgrade to Premium")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundColor(Color.deepNavy)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 56)
+                            .background(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .strokeBorder(Color.deepNavy, lineWidth: 1.5)
+                            )
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 1)
                     }
 
                     // MARK: Data

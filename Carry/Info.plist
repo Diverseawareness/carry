@@ -39,7 +39,7 @@
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Carry uses your photo library to set your profile picture.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Carry uses your camera to take a profile photo.</string>
+	<string>Carry uses your camera to take a profile photo and to scan invite QR codes.</string>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
@@ -56,6 +56,10 @@
 	<false/>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

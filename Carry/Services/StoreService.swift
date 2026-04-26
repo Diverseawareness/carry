@@ -41,7 +41,7 @@ final class StoreService: ObservableObject {
     // false before archiving Build 45 for App Store.
     //
     // Scoped to !DEBUG so local dev still uses the DebugMenu isPremium toggle.
-    private static let grantPremiumInTestFlight = true
+    private static let grantPremiumInTestFlight = false
 
     private var transactionListener: Task<Void, Error>?
 
@@ -75,9 +75,27 @@ final class StoreService: ObservableObject {
             products = storeProducts.sorted { a, b in
                 a.id.contains("annual") && !b.id.contains("annual")
             }
+            await syncHadPremiumWithAppleIntroEligibility()
         } catch {
             fetchError = "Couldn't load subscription options. Check your connection and try again."
             NSLog("[StoreService] Failed to fetch products: \(error.localizedDescription)")
+        }
+    }
+
+    /// Source of truth for `hadPremium` should be Apple, not this device's
+    /// UserDefaults. If the user is no longer eligible for an intro offer,
+    /// they've already consumed their trial on this Apple ID (possibly on a
+    /// different device), so the paywall must show "Subscribe" — not "Try It
+    /// Free", which would charge them full price immediately with no trial.
+    /// Called after products load. One-way flip: never turns `hadPremium` off.
+    private func syncHadPremiumWithAppleIntroEligibility() async {
+        guard !hadPremium,
+              let annual = products.first(where: { $0.id.contains("annual") }),
+              let subscription = annual.subscription else { return }
+        let eligible = await subscription.isEligibleForIntroOffer
+        if !eligible {
+            hadPremium = true
+            UserDefaults.standard.set(true, forKey: "hadPremium")
         }
     }
 

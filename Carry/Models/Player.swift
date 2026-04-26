@@ -76,6 +76,14 @@ struct Player: Identifiable, Hashable {
 }
 
 extension Player {
+    /// Eligible to keep score: a confirmed Carry user (has a Supabase profile,
+    /// not a guest, not awaiting an invite). Single source of truth for every
+    /// scorer picker — prevents guests from being promoted to scorer and
+    /// subsequently wiped by `syncScorerIDs` on the next refresh.
+    var canScore: Bool {
+        profileId != nil && !isGuest && !isPendingInvite && !isPendingAccept
+    }
+
     /// Deterministic UUID→Int mapping. Uses first 8 bytes of UUID as a stable integer.
     /// Unlike `hashValue`, this is consistent across app launches.
     static func stableId(from uuid: UUID) -> Int {

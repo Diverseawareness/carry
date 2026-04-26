@@ -148,6 +148,21 @@ final class RoundService {
             .value
     }
 
+    /// Fan-in variant for the Games-feed poll: one query returns rounds
+    /// for every group the user belongs to. The caller groups the result
+    /// by `groupId` locally. Replaces N per-group fetches with a single
+    /// `.in()` query, materially cutting Supabase traffic when the user
+    /// has several groups.
+    func fetchRoundsForGroups(groupIds: [UUID]) async throws -> [RoundDTO] {
+        guard !groupIds.isEmpty else { return [] }
+        return try await client.from("rounds")
+            .select()
+            .in("group_id", values: groupIds.map(\.uuidString))
+            .order("created_at", ascending: false)
+            .execute()
+            .value
+    }
+
     /// Update the designated scorer for a round.
     func updateScorer(roundId: UUID, scorerId: UUID) async throws {
         try await client.from("rounds")
@@ -472,23 +487,18 @@ final class RoundService {
     func subscribeToScores(roundId: UUID, onChange: @escaping (ScoreDTO) -> Void) -> RealtimeChannelV2 {
         let channel = client.realtimeV2.channel("scores-\(roundId.uuidString)")
 
-        let changes = channel.postgresChange(
+        // Register both postgres_changes hooks BEFORE calling subscribe, then
+        // await subscribe exactly once, then fan out into separate tasks to
+        // consume each stream. Previously the UPDATE task's for-await started
+        // without waiting for subscribe, so early UPDATE events fired before
+        // the channel was live could be missed — users had to cancel + restart
+        // a Quick Game round before cross-group scores began flowing.
+        let inserts = channel.postgresChange(
             InsertAction.self,
             schema: "public",
             table: "scores",
             filter: .eq("round_id", value: roundId.uuidString)
         )
-
-        Task {
-            try? await channel.subscribeWithError()
-            for await change in changes {
-                if let score = try? change.decodeRecord(as: ScoreDTO.self, decoder: JSONDecoder()) {
-                    await MainActor.run { onChange(score) }
-                }
-            }
-        }
-
-        // Also listen for updates (score corrections)
         let updates = channel.postgresChange(
             UpdateAction.self,
             schema: "public",
@@ -497,30 +507,42 @@ final class RoundService {
         )
 
         Task {
-            for await change in updates {
-                do {
-                    let decoder = JSONDecoder()
-                    decoder.dateDecodingStrategy = .custom { decoder in
-                        let container = try decoder.singleValueContainer()
-                        let str = try container.decode(String.self)
-                        let formats = ["yyyy-MM-dd'T'HH:mm:ss.SSSSSSZZZZZ", "yyyy-MM-dd'T'HH:mm:ssZZZZZ", "yyyy-MM-dd'T'HH:mm:ss"]
-                        for fmt in formats {
-                            let f = DateFormatter()
-                            f.locale = Locale(identifier: "en_US_POSIX")
-                            f.dateFormat = fmt
-                            if let d = f.date(from: str) { return d }
+            try? await channel.subscribeWithError()
+            await withTaskGroup(of: Void.self) { group in
+                group.addTask {
+                    for await change in inserts {
+                        if let score = try? change.decodeRecord(as: ScoreDTO.self, decoder: JSONDecoder()) {
+                            await MainActor.run { onChange(score) }
                         }
-                        return Date()
                     }
-                    let score = try change.decodeRecord(as: ScoreDTO.self, decoder: decoder)
-                    #if DEBUG
-                    print("[RoundService] realtime UPDATE decoded: hole=\(score.holeNum) proposed=\(String(describing: score.proposedScore))")
-                    #endif
-                    await MainActor.run { onChange(score) }
-                } catch {
-                    #if DEBUG
-                    print("[RoundService] realtime UPDATE decode FAILED: \(error)")
-                    #endif
+                }
+                group.addTask {
+                    for await change in updates {
+                        do {
+                            let decoder = JSONDecoder()
+                            decoder.dateDecodingStrategy = .custom { decoder in
+                                let container = try decoder.singleValueContainer()
+                                let str = try container.decode(String.self)
+                                let formats = ["yyyy-MM-dd'T'HH:mm:ss.SSSSSSZZZZZ", "yyyy-MM-dd'T'HH:mm:ssZZZZZ", "yyyy-MM-dd'T'HH:mm:ss"]
+                                for fmt in formats {
+                                    let f = DateFormatter()
+                                    f.locale = Locale(identifier: "en_US_POSIX")
+                                    f.dateFormat = fmt
+                                    if let d = f.date(from: str) { return d }
+                                }
+                                return Date()
+                            }
+                            let score = try change.decodeRecord(as: ScoreDTO.self, decoder: decoder)
+                            #if DEBUG
+                            print("[RoundService] realtime UPDATE decoded: hole=\(score.holeNum) proposed=\(String(describing: score.proposedScore))")
+                            #endif
+                            await MainActor.run { onChange(score) }
+                        } catch {
+                            #if DEBUG
+                            print("[RoundService] realtime UPDATE decode FAILED: \(error)")
+                            #endif
+                        }
+                    }
                 }
             }
         }

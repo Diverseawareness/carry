@@ -11,7 +11,6 @@ enum PaywallTrigger {
     case createGroup
     case scoreRound
     case manageGroup
-    case quickGameLimit
     case allTimeLeaderboard
     case general
 
@@ -22,7 +21,6 @@ enum PaywallTrigger {
         case .createGroup:         return "Recurring Skins Groups are Premium"
         case .scoreRound:          return "Scoring rounds is a Premium feature"
         case .manageGroup:         return "Managing groups is a Premium feature"
-        case .quickGameLimit:      return "You've used all 3 free Quick Games this month"
         case .allTimeLeaderboard:  return "All-time leaderboards are a Premium feature"
         case .general:             return ""
         }

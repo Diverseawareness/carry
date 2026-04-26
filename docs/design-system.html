@@ -1,0 +1,1127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Carry Design System</title>
+<style>
+  :root {
+    /* Text */
+    --textPrimary: #1A1A1A;
+    --textSecondary: #999999;
+    --textTertiary: #6E6E73;
+    --textDisabled: #AEAEB2;
+    --textDark: #404142;
+    --textMid: #888888;
+    --textSubtle: #7B7F86;
+    /* Backgrounds */
+    --bgPrimary: #F0F0F0;
+    --bgSecondary: #F5F5F5;
+    --bgCard: #FAFAFA;
+    /* Borders */
+    --borderLight: #D1D1D6;
+    --borderMedium: #CCCCCC;
+    --gridLine: #D0D0D0;
+    --borderSubtle: #E5E5EA;
+    --borderFaint: #E5E5E5;
+    --borderSoft: #BBBBBB;
+    --dividerLight: #D9D9D9;
+    --dividerMuted: #AAAAAA;
+    --bgLight: #E0E0E0;
+    /* Gold (Premium) */
+    --gold: #D4A017;
+    --goldMuted: #C4A450;
+    --goldDark: #C5A44E;
+    --goldAccent: #CAA23E;
+    --goldStandard: #FFD700;
+    /* Brand */
+    --deepNavy: #181D27;
+    --venmoBlue: #008CFF;
+    --debugOrange: #C0713B;
+    /* Scores */
+    --birdieGreen: #2ECC71;
+    --bogeyRed: #E05555;
+    --successGreen: #064102;
+    /* Status */
+    --concludedGreen: #BCF0B5;
+    --successBgLight: #D9F7D2;
+    --mintLight: #B5EEB0;
+    --mintBright: #A9E3A5;
+    --greenDark: #215B1D;
+    --systemRed: #FF3B30;
+    /* Pending */
+    --pendingBg: #FFE9D0;
+    --pendingFill: #CB895D;
+    --pendingBorder: #F8D6C4;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bgPrimary);
+    color: var(--textPrimary);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", Inter, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: "tnum" on, "lnum" on;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 48px 24px 96px; }
+  header.page {
+    padding: 40px 0 24px;
+    border-bottom: 1px solid var(--borderFaint);
+    margin-bottom: 32px;
+  }
+  header.page h1 {
+    font-size: 36px;
+    font-weight: 600;
+    letter-spacing: -0.4px;
+    margin: 0 0 8px;
+  }
+  header.page p {
+    color: var(--textSecondary);
+    font-size: 15px;
+    margin: 0;
+  }
+  nav.toc {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 20px 0 0;
+  }
+  nav.toc a {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--textSecondary);
+    text-decoration: none;
+    padding: 5px 10px;
+    border-radius: 999px;
+    background: #fff;
+    border: 1px solid var(--borderFaint);
+  }
+  nav.toc a:hover { color: var(--textPrimary); border-color: var(--textPrimary); }
+
+  section { margin: 48px 0; }
+  section > h2 {
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--textSecondary);
+    margin: 0 0 16px;
+  }
+  section > h3 {
+    font-size: 20px;
+    font-weight: 600;
+    margin: 24px 0 12px;
+  }
+  section > p.lede {
+    color: var(--textTertiary);
+    font-size: 14px;
+    line-height: 1.55;
+    max-width: 680px;
+    margin: 0 0 20px;
+  }
+
+  /* ===== Color swatches ===== */
+  .swatches {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 12px;
+  }
+  .swatch {
+    background: #fff;
+    border: 1px solid var(--borderFaint);
+    border-radius: 16px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .swatch .chip {
+    height: 64px;
+    border-radius: 12px;
+    border: 1px solid var(--borderFaint);
+  }
+  .swatch .meta .name {
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .swatch .meta .hex {
+    font-size: 12px;
+    color: var(--textSecondary);
+    font-variant-numeric: tabular-nums;
+    margin-top: 2px;
+  }
+  .swatch .meta .use {
+    font-size: 12px;
+    color: var(--textTertiary);
+    margin-top: 4px;
+    line-height: 1.4;
+  }
+
+  /* ===== Typography ===== */
+  .type-row {
+    display: grid;
+    grid-template-columns: 180px 1fr;
+    gap: 24px;
+    align-items: baseline;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--borderFaint);
+  }
+  .type-row:last-child { border-bottom: none; }
+  .type-row .label {
+    font-size: 12px;
+    color: var(--textSecondary);
+    font-weight: 600;
+  }
+  .type-row .label .meta {
+    color: var(--textTertiary);
+    font-weight: 400;
+    margin-left: 6px;
+  }
+  .type-card {
+    background: #fff;
+    border: 1px solid var(--borderFaint);
+    border-radius: 16px;
+    padding: 4px 8px;
+    margin-bottom: 16px;
+  }
+
+  /* ===== Tokens (radius / spacing) ===== */
+  .token-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--borderFaint);
+  }
+  .token-row:last-child { border-bottom: none; }
+  .token-row .tag {
+    width: 80px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--textPrimary);
+    font-variant-numeric: tabular-nums;
+  }
+  .token-row .use {
+    font-size: 13px;
+    color: var(--textTertiary);
+    flex: 1;
+  }
+  .radius-demo {
+    width: 72px;
+    height: 36px;
+    background: var(--deepNavy);
+  }
+  .spacing-demo {
+    height: 8px;
+    background: var(--deepNavy);
+    border-radius: 4px;
+  }
+  .shadow-card {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    padding: 18px;
+    background: var(--bgSecondary);
+    border-radius: 16px;
+    margin-bottom: 12px;
+  }
+  .shadow-card .tile {
+    width: 140px;
+    height: 76px;
+    background: #fff;
+    border-radius: 12px;
+    border: 1px solid var(--borderFaint);
+  }
+  .shadow-card .tile.lift {
+    box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+    border: none;
+  }
+  .shadow-card .tile.celebrate {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+    border: none;
+  }
+  .shadow-card .tile.share {
+    box-shadow: 0 4px 6px rgba(0,0,0,0.03);
+    border: none;
+  }
+  .shadow-card .tile.share-front {
+    box-shadow: 0 12px 16px rgba(0,0,0,0.08);
+    border: none;
+  }
+
+  /* ===== Components ===== */
+  .grid-3 {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 16px;
+  }
+  .demo {
+    background: #fff;
+    border: 1px solid var(--borderFaint);
+    border-radius: 16px;
+    padding: 20px;
+  }
+  .demo .caption {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--textSecondary);
+    margin-bottom: 14px;
+  }
+
+  /* Buttons */
+  .btn {
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.2s ease-out;
+  }
+  .btn:active { opacity: 0.9; }
+  .btn.primary-navy {
+    background: var(--deepNavy);
+    color: #fff;
+    height: 51px;
+    border-radius: 12px;
+    padding: 0 24px;
+    font-size: 16px;
+    width: 100%;
+  }
+  .btn.primary-gold {
+    background: var(--goldAccent);
+    color: #fff;
+    height: 56px;
+    border-radius: 16px;
+    padding: 0 24px;
+    font-size: 16px;
+    width: 100%;
+  }
+  .btn.secondary {
+    background: transparent;
+    color: var(--textPrimary);
+    border: 1.5px solid var(--deepNavy);
+    height: 56px;
+    border-radius: 16px;
+    padding: 0 24px;
+    font-size: 16px;
+    width: 100%;
+  }
+  .btn.tertiary {
+    background: var(--bgPrimary);
+    color: var(--textPrimary);
+    height: 48px;
+    border-radius: 12px;
+    padding: 0 20px;
+    font-size: 15px;
+    width: 100%;
+  }
+  .btn.destructive {
+    background: var(--systemRed);
+    color: #fff;
+    height: 48px;
+    border-radius: 12px;
+    padding: 0 20px;
+    font-size: 15px;
+    width: 100%;
+  }
+  .btn.ghost {
+    background: transparent;
+    color: var(--textSecondary);
+    height: 44px;
+    padding: 0 20px;
+    font-size: 15px;
+  }
+  .btn.pill {
+    background: var(--deepNavy);
+    color: #fff;
+    height: 36px;
+    border-radius: 999px;
+    padding: 0 18px;
+    font-size: 14px;
+    font-weight: 700;
+  }
+  .btn.tiny-pill {
+    background: var(--goldAccent);
+    color: #fff;
+    height: 28px;
+    border-radius: 999px;
+    padding: 0 12px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+  }
+  .btn-stack { display: flex; flex-direction: column; gap: 12px; }
+  .btn[disabled] { opacity: 0.5; cursor: not-allowed; }
+
+  /* Input */
+  .input {
+    display: block;
+    width: 100%;
+    height: 52px;
+    padding: 0 16px;
+    font-size: 16px;
+    font-family: inherit;
+    color: var(--textPrimary);
+    background: #fff;
+    border: 1px solid var(--borderLight);
+    border-radius: 12px;
+    outline: none;
+  }
+  .input::placeholder { color: var(--textSecondary); }
+  .input.focused { border-color: var(--textPrimary); border-width: 1.5px; }
+  .input.error { border-color: var(--systemRed); }
+  .input.disabled {
+    background: var(--bgPrimary);
+    border-color: var(--borderSubtle);
+    color: var(--textDisabled);
+  }
+
+  /* Cards */
+  .card {
+    background: #fff;
+    border: 1px solid var(--borderFaint);
+    border-radius: 16px;
+    padding: 16px;
+  }
+  .card.tinted {
+    background: var(--bgSecondary);
+    border: none;
+    border-radius: 12px;
+  }
+  .card.accent {
+    background: var(--successBgLight);
+    border: none;
+    border-radius: 32px;
+    padding: 28px;
+  }
+  .card.twotone {
+    padding: 0;
+    overflow: hidden;
+  }
+  .card.twotone .header {
+    background: var(--bgSecondary);
+    padding: 12px 16px;
+    font-size: 17px;
+    font-weight: 600;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .card.twotone .body { background: #fff; padding: 16px; }
+
+  /* Rows */
+  .settings-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 44px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--borderFaint);
+    font-size: 16px;
+  }
+  .settings-row:last-child { border-bottom: none; }
+  .settings-row .value {
+    color: var(--textSecondary);
+    font-size: 16px;
+  }
+  .settings-row .chev {
+    color: var(--textSecondary);
+    font-size: 11px;
+    margin-left: 8px;
+  }
+  .settings-group {
+    background: #fff;
+    border-radius: 12px;
+    border: 1px solid var(--borderFaint);
+    overflow: hidden;
+  }
+
+  .scorer-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    height: 58px;
+    padding: 0 12px;
+    background: #fff;
+    border: 1px solid var(--borderLight);
+    border-radius: 14px;
+  }
+  .scorer-row .name { font-size: 15px; font-weight: 600; }
+  .scorer-row .sub { font-size: 14px; color: var(--textSecondary); }
+
+  .leaderboard-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 24px;
+  }
+  .leaderboard-row .name { font-size: 17px; font-weight: 600; }
+  .leaderboard-row .hc { font-size: 12px; font-weight: 600; color: var(--borderMedium); }
+  .leaderboard-row .money {
+    margin-left: auto;
+    font-size: 17px;
+    font-weight: 500;
+    color: var(--goldMuted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Avatars */
+  .avatar {
+    border-radius: 50%;
+    background: var(--mintLight);
+    color: var(--greenDark);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    flex-shrink: 0;
+    border: 1.5px solid var(--mintBright);
+  }
+  .avatar.s34 { width: 34px; height: 34px; font-size: 13px; }
+  .avatar.s38 { width: 38px; height: 38px; font-size: 14px; }
+  .avatar.s44 { width: 44px; height: 44px; font-size: 16px; }
+  .avatar.s58 { width: 58px; height: 58px; font-size: 20px; }
+  .avatar.s86 { width: 86px; height: 86px; font-size: 32px; }
+  .avatar.pending {
+    opacity: 0.5;
+    border-color: var(--pendingFill);
+    border-width: 2px;
+  }
+
+  /* Tab bar */
+  .tabbar {
+    display: flex;
+    justify-content: space-around;
+    background: #fff;
+    border-top: 1px solid var(--borderFaint);
+    padding: 10px 0 18px;
+  }
+  .tabbar .tab {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    color: var(--textSecondary);
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .tabbar .tab.active { color: var(--textPrimary); }
+  .tabbar .tab .icon {
+    width: 22px;
+    height: 22px;
+    background: currentColor;
+    mask-size: contain;
+    mask-repeat: no-repeat;
+    mask-position: center;
+  }
+  .tabbar .tab .icon.home { mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M12 3 2 12h3v8h6v-6h2v6h6v-8h3Z' fill='currentColor'/></svg>"); }
+  .tabbar .tab .icon.trophy { mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M7 4h10v3a5 5 0 0 1-5 5 5 5 0 0 1-5-5Zm-3 1h2v3a3 3 0 1 0 0-3Zm14 0h2v0a3 3 0 0 1-2 3ZM10 14h4v3h2v3H8v-3h2Z' fill='currentColor'/></svg>"); }
+  .tabbar .tab .icon.profile { mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='8' r='4' fill='currentColor'/><path d='M4 20a8 8 0 1 1 16 0Z' fill='currentColor'/></svg>"); }
+
+  /* Pills and tags */
+  .you-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 5px;
+    background: rgba(212,160,23,0.10);
+    color: var(--gold);
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: 999px;
+  }
+  .money {
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+  }
+  .money.pos { color: var(--goldMuted); }
+  .money.neg { color: var(--textDisabled); }
+  .money.zero { color: var(--borderSoft); }
+
+  .section-header {
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--textSecondary);
+    margin-bottom: 8px;
+    padding: 0 4px;
+  }
+
+  /* Pending state */
+  .pending-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    background: var(--pendingBg);
+    border: 1px solid var(--pendingBorder);
+    border-radius: 12px;
+  }
+  .pending-row .label {
+    margin-left: auto;
+    color: var(--debugOrange);
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  /* Crown badge */
+  .crown-inline {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border: 1px solid var(--textPrimary);
+    border-radius: 999px;
+    font-size: 14px;
+    font-weight: 600;
+    opacity: 0.6;
+  }
+  .crown-inline .crown {
+    color: var(--goldAccent);
+    font-size: 11px;
+  }
+  .crown-corner {
+    width: 40px;
+    height: 40px;
+    background: #fff;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    opacity: 0.5;
+  }
+  .crown-corner::after {
+    content: "♛";
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    width: 18px;
+    height: 18px;
+    background: #fff;
+    color: var(--goldAccent);
+    border-radius: 50%;
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 1;
+  }
+
+  /* Toasts */
+  .toast {
+    background: #fff;
+    border-radius: 12px;
+    padding: 12px 16px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    border-left: 4px solid var(--birdieGreen);
+  }
+  .toast.error { border-left-color: var(--systemRed); }
+  .toast.info { border-left-color: var(--borderMedium); }
+
+  /* Footer */
+  footer {
+    margin-top: 80px;
+    padding-top: 24px;
+    border-top: 1px solid var(--borderFaint);
+    font-size: 12px;
+    color: var(--textSecondary);
+  }
+
+  /* Patterns */
+  .stats-line {
+    font-size: 14px;
+    color: var(--textSecondary);
+  }
+  .stats-line .holes { color: var(--textTertiary); margin-left: 4px; }
+  .stats-line .dot { color: var(--textDisabled); margin: 0 6px; }
+
+  .scorecard-header {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--textSecondary);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding: 8px 12px;
+    background: var(--bgSecondary);
+    border-top-left-radius: 16px;
+    border-top-right-radius: 16px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="page">
+    <h1>Carry Design System</h1>
+    <p>Auto-rendered from <code>carry/docs/design-system.md</code>. Single source of truth for visual design in the Carry iOS app.</p>
+    <nav class="toc">
+      <a href="#principles">Principles</a>
+      <a href="#colors">Colors</a>
+      <a href="#typography">Typography</a>
+      <a href="#radius">Radius</a>
+      <a href="#shadows">Shadows</a>
+      <a href="#buttons">Buttons</a>
+      <a href="#inputs">Inputs</a>
+      <a href="#cards">Cards</a>
+      <a href="#rows">Rows</a>
+      <a href="#avatars">Avatars</a>
+      <a href="#nav">Navigation</a>
+      <a href="#feedback">Feedback</a>
+      <a href="#premium">Premium</a>
+      <a href="#patterns">Patterns</a>
+    </nav>
+  </header>
+
+  <!-- Principles -->
+  <section id="principles">
+    <h2>Principles</h2>
+    <ol style="line-height:1.7; color:var(--textPrimary); max-width:680px;">
+      <li><strong>Scorecard first.</strong> Other screens lighter, never denser.</li>
+      <li><strong>Reading free, writing Premium.</strong> Locked controls visible + dimmed + gold crown — never hidden.</li>
+      <li><strong>Gold = Premium signal.</strong> Crown, upgrade CTAs, winnings. Not a generic accent.</li>
+      <li><strong>Monochrome + one accent.</strong> Grayscale + gold. Avoid rainbow.</li>
+      <li><strong>Rounded, not sharp.</strong> Default 12–16pt. Hard corners only on pills or grid lines.</li>
+      <li><strong>Generous whitespace.</strong> Rows 12–15pt vertical padding.</li>
+      <li><strong>Motion as confirmation.</strong> Spring for interactions, ease-out for state. No elastic.</li>
+    </ol>
+  </section>
+
+  <!-- Colors -->
+  <section id="colors">
+    <h2>Colors</h2>
+
+    <h3>Text</h3>
+    <div class="swatches">
+      <div class="swatch"><div class="chip" style="background:#1A1A1A"></div><div class="meta"><div class="name">textPrimary</div><div class="hex">#1A1A1A</div><div class="use">Headlines, primary content</div></div></div>
+      <div class="swatch"><div class="chip" style="background:#999999"></div><div class="meta"><div class="name">textSecondary</div><div class="hex">#999999</div><div class="use">Sub-labels, metadata</div></div></div>
+      <div class="swatch"><div class="chip" style="background:#6E6E73"></div><div class="meta"><div class="name">textTertiary</div><div class="hex">#6E6E73</div><div class="use">Descriptions, helper</div></div></div>
+      <div class="swatch"><div class="chip" style="background:#AEAEB2"></div><div class="meta"><div class="name">textDisabled</div><div class="hex">#AEAEB2</div><div class="use">Disabled controls, negative money</div></div></div>
+      <div class="swatch"><div class="chip" style="background:#404142"></div><div class="meta"><div class="name">textDark</div><div class="hex">#404142</div><div class="use">Occasional emphasis</div></div></div>
+      <div class="swatch"><div class="chip" style="background:#888888"></div><div class="meta"><div class="name">textMid</div><div class="hex">#888888</div><div class="use">Mid-gray variation</div></div></div>
+      <div class="swatch"><div class="chip" style="background:#7B7F86"></div><div class="meta"><div class="name">textSubtle</div><div class="hex">#7B7F86</div><div class="use">Quiet inline text</div></div></div>
+    </div>
+
+    <h3>Backgrounds</h3>
+    <div class="swatches">
+      <div class="swatch"><div class="chip" style="background:#F0F0F0"></div><div class="meta"><div class="name">bgPrimary</div><div class="hex">#F0F0F0</div><div class="use">App canvas (NOT pure white)</div></div></div>
+      <div class="swatch"><div class="chip" style="background:#F5F5F5"></div><div class="meta"><div class="name">bgSecondary</div><div class="hex">#F5F5F5</div><div class="use">Tinted strips, banners</div></div></div>
+      <div class="swatch"><div class="chip" style="background:#FAFAFA"></div><div class="meta"><div class="name">bgCard</div><div class="hex">#FAFAFA</div><div class="use">Light card bg</div></div></div>
+      <div class="swatch"><div class="chip" style="background:#FFFFFF"></div><div class="meta"><div class="name">white</div><div class="hex">#FFFFFF</div><div class="use">Premium emphasis only</div></div></div>
+    </div>
+
+    <h3>Borders &amp; Dividers</h3>
+    <div class="swatches">
+      <div class="swatch"><div class="chip" style="background:#D1D1D6"></div><div class="meta"><div class="name">borderLight</div><div class="hex">#D1D1D6</div><div class="use">Input strokes</div></div></div>
+      <div class="swatch"><div class="chip" style="background:#CCCCCC"></div><div class="meta"><div class="name">borderMedium</div><div class="hex">#CCCCCC</div><div class="use">Disabled button bg</div></div></div>
+      <div class="swatch"><div class="chip" style="background:#D0D0D0"></div><div class="meta"><div class="name">gridLine</div><div class="hex">#D0D0D0</div><div class="use">Scorecard grid</div></div></div>
+      <div class="swatch"><div class="chip" style="background:#E5E5EA"></div><div class="meta"><div class="name">borderSubtle</div><div class="hex">#E5E5EA</div><div class="use">Quiet separators</div></div></div>
+      <div class="swatch"><div class="chip" style="background:#E5E5E5"></div><div class="meta"><div class="name">borderFaint</div><div class="hex">#E5E5E5</div><div class="use">Row dividers in cards</div></div></div>
+      <div class="swatch"><div class="chip" style="background:#BBBBBB"></div><div class="meta"><div class="name">borderSoft</div><div class="hex">#BBBBBB</div><div class="use">$0 money color</div></div></div>
+      <div class="swatch"><div class="chip" style="background:#D9D9D9"></div><div class="meta"><div class="name">dividerLight</div><div class="hex">#D9D9D9</div><div class="use">Section dividers</div></div></div>
+      <div class="swatch"><div class="chip" style="background:#AAAAAA"></div><div class="meta"><div class="name">dividerMuted</div><div class="hex">#AAAAAA</div><div class="use">Stronger breaks</div></div></div>
+      <div class="swatch"><div class="chip" style="background:#E0E0E0"></div><div class="meta"><div class="name">bgLight</div><div class="hex">#E0E0E0</div><div class="use">Divider alt</div></div></div>
+    </div>
+
+    <h3>Gold — Premium signal only</h3>
+    <div class="swatches">
+      <div class="swatch"><div class="chip" style="background:#D4A017"></div><div class="meta"><div class="name">gold</div><div class="hex">#D4A017</div><div class="use">"You" tag color</div></div></div>
+      <div class="swatch"><div class="chip" style="background:#C4A450"></div><div class="meta"><div class="name">goldMuted</div><div class="hex">#C4A450</div><div class="use">Positive winnings amount</div></div></div>
+      <div class="swatch"><div class="chip" style="background:#C5A44E"></div><div class="meta"><div class="name">goldDark</div><div class="hex">#C5A44E</div><div class="use">Paywall legal link</div></div></div>
+      <div class="swatch"><div class="chip" style="background:#CAA23E"></div><div class="meta"><div class="name">goldAccent</div><div class="hex">#CAA23E</div><div class="use">Crown icons, Upgrade CTAs</div></div></div>
+      <div class="swatch"><div class="chip" style="background:#FFD700"></div><div class="meta"><div class="name">goldStandard</div><div class="hex">#FFD700</div><div class="use">Celebration moments only</div></div></div>
+    </div>
+
+    <h3>Brand — Other</h3>
+    <div class="swatches">
+      <div class="swatch"><div class="chip" style="background:#181D27"></div><div class="meta"><div class="name">deepNavy</div><div class="hex">#181D27</div><div class="use">Primary CTA, score input</div></div></div>
+      <div class="swatch"><div class="chip" style="background:#008CFF"></div><div class="meta"><div class="name">venmoBlue</div><div class="hex">#008CFF</div><div class="use">Venmo (unused)</div></div></div>
+      <div class="swatch"><div class="chip" style="background:#C0713B"></div><div class="meta"><div class="name">debugOrange</div><div class="hex">#C0713B</div><div class="use">Pending/Invited labels</div></div></div>
+    </div>
+
+    <h3>Scores</h3>
+    <div class="swatches">
+      <div class="swatch"><div class="chip" style="background:#2ECC71"></div><div class="meta"><div class="name">birdieGreen</div><div class="hex">#2ECC71</div><div class="use">Birdie indicator</div></div></div>
+      <div class="swatch"><div class="chip" style="background:#E05555"></div><div class="meta"><div class="name">bogeyRed</div><div class="hex">#E05555</div><div class="use">Bogey+ indicator</div></div></div>
+      <div class="swatch"><div class="chip" style="background:#064102"></div><div class="meta"><div class="name">successGreen</div><div class="hex">#064102</div><div class="use">Dark success text</div></div></div>
+    </div>
+
+    <h3>Status</h3>
+    <div class="swatches">
+      <div class="swatch"><div class="chip" style="background:#BCF0B5"></div><div class="meta"><div class="name">concludedGreen</div><div class="hex">#BCF0B5</div><div class="use">Disclaimer bullets</div></div></div>
+      <div class="swatch"><div class="chip" style="background:#D9F7D2"></div><div class="meta"><div class="name">successBgLight</div><div class="hex">#D9F7D2</div><div class="use">Skins Group picker card</div></div></div>
+      <div class="swatch"><div class="chip" style="background:#B5EEB0"></div><div class="meta"><div class="name">mintLight</div><div class="hex">#B5EEB0</div><div class="use">Avatar fallback fill</div></div></div>
+      <div class="swatch"><div class="chip" style="background:#A9E3A5"></div><div class="meta"><div class="name">mintBright</div><div class="hex">#A9E3A5</div><div class="use">Avatar fallback stroke</div></div></div>
+      <div class="swatch"><div class="chip" style="background:#215B1D"></div><div class="meta"><div class="name">greenDark</div><div class="hex">#215B1D</div><div class="use">Avatar initials</div></div></div>
+      <div class="swatch"><div class="chip" style="background:#FF3B30"></div><div class="meta"><div class="name">systemRed</div><div class="hex">#FF3B30</div><div class="use">Destructive actions</div></div></div>
+    </div>
+
+    <h3>Pending player</h3>
+    <div class="swatches">
+      <div class="swatch"><div class="chip" style="background:#FFE9D0"></div><div class="meta"><div class="name">pendingBg</div><div class="hex">#FFE9D0</div><div class="use">Pending row bg</div></div></div>
+      <div class="swatch"><div class="chip" style="background:#CB895D"></div><div class="meta"><div class="name">pendingFill</div><div class="hex">#CB895D</div><div class="use">Avatar border + label</div></div></div>
+      <div class="swatch"><div class="chip" style="background:#F8D6C4"></div><div class="meta"><div class="name">pendingBorder</div><div class="hex">#F8D6C4</div><div class="use">Pending row border</div></div></div>
+    </div>
+  </section>
+
+  <!-- Typography -->
+  <section id="typography">
+    <h2>Typography</h2>
+    <p class="lede">SF Pro on iOS (system font). All references via <code>.font(.carry.xxx)</code>. Never <code>.font(.system(size:weight:))</code> directly.</p>
+
+    <h3>Display</h3>
+    <div class="type-card">
+      <div class="type-row"><div class="label">displayXL <span class="meta">52pt Bold</span></div><div style="font-size:52px;font-weight:700;letter-spacing:-0.4px;">7</div></div>
+      <div class="type-row"><div class="label">displayLG <span class="meta">40pt Bold</span></div><div style="font-size:40px;font-weight:700;">72</div></div>
+      <div class="type-row"><div class="label">displayMD <span class="meta">36pt Bold</span></div><div style="font-size:36px;font-weight:700;">$150</div></div>
+      <div class="type-row"><div class="label">displaySM <span class="meta">32pt Semibold</span></div><div style="font-size:32px;font-weight:600;">3 Skins</div></div>
+    </div>
+
+    <h3>Titles</h3>
+    <div class="type-card">
+      <div class="type-row"><div class="label">pageTitle <span class="meta">28pt Semibold</span></div><div style="font-size:28px;font-weight:600;">Tee Times</div></div>
+      <div class="type-row"><div class="label">sheetTitle <span class="meta">26pt Semibold</span></div><div style="font-size:26px;font-weight:600;">Add Players</div></div>
+      <div class="type-row"><div class="label">sectionTitle <span class="meta">20pt Semibold</span></div><div style="font-size:20px;font-weight:600;">Round Stats</div></div>
+    </div>
+
+    <h3>Headlines</h3>
+    <div class="type-card">
+      <div class="type-row"><div class="label">headline <span class="meta">17pt Semibold</span></div><div style="font-size:17px;font-weight:600;">Start Round</div></div>
+      <div class="type-row"><div class="label">label <span class="meta">18pt Medium</span></div><div style="font-size:18px;font-weight:500;">Daniel</div></div>
+    </div>
+
+    <h3>Body</h3>
+    <div class="type-card">
+      <div class="type-row"><div class="label">bodyLG <span class="meta">16pt Medium</span></div><div style="font-size:16px;font-weight:500;">Upgrade to Premium</div></div>
+      <div class="type-row"><div class="label">body <span class="meta">15pt Medium</span></div><div style="font-size:15px;font-weight:500;">Manage Members</div></div>
+      <div class="type-row"><div class="label">bodySM <span class="meta">14pt Medium</span></div><div style="font-size:14px;font-weight:500;">homeClub · HC 6.5</div></div>
+    </div>
+
+    <h3>Captions &amp; Micro</h3>
+    <div class="type-card">
+      <div class="type-row"><div class="label">captionLG <span class="meta">13pt Medium</span></div><div style="font-size:13px;font-weight:500;">Tap to add players</div></div>
+      <div class="type-row"><div class="label">caption <span class="meta">12pt Medium</span></div><div style="font-size:12px;font-weight:500;">9:00 AM · Group 1</div></div>
+      <div class="type-row"><div class="label">micro <span class="meta">11pt Semibold</span></div><div style="font-size:11px;font-weight:600;letter-spacing:0.3px;">YOU</div></div>
+      <div class="type-row"><div class="label">microSM <span class="meta">10pt Semibold</span></div><div style="font-size:10px;font-weight:600;letter-spacing:1.5px;">STROKES</div></div>
+    </div>
+  </section>
+
+  <!-- Radius -->
+  <section id="radius">
+    <h2>Border Radius</h2>
+    <div class="card">
+      <div class="token-row"><div class="radius-demo" style="border-radius:4px"></div><div class="tag">4–6pt</div><div class="use">Tiny badges, mini strokes</div></div>
+      <div class="token-row"><div class="radius-demo" style="border-radius:12px"></div><div class="tag">12pt</div><div class="use">Standard button, input, card (DEFAULT)</div></div>
+      <div class="token-row"><div class="radius-demo" style="border-radius:14px"></div><div class="tag">14pt</div><div class="use">Search row, picker card</div></div>
+      <div class="token-row"><div class="radius-demo" style="border-radius:16px"></div><div class="tag">16pt</div><div class="use">Large card (Round Stats)</div></div>
+      <div class="token-row"><div class="radius-demo" style="border-radius:18px"></div><div class="tag">18pt</div><div class="use">Apple Sign In button</div></div>
+      <div class="token-row"><div class="radius-demo" style="border-radius:20px"></div><div class="tag">20pt</div><div class="use">Score input, sheet container</div></div>
+      <div class="token-row"><div class="radius-demo" style="border-radius:999px"></div><div class="tag">Capsule</div><div class="use">Pills, tabs, "You" tag</div></div>
+    </div>
+
+    <h3>Spacing scale</h3>
+    <div class="card">
+      <div class="token-row"><div class="spacing-demo" style="width:4px"></div><div class="tag">4pt</div><div class="use">Inline tight — interpunct to text</div></div>
+      <div class="token-row"><div class="spacing-demo" style="width:8px"></div><div class="tag">8pt</div><div class="use">Stack small</div></div>
+      <div class="token-row"><div class="spacing-demo" style="width:12px"></div><div class="tag">12pt</div><div class="use">Avatar ↔ text, row internal gap</div></div>
+      <div class="token-row"><div class="spacing-demo" style="width:16px"></div><div class="tag">16pt</div><div class="use">Between cards / form fields</div></div>
+      <div class="token-row"><div class="spacing-demo" style="width:24px"></div><div class="tag">24pt</div><div class="use">Major sections, sheet top</div></div>
+      <div class="token-row"><div class="spacing-demo" style="width:40px"></div><div class="tag">40pt</div><div class="use">Section break</div></div>
+    </div>
+  </section>
+
+  <!-- Shadows -->
+  <section id="shadows">
+    <h2>Shadows &amp; Elevation</h2>
+    <p class="lede">Default is NONE. Prefer <code>1pt borderFaint</code>. Shadow color is always <code>.black.opacity(x)</code>. Never tinted.</p>
+    <div class="shadow-card">
+      <div class="tile"></div>
+      <div><div class="tag" style="font-weight:600">None</div><div class="use" style="color:var(--textTertiary);font-size:13px">95% of surfaces. Use borders.</div></div>
+    </div>
+    <div class="shadow-card">
+      <div class="tile lift"></div>
+      <div><div class="tag" style="font-weight:600">Subtle lift</div><div class="use" style="color:var(--textTertiary);font-size:13px"><code>.shadow(.black.opacity(0.06), radius:6, y:2)</code> — CashGamesBar rest</div></div>
+    </div>
+    <div class="shadow-card">
+      <div class="tile celebrate"></div>
+      <div><div class="tag" style="font-weight:600">Celebratory</div><div class="use" style="color:var(--textTertiary);font-size:13px"><code>.shadow(.black.opacity(0.12), radius:8, y:2)</code></div></div>
+    </div>
+  </section>
+
+  <!-- Buttons -->
+  <section id="buttons">
+    <h2>Buttons</h2>
+    <div class="grid-3">
+      <div class="demo">
+        <div class="caption">Primary Navy</div>
+        <button class="btn primary-navy">Start Round</button>
+      </div>
+      <div class="demo">
+        <div class="caption">Primary Gold</div>
+        <button class="btn primary-gold">Upgrade to Premium</button>
+      </div>
+      <div class="demo">
+        <div class="caption">Secondary Outlined</div>
+        <button class="btn secondary">Upgrade to Premium</button>
+      </div>
+      <div class="demo">
+        <div class="caption">Tertiary</div>
+        <button class="btn tertiary">Tab</button>
+      </div>
+      <div class="demo">
+        <div class="caption">Destructive</div>
+        <button class="btn destructive">Delete Account</button>
+      </div>
+      <div class="demo">
+        <div class="caption">Ghost</div>
+        <button class="btn ghost">Maybe Later</button>
+      </div>
+      <div class="demo">
+        <div class="caption">Small pill (36pt)</div>
+        <button class="btn pill">+ Add Group</button>
+      </div>
+      <div class="demo">
+        <div class="caption">Tiny pill (~28pt)</div>
+        <button class="btn tiny-pill">UPGRADE</button>
+      </div>
+      <div class="demo">
+        <div class="caption">States — Disabled</div>
+        <div class="btn-stack">
+          <button class="btn primary-navy" disabled>Start Round</button>
+          <button class="btn primary-navy" style="opacity:0.9">Pressed 90%</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Inputs -->
+  <section id="inputs">
+    <h2>Text Inputs</h2>
+    <div class="grid-3">
+      <div class="demo"><div class="caption">Default</div><input class="input" placeholder="Group name"></div>
+      <div class="demo"><div class="caption">Focused</div><input class="input focused" value="Weekend Skins Crew"></div>
+      <div class="demo"><div class="caption">Error</div><input class="input error" value=""></div>
+      <div class="demo"><div class="caption">Disabled</div><input class="input disabled" value="Locked" disabled></div>
+    </div>
+  </section>
+
+  <!-- Cards -->
+  <section id="cards">
+    <h2>Cards</h2>
+    <div class="grid-3">
+      <div class="demo">
+        <div class="caption">Standard</div>
+        <div class="card">White bg, 1pt borderFaint, 16pt radius, 14–18pt padding.</div>
+      </div>
+      <div class="demo">
+        <div class="caption">Tinted</div>
+        <div class="card tinted">bgSecondary, no border, 12pt radius. Upgrade banners.</div>
+      </div>
+      <div class="demo">
+        <div class="caption">Accent</div>
+        <div class="card accent">successBgLight, no border, 32pt radius. New Game picker card.</div>
+      </div>
+      <div class="demo" style="grid-column:span 2;">
+        <div class="caption">Two-tone — Round Stats</div>
+        <div class="card twotone">
+          <div class="header">Round Stats <span style="font-size:13px;color:var(--textSecondary);">▾</span></div>
+          <div class="body">
+            <div class="scorer-row" style="border:none;padding:0;margin-bottom:8px;">
+              <div class="avatar s38">D</div>
+              <div style="flex:1">
+                <div style="font-size:16px;font-weight:600;">Daniel <span class="you-tag">YOU</span></div>
+                <div class="stats-line">6.5 · 6 pops <span class="dot">·</span> 3 Skins <span class="dot">·</span> <span class="holes">Holes 1, 12, 16</span></div>
+              </div>
+              <div class="money pos">$150</div>
+            </div>
+            <div class="scorer-row" style="border:none;padding:0;border-top:1px solid var(--borderFaint);padding-top:12px;">
+              <div class="avatar s38">G</div>
+              <div style="flex:1">
+                <div style="font-size:16px;font-weight:600;">Garreth</div>
+                <div class="stats-line">8.2 · 8 pops <span class="dot">·</span> 2 Skins <span class="dot">·</span> <span class="holes">Holes 5, 9</span></div>
+              </div>
+              <div class="money pos">$100</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Rows -->
+  <section id="rows">
+    <h2>Rows</h2>
+    <h3>Settings row (44pt min)</h3>
+    <div class="demo" style="padding:0">
+      <div class="settings-group">
+        <div class="settings-row">Edit Profile <span class="chev">›</span></div>
+        <div class="settings-row">Handicap Index <span><span class="value">6.5</span> <span class="chev">›</span></span></div>
+        <div class="settings-row">Notifications <span class="chev">›</span></div>
+      </div>
+    </div>
+
+    <h3>Scorer row (58pt)</h3>
+    <div class="grid-3">
+      <div class="scorer-row">
+        <div class="avatar s34">D</div>
+        <div>
+          <div class="name">Daniel Sigvardsson</div>
+          <div class="sub">Riverside GC · HC 6.5</div>
+        </div>
+      </div>
+      <div class="scorer-row">
+        <div class="avatar s34" style="background:#DDE6FF;color:#1E3A8A;border-color:#BBD0FF">G</div>
+        <div>
+          <div class="name">Garreth Stevens</div>
+          <div class="sub">Pebble Beach · HC 8.2</div>
+        </div>
+      </div>
+    </div>
+
+    <h3>Leaderboard row (38pt avatar)</h3>
+    <div class="demo" style="padding:0">
+      <div class="leaderboard-row">
+        <div class="avatar s38">D</div>
+        <div><div class="name">Daniel <span class="you-tag">YOU</span></div><div class="hc">HC 6.5</div></div>
+        <div class="money">$150</div>
+      </div>
+      <div class="leaderboard-row">
+        <div class="avatar s38" style="background:#FFE1A8;color:#7A4E00;border-color:#FFD48A">A</div>
+        <div><div class="name">AJ Miller</div><div class="hc">HC 12.1</div></div>
+        <div class="money">$100</div>
+      </div>
+      <div class="leaderboard-row">
+        <div class="avatar s38" style="background:#EED6FF;color:#4B226E;border-color:#E2C0FF">T</div>
+        <div><div class="name">Tyson</div><div class="hc">HC 15.3</div></div>
+        <div class="money neg">-$50</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Avatars -->
+  <section id="avatars">
+    <h2>Avatars</h2>
+    <div class="demo" style="display:flex; align-items:flex-end; gap:24px;">
+      <div style="text-align:center"><div class="avatar s34">D</div><div style="font-size:11px;color:var(--textSecondary);margin-top:6px;font-weight:600">34</div></div>
+      <div style="text-align:center"><div class="avatar s38">D</div><div style="font-size:11px;color:var(--textSecondary);margin-top:6px;font-weight:600">38</div></div>
+      <div style="text-align:center"><div class="avatar s44">D</div><div style="font-size:11px;color:var(--textSecondary);margin-top:6px;font-weight:600">44</div></div>
+      <div style="text-align:center"><div class="avatar s58">D</div><div style="font-size:11px;color:var(--textSecondary);margin-top:6px;font-weight:600">58</div></div>
+      <div style="text-align:center"><div class="avatar s86">D</div><div style="font-size:11px;color:var(--textSecondary);margin-top:6px;font-weight:600">86</div></div>
+      <div style="margin-left:auto; text-align:center">
+        <div class="avatar s58 pending">M</div>
+        <div style="font-size:11px;color:var(--debugOrange);margin-top:6px;font-weight:600">PENDING</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Navigation -->
+  <section id="nav">
+    <h2>Navigation — Tab bar</h2>
+    <div class="demo" style="padding:0">
+      <div class="tabbar">
+        <div class="tab"><div class="icon home"></div>Home</div>
+        <div class="tab active"><div class="icon trophy"></div>Skins Games</div>
+        <div class="tab"><div class="icon profile"></div>Profile</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Feedback -->
+  <section id="feedback">
+    <h2>Feedback</h2>
+    <div class="grid-3">
+      <div class="demo">
+        <div class="caption">Toast — success</div>
+        <div class="toast">✓ Scorer accepted</div>
+      </div>
+      <div class="demo">
+        <div class="caption">Toast — error</div>
+        <div class="toast error">⚠ Save failed. Retry.</div>
+      </div>
+      <div class="demo">
+        <div class="caption">Toast — info</div>
+        <div class="toast info">ℹ Alice joined — tap Manage to add</div>
+      </div>
+      <div class="demo" style="grid-column:span 2">
+        <div class="caption">Empty state</div>
+        <div style="text-align:center; padding:32px 16px; color:var(--textSecondary); font-size:15px;">
+          <div style="font-size:44px; margin-bottom:12px;">⛳</div>
+          <div style="font-size:20px; font-weight:600; color:var(--textPrimary); margin-bottom:4px;">No rounds yet</div>
+          <div>Start your first skins round to see it here.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Premium -->
+  <section id="premium">
+    <h2>Premium / Gated controls</h2>
+    <p class="lede">Visible + 50% opacity + gold crown. Tap opens paywall with a <code>PaywallTrigger</code>.</p>
+    <div class="grid-3">
+      <div class="demo">
+        <div class="caption">Inline crown suffix</div>
+        <span class="crown-inline">Invite &amp; Manage <span class="crown">♛</span></span>
+      </div>
+      <div class="demo">
+        <div class="caption">Corner crown badge</div>
+        <span class="crown-corner" style="font-size:16px;color:var(--textPrimary)">QR</span>
+      </div>
+      <div class="demo">
+        <div class="caption">Dimmed 50% label + crown</div>
+        <button class="btn primary-navy" style="opacity:0.5">Start Round ♛</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Patterns -->
+  <section id="patterns">
+    <h2>Patterns</h2>
+
+    <h3>"You" tag</h3>
+    <div class="demo" style="font-size:17px; font-weight:600;">Daniel <span class="you-tag">YOU</span></div>
+
+    <h3>Money formatting</h3>
+    <div class="grid-3">
+      <div class="demo"><div class="caption">Positive</div><div style="font-size:36px;" class="money pos">$150</div></div>
+      <div class="demo"><div class="caption">Negative</div><div style="font-size:36px;" class="money neg">-$50</div></div>
+      <div class="demo"><div class="caption">Zero</div><div style="font-size:36px;" class="money zero">$0</div></div>
+    </div>
+
+    <h3>X Skins · Holes Y, Z</h3>
+    <div class="demo"><div class="stats-line" style="font-size:14px">3 Skins <span class="dot">·</span> <span class="holes">Holes 1, 12, 16</span></div></div>
+    <div class="demo" style="margin-top:8px"><div class="stats-line" style="font-size:14px">No Skins</div></div>
+
+    <h3>Section header (UPPERCASE)</h3>
+    <div class="section-header">Account</div>
+    <div class="settings-group">
+      <div class="settings-row">Edit Profile <span class="chev">›</span></div>
+      <div class="settings-row">Handicap Index <span><span class="value">5.6</span> <span class="chev">›</span></span></div>
+    </div>
+
+    <h3>Pending row</h3>
+    <div class="pending-row">
+      <div class="avatar s38 pending">M</div>
+      <div>
+        <div style="font-weight:600">Mike Ross</div>
+        <div class="sub" style="font-size:14px; color:var(--textSecondary)">Invited 2 days ago</div>
+      </div>
+      <div class="label">Pending</div>
+    </div>
+  </section>
+
+  <footer>
+    Rendered from <code>carry/docs/design-system.md</code> v1.0. Open this file in a browser to review. Changes to the source markdown should be reflected here by editing both.
+  </footer>
+</div>
+</body>
+</html>

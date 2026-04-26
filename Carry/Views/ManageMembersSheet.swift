@@ -14,6 +14,12 @@ struct ManageMembersSheet: View {
         let selectedIDs: Set<Int>
         let newGuests: [Player]
         let nextGuestID: Int
+        /// Local player IDs for members who were long-press-removed inside
+        /// the sheet. The sheet already persisted the server-side
+        /// `status='removed'` update; the parent uses this list to drop the
+        /// same rows from its in-memory group so the UI stays in sync
+        /// without waiting for the next 30s refresh.
+        let removedPlayerIds: Set<Int>
     }
 
     @State private var selectedIDs: Set<Int>
@@ -27,13 +33,19 @@ struct ManageMembersSheet: View {
     @State private var invitePhone = ""
     @State private var inviteSent = false
     @State private var showMembersTip = true
+    /// Players the user long-pressed → confirmed → removed. Held locally
+    /// so the avatar tile disappears immediately; propagated to the parent
+    /// on Done via `ManageMembersResult.removedPlayerIds`.
+    @State private var locallyRemovedIds: Set<Int> = []
+    /// Triggers the "Remove {name}" iOS-native confirmation alert.
+    @State private var memberToRemove: Player? = nil
 
     enum Field: Hashable { case memberSearch, invitePhone }
     @FocusState private var focused: Field?
     private var isSearchFocused: Bool { focused == .memberSearch }
 
     private var localAllAvailable: [Player] {
-        allAvailable + localGuests
+        (allAvailable + localGuests).filter { !locallyRemovedIds.contains($0.id) }
     }
 
     init(
@@ -75,7 +87,8 @@ struct ManageMembersSheet: View {
                         onDone(ManageMembersResult(
                             selectedIDs: selectedIDs,
                             newGuests: localGuests,
-                            nextGuestID: nextGuestID
+                            nextGuestID: nextGuestID,
+                            removedPlayerIds: locallyRemovedIds
                         ))
                     }
                     .font(.system(size: 16, weight: .semibold))
@@ -338,6 +351,10 @@ struct ManageMembersSheet: View {
                                     .frame(width: 79)
                                 }
                                 .buttonStyle(.plain)
+                                .simultaneousGesture(
+                                    LongPressGesture(minimumDuration: 0.45)
+                                        .onEnded { _ in requestRemoval(of: player) }
+                                )
                             }
                         }
                         .padding(.top, 8)
@@ -393,6 +410,10 @@ struct ManageMembersSheet: View {
                                             .lineLimit(1)
                                     }
                                     .frame(width: 79)
+                                    .contentShape(Rectangle())
+                                    .onLongPressGesture(minimumDuration: 0.45) {
+                                        requestRemoval(of: player)
+                                    }
                                 }
                             }
                             .padding(.top, 8)
@@ -407,6 +428,61 @@ struct ManageMembersSheet: View {
                 focused = nil
             }
 
+        }
+        .alert(
+            "Remove \(memberToRemove?.name ?? "member")?",
+            isPresented: Binding(
+                get: { memberToRemove != nil },
+                set: { if !$0 { memberToRemove = nil } }
+            ),
+            presenting: memberToRemove
+        ) { player in
+            Button("Remove", role: .destructive) { confirmRemoval(of: player) }
+            Button("Cancel", role: .cancel) { memberToRemove = nil }
+        } message: { player in
+            Text("They'll be removed from this Skins Group. You can re-invite them any time.")
+        }
+    }
+
+    // MARK: - Long-press Remove
+
+    /// Open the iOS-native confirm alert. Scoped to players with a real
+    /// profile — phone-only pending invites (no `profileId`) use a
+    /// different server row keyed by `invited_phone` that `removeMember`
+    /// can't match, so long-press is a silent no-op for those until a
+    /// phone-specific removal helper is added.
+    private func requestRemoval(of player: Player) {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        guard player.profileId != nil else { return }
+        memberToRemove = player
+    }
+
+    /// Hard-delete the member server-side, then hide them locally so the
+    /// tile disappears without waiting for the next refresh. The Done
+    /// callback carries the removed local IDs back to the parent so its
+    /// own in-memory group state stays in sync.
+    private func confirmRemoval(of player: Player) {
+        memberToRemove = nil
+        guard let groupId = supabaseGroupId, let profileId = player.profileId else { return }
+
+        withAnimation(.easeOut(duration: 0.2)) {
+            locallyRemovedIds.insert(player.id)
+            selectedIDs.remove(player.id)
+        }
+
+        Task {
+            do {
+                try await GroupService().removeMember(groupId: groupId, playerId: profileId)
+            } catch {
+                await MainActor.run {
+                    // Rollback if server rejected — re-surface the tile
+                    // and let the user retry or investigate.
+                    _ = withAnimation(.easeOut(duration: 0.2)) {
+                        locallyRemovedIds.remove(player.id)
+                    }
+                    ToastManager.shared.error("Couldn't remove \(player.name). Try again.")
+                }
+            }
         }
     }
 

@@ -5,6 +5,15 @@ private struct SheetItem: Identifiable {
     let id: Int
 }
 
+private extension View {
+    /// Apply a modifier only when the condition is true. Used here to gate
+    /// drag/drop on `isCreator` so non-creators don't get drag affordances.
+    @ViewBuilder
+    func applyIf<T: View>(_ condition: Bool, _ transform: (Self) -> T) -> some View {
+        if condition { transform(self) } else { self }
+    }
+}
+
 struct GroupManagerView: View {
     @EnvironmentObject var storeService: StoreService
     @State private var allMembers: [Player]
@@ -37,6 +46,11 @@ struct GroupManagerView: View {
     @State private var showPaywall = false
     @State private var paywallTrigger: PaywallTrigger = .general
     @State private var showQRInvite = false
+    /// Fullscreen QR shown when the user shakes their phone inside a group
+    /// detail. Big, tap-to-dismiss surface so multiple people can scan at
+    /// once without passing the phone around. Debug builds skip this path
+    /// to avoid fighting the shake-opens-Debug-Menu shortcut.
+    @State private var showFullScreenQR = false
     @State private var leaderboardTab: Int = 0  // 0 = Round, 1 = All Time
     @State private var groupName = "The Friday Skins"  // editable group/event name
     @State private var showSwapPicker = false
@@ -64,8 +78,18 @@ struct GroupManagerView: View {
     @State private var showDatePicker = false  // date picker sheet
     @State private var showLeaveDeleteAlert = false
     @State private var showCloseQuickGameAlert = false
-    @State private var showPendingScorersAlert = false
-    @State private var pendingScorersAlertMessage = ""
+    /// Quick-Game swipe is destructive (hard-deletes the player from the
+    /// game; the scorer often has no valid replacement among guests). We
+    /// capture the pending (player, groupIndex) here and confirm before
+    /// calling removePlayer. Regular groups skip this — swipe for them is
+    /// a non-destructive deselect from today's tee sheet only.
+    @State private var pendingQuickGameRemoval: (player: Player, groupIndex: Int)? = nil
+    /// Wall-clock of the most recent `saveScorerIds()` call. Refresh skips
+    /// overwriting local scorerIDs with server state for a short window
+    /// after a save, protecting against the 30s poll stomping the creator's
+    /// just-made assignment before the server's own write has propagated
+    /// back (classic write-then-read race).
+    @State private var scorerIdsLastSavedAt: Date? = nil
     @State private var countdownText = ""  // updated every second by timer
     @State private var refreshTimer: Timer? = nil  // 30s auto-refresh polling
     @State private var isJoiningRound = false  // loading state for "Join Round" button
@@ -131,7 +155,26 @@ struct GroupManagerView: View {
         self.scheduledLabel = scheduledLabel
         self.onGroupRefreshed = onGroupRefreshed
         self._groupName = State(initialValue: groupName)
-        let sel = preselected ?? Set(allMembers.map(\.id))
+        // Exclude pending invites from the default Playing roster — they don't
+        // belong on the tee sheet until they accept. Creator adds them
+        // deliberately via Manage Members → All Members after they join.
+        //
+        // Persisted deselections survive nav away + back: swipe-off-today writes
+        // the deselected id into UserDefaults keyed by group UUID, so reopening
+        // the group detail page keeps the swiped player off the tee sheet until
+        // the user deliberately adds them back via Manage Members.
+        let defaultSel = Set(
+            allMembers
+                .filter { !$0.isPendingInvite && !$0.isPendingAccept }
+                .map(\.id)
+        )
+        let deselected: Set<Int> = {
+            guard let gid = supabaseGroupId else { return [] }
+            let key = "deselectedIDs_\(gid.uuidString)"
+            let arr = UserDefaults.standard.array(forKey: key) as? [Int] ?? []
+            return Set(arr)
+        }()
+        let sel = preselected ?? defaultSel.subtracting(deselected)
         _selectedIDs = State(initialValue: sel)
         let playing = allMembers.filter { sel.contains($0.id) }
         let grouped = Self.autoGroup(playing)
@@ -198,8 +241,13 @@ struct GroupManagerView: View {
                 let idx = max(0, min(player.group - 1, maxAssigned - 1))
                 result[idx].append(player)
             }
-            // Remove trailing empty groups
-            while result.last?.isEmpty == true { result.removeLast() }
+            // Strip ALL empty groups, not just trailing. A middle empty group
+            // (e.g. creator removed everyone in Group 2 via Manage Members
+            // while Group 3 still has players) would otherwise leave a
+            // phantom slot in the tee sheet. Player.group metadata may be
+            // stale after compacting, but it's re-derived on the next save
+            // via `syncGroupNumsToSupabase`.
+            result.removeAll { $0.isEmpty }
             return result.isEmpty ? [players] : result
         }
 
@@ -226,7 +274,17 @@ struct GroupManagerView: View {
     }
 
     private var allAvailable: [Player] {
-        allMembers + guests
+        // Dedup by Player.id — `allMembers` and `guests` can each carry a
+        // copy of the same guest after a save round-trip (PlayerGroupsSheet
+        // inserts to server + appends locally; the next refresh pulls the
+        // same guest back in `allMembers`). Without this filter, the
+        // downstream `Dictionary(uniqueKeysWithValues:)` at
+        // `leaderboardPlayers` crashes with `Duplicate values for key: N`
+        // and SwiftUI's ForEach trips its own duplicate-id check. First
+        // occurrence wins so the `allMembers` record (freshest server data)
+        // is preferred over any locally-appended copy.
+        var seen = Set<Int>()
+        return (allMembers + guests).filter { seen.insert($0.id).inserted }
     }
 
     // MARK: - Player Groups Sheet (extracted to PlayerGroupsSheet.swift)
@@ -245,7 +303,15 @@ struct GroupManagerView: View {
             supabaseGroupId: supabaseGroupId,
             onCancel: { showManageMembers = false },
             onDone: { result in
-                selectedIDs = result.selectedIDs
+                // Drop any players the sheet long-press-removed from local
+                // state before adopting the new selection. The sheet
+                // already persisted the server DELETE — this just keeps
+                // the UI in sync until the next 30s refreshGroupData pass.
+                if !result.removedPlayerIds.isEmpty {
+                    guests.removeAll { result.removedPlayerIds.contains($0.id) }
+                    allMembers.removeAll { result.removedPlayerIds.contains($0.id) }
+                }
+                selectedIDs = result.selectedIDs.subtracting(result.removedPlayerIds)
                 guests.append(contentsOf: result.newGuests)
                 nextGuestID = result.nextGuestID
                 regroup()
@@ -291,6 +357,19 @@ struct GroupManagerView: View {
         syncSelectedTees()
     }
 
+    /// Persist which member IDs are currently deselected for today's tee sheet.
+    /// Keyed by group UUID so the swipe-off-today survives nav + relaunch.
+    /// Called from `.onChange(of: selectedIDs)` so every mutation path (swipe,
+    /// Manage Members tap, refresh intersection, hard-remove) stays in sync
+    /// without needing to sprinkle persist calls at each site.
+    private func persistDeselectedForToday() {
+        guard let gid = supabaseGroupId else { return }
+        let key = "deselectedIDs_\(gid.uuidString)"
+        let allIds = Set(allMembers.map(\.id))
+        let deselected = Array(allIds.subtracting(selectedIDs))
+        UserDefaults.standard.set(deselected, forKey: key)
+    }
+
     private func syncTeeTimes() {
         while teeTimes.count < groups.count {
             teeTimes.append(nil)
@@ -300,13 +379,16 @@ struct GroupManagerView: View {
         }
     }
 
-    /// Returns (groupNum, scorerName) for any group whose assigned scorer hasn't accepted yet.
-    /// Used to warn the creator at round-start time so they can chase the scorer or reassign.
+    /// Returns (groupNum, scorerName) for any group whose assigned scorer
+    /// hasn't accepted yet. Used to gate Start Round and tell the creator
+    /// they need to wait (or reassign). Previously skipped Group 1 under
+    /// the "creator is always Group 1 scorer" invariant — but in both Quick
+    /// Games and Skins Groups, the creator's tee-time slot can land them in
+    /// Group 2+, meaning a different (possibly pending) user scores Group 1.
+    /// Parallel logic for both flows: check every group.
     private var pendingScorerWarnings: [(group: Int, name: String)] {
         var result: [(group: Int, name: String)] = []
         for i in 0..<min(scorerIDs.count, groups.count) {
-            // Group 1 is the creator — never pending
-            if i == 0 { continue }
             let scorerId = scorerIDs[i]
             guard let scorer = groups[i].first(where: { $0.id == scorerId }) else { continue }
             if scorer.isPendingInvite || scorer.isPendingAccept {
@@ -323,9 +405,7 @@ struct GroupManagerView: View {
             // Carry user (skip guests and phone invites — they can't score).
             // If none exists, leave 0 so the missing-scorer banner surfaces
             // and prompts manual assignment.
-            let defaultScorer = groups[scorerIDs.count].first(where: {
-                !$0.isGuest && !$0.isPendingInvite && !$0.isPendingAccept && $0.profileId != nil
-            })
+            let defaultScorer = groups[scorerIDs.count].first(where: \.canScore)
             scorerIDs.append(defaultScorer?.id ?? 0)
         }
         while scorerIDs.count > groups.count {
@@ -334,7 +414,8 @@ struct GroupManagerView: View {
         // Validate existing scorer assignments:
         //  - scorerIDs[i] == 0              → intentionally empty (banner); don't auto-fill
         //  - scorer no longer in the group  → clear (banner); don't auto-reassign
-        //  - scorer is a guest              → clear (banner); guests can't score
+        //  - scorer is a PERMANENT guest    → clear (banner); guests can't score
+        //      (permanent = isGuest && NOT pending invite — they'll never upgrade)
         //  - Skins Group pending scorer     → advance past to next confirmed Carry user
         //                                     (existing behavior, Quick Games allow pending)
         for i in 0..<groups.count {
@@ -344,25 +425,50 @@ struct GroupManagerView: View {
             let currentScorer = groups[i].first(where: { $0.id == scorerIDs[i] })
             let isPendingScorer = currentScorer?.isPendingInvite == true
                 || currentScorer?.isPendingAccept == true
-            // Guests have a profileId (guest-profile UUID on Supabase), so
-            // key off isGuest rather than profileId.
-            let isGuestScorer = currentScorer?.isGuest == true || currentScorer?.profileId == nil
+            // A guest who is ALSO pending-invited will become a valid scorer
+            // when they claim their invite (Carry profile replaces/links to
+            // the guest profile). Only treat as a "real" non-scoring guest
+            // when there's no pending invite to rescue them.
+            let isPermanentGuest = (currentScorer?.isGuest == true || currentScorer?.profileId == nil)
+                && !isPendingScorer
 
             if !groupPlayerIDs.contains(scorerIDs[i]) {
                 // Scorer was removed (e.g. swipe-delete) → leave empty so
                 // the creator gets prompted via the missing-scorer banner.
+                #if DEBUG
+                print("[syncScorerIDs] ⚠️ Wiping Group \(i+1) scorer id=\(scorerIDs[i]) — NOT IN groups[\(i)] (groupIds=\(groupPlayerIDs))")
+                #endif
                 scorerIDs[i] = 0
-            } else if isGuestScorer {
+            } else if isPermanentGuest {
                 // Can't score → clear, banner prompts manual pick.
+                #if DEBUG
+                print("[syncScorerIDs] ⚠️ Wiping Group \(i+1) scorer \(currentScorer?.name ?? "?") — PERMANENT GUEST (isGuest=\(currentScorer?.isGuest == true), profileId=\(currentScorer?.profileId?.uuidString ?? "nil"), pendingInvite=\(currentScorer?.isPendingInvite == true), pendingAccept=\(currentScorer?.isPendingAccept == true))")
+                #endif
                 scorerIDs[i] = 0
             } else if !isQuickGame && isPendingScorer {
                 // Skins Group: advance past pending scorer to next confirmed
                 // Carry user (matches prior behavior).
-                let nextConfirmed = groups[i].first(where: {
-                    !$0.isGuest && !$0.isPendingInvite && !$0.isPendingAccept && $0.profileId != nil
-                })
+                let nextConfirmed = groups[i].first(where: \.canScore)
+                #if DEBUG
+                print("[syncScorerIDs] Advancing Group \(i+1) scorer past pending \(currentScorer?.name ?? "?") → \(nextConfirmed?.name ?? "0")")
+                #endif
                 scorerIDs[i] = nextConfirmed?.id ?? 0
             }
+        }
+        // Creator-locked-as-scorer invariant: wherever the creator sits in
+        // the tee sheet, that group's scorer MUST be the creator. Applied
+        // after the per-group validation above so it overrides any earlier
+        // wipe/advance that would have cleared the slot. The creator can't
+        // be a guest (always a Carry user), so `canScore` is implicit.
+        //
+        // Using `creatorId` (not `currentUserId`) makes this work on both
+        // the creator's device AND any member's device — both derive the
+        // same `creatorId` from the group's `created_by` UUID. Previously
+        // the check was against `currentUserId`, which silently skipped on
+        // member devices and also failed on the creator's side whenever
+        // `currentUserId` defaulted to the init's `1` sentinel.
+        for i in 0..<groups.count where groups[i].contains(where: { $0.id == creatorId }) {
+            scorerIDs[i] = creatorId
         }
     }
 
@@ -377,12 +483,28 @@ struct GroupManagerView: View {
     }
 
     /// When the first group's tee time is set, auto-fill subsequent groups at 8-min intervals
+    /// Fills ALL other tee-time slots (both before and after `index`) relative
+    /// to the base time at `index`, using `teeTimeInterval`. Quick Games can
+    /// place the creator in Group 2+, so a unidirectional fill-from-zero would
+    /// leave Group 1's slot nil when the creator edits from their own (later)
+    /// group slot.
     private func autoFillTeeTimes(from index: Int) {
-        guard let baseTime = teeTimes[index] else { return }
-        for i in (index + 1)..<teeTimes.count {
+        guard teeTimes.indices.contains(index), let baseTime = teeTimes[index] else { return }
+        for i in 0..<teeTimes.count {
+            if i == index { continue }
             let offset = Double(i - index) * teeTimeInterval
             teeTimes[i] = baseTime.addingTimeInterval(offset)
         }
+    }
+
+    /// 0-indexed tee-time slot for the current user. For creators this is the
+    /// slot that Game Options / the inline date picker should write into (not
+    /// hardcoded to 0), so Quick Game creators who land in Group 2+ don't
+    /// overwrite a teammate's slot.
+    private var currentUserSlotIndex: Int {
+        let groupNum = allMembers.first(where: { $0.id == currentUserId })?.group ?? 1
+        let raw = max(1, groupNum) - 1
+        return max(0, min(teeTimes.count - 1, raw))
     }
 
     private static let teeTimeFormatter: DateFormatter = {
@@ -441,11 +563,39 @@ struct GroupManagerView: View {
         return Date() >= teeTime.addingTimeInterval(-30 * 60)  // 30 min before tee time
     }
 
+    /// 1-indexed group numbers that have fewer than 2 players total (active +
+    /// pending). A group with only one real player — even if that player is
+    /// a confirmed scorer — can't play skins. Pending players still count
+    /// toward the size check because they're expected to show up; the
+    /// separate `pendingScorerWarnings` handles "scorer hasn't accepted yet".
+    /// Surfaces in Start Round as "Add players to Group X".
+    private var shortPlayerGroups: [Int] {
+        groups.enumerated().compactMap { (idx, group) in
+            return group.count < 2 ? (idx + 1) : nil
+        }
+    }
+
     private var canStartRound: Bool {
+        // If any Group 2+ scorer hasn't accepted their invite, block start.
+        // The assigned scorer is the only one who can score that group — if
+        // they never join, the group can't be scored. Forcing the creator
+        // to wait (or reassign) avoids starting a round that silently breaks.
+        if !pendingScorerWarnings.isEmpty { return false }
+
+        // Every group must have at least 2 active players. Single-player
+        // groups (scorer alone) can't play skins — previously only Group 1
+        // was validated for Quick Games and total player count for regular
+        // groups, which let Group 2+ slip through with just the scorer.
+        if !shortPlayerGroups.isEmpty { return false }
+
         if isQuickGame {
-            // Quick Games: only need creator's group (group 1) ready — other groups start when their scorer accepts
-            let group1Active = groups.first?.filter { !$0.isPendingInvite && !$0.isPendingAccept }.count ?? 0
-            return group1Active >= 2 && currentCourse != nil
+            // Quick Games need ≥2 active (non-pending) players just like Skins
+            // Groups. Previously this branch only checked `currentCourse != nil`,
+            // so a game with one active player and a pending invitee passed
+            // `shortPlayerGroups` (counts pending) and fell through — label
+            // said "Need 2+ Players" but the button was still enabled and
+            // started an unscorable round when tapped.
+            return activePlayerCount >= 2 && currentCourse != nil
         }
         return activePlayerCount >= 2 && currentCourse != nil && allTeeTimesSet && isWithinTeeTimeWindow
     }
@@ -454,25 +604,68 @@ struct GroupManagerView: View {
         canStartRound || needsNextSchedule
     }
 
-    /// True when creator needs to schedule next round (non-recurring group with past tee time and completed rounds)
+    /// Kept as an alias of `buttonEnabled` so the styling helper stays
+    /// decoupled from any future where "tappable but looks disabled" returns.
+    /// Today: no difference — missing-scorer state is fully disabled, creator
+    /// taps the "Scorer" pill in the group card to fix.
+    private var buttonLooksActive: Bool { buttonEnabled || isLiveRound }
+
+    /// Quick Games require a Carry-user scorer per group. When one is missing
+    /// we surface the status in the main button so the creator's thumb lands
+    /// exactly where they'll try to tap. Returns the lowest zero-based group
+    /// index that's missing a scorer, or nil. Skins Groups (everyone-scores)
+    /// have no designated scorer to miss, so always nil there.
+    private var missingScorerGroupIndex: Int? {
+        guard isQuickGame, isCreator, !isLiveRound, !roundStarted else { return nil }
+        for (i, _) in groups.enumerated() where !groupHasValidScorer(index: i) {
+            return i
+        }
+        return nil
+    }
+
+    /// True when creator needs to schedule next round (non-recurring group with
+    /// completed rounds and no future tee time in ANY group slot). Using "any
+    /// future slot" instead of `teeTimes.first` avoids false positives when the
+    /// creator is in Group 2+ (Quick Games can place them in any slot) or when
+    /// Group 1's slot is a stale past time but the creator's slot is set.
     private var needsNextSchedule: Bool {
         if !isCreator { return false }
         if isLiveRound { return false }
         if roundHistory.isEmpty { return false }
         if buildRecurrence() != nil { return false }
-        if let firstTee = teeTimes.first, let t = firstTee {
-            return t < Date()
-        }
-        return true
+        let now = Date()
+        let hasFutureTee = teeTimes.contains { ($0.map { $0 > now }) ?? false }
+        return !hasFutureTee
     }
 
     private var startButtonLabel: String {
         if isLiveRound { return "Back to Scorecard" }
+        if let missing = missingScorerGroupIndex { return "Group \(missing + 1) needs scorer" }
         if needsNextSchedule { return "Schedule Next Round" }
         if activePlayerCount < 2 && hasPendingPlayers { return "Awaiting Invited Players..." }
         if activePlayerCount < 2 { return "Need 2+ Players" }
         if currentCourse == nil { return "Select a Course" }
         if needsTeeTimesSet { return "Set Tee Times to Start" }
+        // Tell the creator which specific group is short on players — more
+        // useful than a generic "Need more players" when the rest of the tee
+        // sheet is already valid. Single short group → name it; multiple →
+        // list. The button is disabled via canStartRound, this is just copy.
+        let short = shortPlayerGroups
+        if !short.isEmpty {
+            if short.count == 1 {
+                return "Add players to Group \(short[0])"
+            }
+            let groupList = short.map(String.init).joined(separator: ", ")
+            return "Add players to Groups \(groupList)"
+        }
+        // Block until every Group 2+ scorer has accepted (they're the only
+        // ones who can score their group — starting with a pending scorer
+        // leaves the group unscorable if the invite is never accepted).
+        if !pendingScorerWarnings.isEmpty {
+            return pendingScorerWarnings.count > 1
+                ? "Waiting for Scorers to Join"
+                : "Waiting for Scorer to Join"
+        }
         if !countdownText.isEmpty { return countdownText }
         return "Start Round"
     }
@@ -497,11 +690,30 @@ struct GroupManagerView: View {
     }
 
     private var leaderboardPlayers: [Player] {
-        // Only show players who actually participated (exclude pending)
-        let activePlayers = allAvailable.filter { !$0.isPendingAccept }
-        return activePlayers.sorted { a, b in
-            let aStats = cumulativeStats[a.id] ?? (skins: 0, won: 0)
-            let bStats = cumulativeStats[b.id] ?? (skins: 0, won: 0)
+        // Source the roster from `leaderboardRounds` so historical participants
+        // show up even when they're no longer current members — e.g. after a
+        // Quick Game → Group conversion, the original Quick Game players are
+        // 'invited' (pending) in the new group until they re-accept, and guest
+        // players may not exist in group_members at all. Prefer the player
+        // record from the current roster (has latest name/avatar) when both
+        // sources agree, falling back to the record embedded in the round.
+        let rosterById = Dictionary(uniqueKeysWithValues: allAvailable.map { ($0.id, $0) })
+        var playersById: [Int: Player] = [:]
+        for round in leaderboardRounds {
+            for player in round.players {
+                if playersById[player.id] == nil {
+                    playersById[player.id] = rosterById[player.id] ?? player
+                }
+            }
+        }
+        // Evaluate the computed property ONCE before sorting. Previously this
+        // was read inside the `.sorted` comparator, which re-ran the full
+        // O(rounds × players) aggregation for every pair-compare — N log N
+        // recomputes of an already-O(N) dictionary build.
+        let stats = cumulativeStats
+        return Array(playersById.values).sorted { a, b in
+            let aStats = stats[a.id] ?? (skins: 0, won: 0)
+            let bStats = stats[b.id] ?? (skins: 0, won: 0)
             if aStats.won != bStats.won { return aStats.won > bStats.won }
             if aStats.skins != bStats.skins { return aStats.skins > bStats.skins }
             return a.name < b.name
@@ -514,7 +726,8 @@ struct GroupManagerView: View {
     /// winners. All Time keeps every participant so standings stay complete.
     private var visibleLeaderboardPlayers: [Player] {
         guard leaderboardTab == 0 else { return leaderboardPlayers }
-        return leaderboardPlayers.filter { (cumulativeStats[$0.id]?.skins ?? 0) > 0 }
+        let stats = cumulativeStats
+        return leaderboardPlayers.filter { (stats[$0.id]?.skins ?? 0) > 0 }
     }
 
     private var hasPendingPlayers: Bool {
@@ -573,18 +786,27 @@ struct GroupManagerView: View {
                 return
             }
 
+            // Raw membership rows — needed for the row-ID-based "new
+            // member joined" toast baseline. Fetched outside MainActor.run
+            // so the `await` doesn't break the synchronous UI block below.
+            let activeMembershipRows = (try? await GroupService().fetchGroupMembers(groupId: groupId)) ?? []
+
             await MainActor.run {
-                // Update member statuses in-place if groups already exist (preserves order)
-                let freshById = Dictionary(uniqueKeysWithValues: freshGroup.members.filter { !recentlyRemovedIds.contains($0.id) }.compactMap { m -> (Int, Player)? in
-                    return (m.id, m)
-                })
                 let hadGroups = !groups.isEmpty && !groups.allSatisfy({ $0.isEmpty })
 
                 // Filter out players that were just manually removed (refresh race condition)
                 let filteredFreshMembers = freshGroup.members.filter { !recentlyRemovedIds.contains($0.id) }
                 allMembers = filteredFreshMembers
-                let sel = Set(filteredFreshMembers.map(\.id))
-                selectedIDs = sel
+                let memberIds = Set(filteredFreshMembers.map(\.id))
+                // Preserve the user's playing roster across refreshes. Previously
+                // we rebuilt selectedIDs from scratch on every refresh, which
+                // silently re-added anyone they'd deselected in Manage Members
+                // (the reported bug). Intersection keeps their selection stable
+                // while dropping IDs for members who left / were removed from
+                // the group. Newly joined members don't auto-opt into the round
+                // — they appear under "All Members" for the creator to add
+                // deliberately.
+                selectedIDs = selectedIDs.intersection(memberIds)
 
                 if hadGroups {
                     // Rebuild groups authoritatively from server's group_num so
@@ -596,23 +818,48 @@ struct GroupManagerView: View {
                     )
                     let scorerIdSet = Set(scorerIDs)
                     var newlyAcceptedScorers: [String] = []
-                    var newlyJoinedNames: [String] = []
 
                     for fresh in filteredFreshMembers {
                         if let prior = existingById[fresh.id] {
                             if prior.isPendingAccept && !fresh.isPendingAccept && scorerIdSet.contains(fresh.id) {
                                 newlyAcceptedScorers.append(fresh.name)
                             }
-                        } else if !isQuickGame && !fresh.isPendingAccept {
-                            let first = fresh.name.components(separatedBy: " ").first ?? fresh.name
-                            newlyJoinedNames.append(first)
                         }
                     }
 
                     let maxGroupNum = filteredFreshMembers.map(\.group).max() ?? 1
                     let targetCount = max(maxGroupNum, 1)
                     var rebuilt: [[Player]] = Array(repeating: [], count: targetCount)
+                    // Exclude pending players from the tee sheet display — they
+                    // live in the Manage sheet's Pending section. EXCEPTION:
+                    // if the creator has explicitly assigned a pending player
+                    // as scorer for their group, keep them visible. The
+                    // assignment IS the "playing today" signal — hiding them
+                    // would undo the creator's action and show "missing scorer"
+                    // on every refresh.
+                    //
+                    // Union local + server scorer IDs: on first open, the
+                    // local scorerIDs is seeded from `safeGrouped.first` (the
+                    // first player in each group's initial autoGroup), which
+                    // skipped pending players entirely. A pending scorer like
+                    // Ziggy in Group 2 wasn't in local scorerIDs yet → got
+                    // filtered out before the server sync at line 836+ could
+                    // remap them in. Including server's scorer_ids here keeps
+                    // the assigned-scorer exception working on first load.
+                    var scorerIdSetLocal = Set(scorerIDs)
+                    if let serverScorers = freshGroup.scorerIds {
+                        scorerIdSetLocal.formUnion(serverScorers)
+                    }
                     for fresh in filteredFreshMembers {
+                        let isPending = fresh.isPendingInvite || fresh.isPendingAccept
+                        let isAssignedScorer = scorerIdSetLocal.contains(fresh.id)
+                        guard !isPending || isAssignedScorer else { continue }
+                        // Honour the user's local swipe-deselects: only render
+                        // into the tee sheet if they're still selected. Without
+                        // this, the authoritative server rebuild resurrects any
+                        // player the creator just swiped off the sheet (they
+                        // remain an active group_members row server-side).
+                        guard selectedIDs.contains(fresh.id) else { continue }
                         let idx = max(0, min(fresh.group - 1, targetCount - 1))
                         rebuilt[idx].append(fresh)
                     }
@@ -625,14 +872,9 @@ struct GroupManagerView: View {
                         let first = name.components(separatedBy: " ").first ?? name
                         ToastManager.shared.success("\(first) accepted — ready to score")
                     }
-                    if let name = newlyJoinedNames.first, newlyJoinedNames.count == 1 {
-                        ToastManager.shared.success("\(name) joined the group")
-                    } else if newlyJoinedNames.count > 1 {
-                        ToastManager.shared.success("\(newlyJoinedNames.joined(separator: ", ")) joined the group")
-                    }
                 } else {
                     // First load — use autoGroup to set up initial arrangement
-                    let playing = filteredFreshMembers.filter { sel.contains($0.id) }
+                    let playing = filteredFreshMembers.filter { selectedIDs.contains($0.id) }
                     let regrouped = Self.autoGroup(playing)
                     let safeGrouped: [[Player]]
                     if regrouped.isEmpty || regrouped.allSatisfy({ $0.isEmpty }) {
@@ -643,17 +885,100 @@ struct GroupManagerView: View {
                     groups = safeGrouped
                 }
 
+                // Cross-session "new member joined" toast. The baseline is
+                // a per-group set of *membership row IDs* (not player UUIDs).
+                // Because `group_members.id` is regenerated on every insert,
+                // a user who leaves and rejoins gets a fresh row_id and
+                // fires the toast again — even if the creator's device
+                // never refreshed in the gap between leave and rejoin.
+                // A player-UUID baseline would have missed that edge case,
+                // since the UUID stays the same across leave/rejoin.
+                // On first visit no toast fires (baseline is established).
+                // Applies to both Skins Groups and Quick Games.
+                do {
+                    let seenKey = "seenActiveMemberRowIds_\(groupId.uuidString)"
+                    let currentRowIds = Set(
+                        activeMembershipRows
+                            .filter { $0.status == "active" }
+                            .map { $0.id.uuidString }
+                    )
+                    let previouslySeen = UserDefaults.standard.stringArray(forKey: seenKey).map(Set.init)
+                    if let prev = previouslySeen {
+                        let newlyJoinedRowIds = currentRowIds.subtracting(prev)
+                        // Map row IDs back to Player objects for the toast text.
+                        let newlyJoinedProfileIds = Set(
+                            activeMembershipRows
+                                .filter { newlyJoinedRowIds.contains($0.id.uuidString) }
+                                .map { $0.playerId }
+                        )
+                        let newlyJoinedPlayers = filteredFreshMembers.filter {
+                            guard let profileId = $0.profileId else { return false }
+                            return newlyJoinedProfileIds.contains(profileId)
+                        }
+                        for player in newlyJoinedPlayers {
+                            let first = player.name.components(separatedBy: " ").first ?? player.name
+                            ToastManager.shared.success("\(first) joined — tap Manage to add to tee sheet")
+                        }
+                    }
+                    UserDefaults.standard.set(Array(currentRowIds), forKey: seenKey)
+                }
+
                 let groupCount = max(groups.count, 1)
                 startingSides = Self.defaultSides(count: groupCount)
-                // Use saved scorer IDs from Supabase if available, otherwise
-                // leave empty and let syncScorerIDs pick a valid Carry user
-                // (or 0, which triggers the missing-scorer banner).
-                if let saved = freshGroup.scorerIds, !saved.isEmpty {
-                    scorerIDs = saved
-                } else {
-                    scorerIDs = []
+                // Scorer ID reconciliation — preserve local edits against the
+                // write-then-read race that was wiping assignments on refresh.
+                // Rules:
+                //  1. If a local save fired in the last 8s, trust local —
+                //     Supabase may not have propagated the write back yet.
+                //     Also SKIP syncScorerIDs entirely — the group rebuild
+                //     above uses server's group_num, which lags behind a
+                //     just-saved reorder and would falsely flag scorers as
+                //     "not in their group" and wipe them.
+                //  2. If server has a non-empty value, adopt it (normal case).
+                //  3. If server is empty AND local has assignments, keep local
+                //     (empty server almost always means "not yet saved" rather
+                //     than "explicitly cleared"; we never send empty intentionally).
+                //  4. If both empty, leave empty — syncScorerIDs picks defaults.
+                let recentlySaved: Bool = {
+                    guard let at = scorerIdsLastSavedAt else { return false }
+                    return Date().timeIntervalSince(at) < 8
+                }()
+                if !recentlySaved {
+                    if let saved = freshGroup.scorerIds, !saved.isEmpty {
+                        // Self-heal positional drift: scorer_ids is a server
+                        // positional array, but saveScorerIds + group_num sync
+                        // can race — `scorer_ids[i]` might point to a player
+                        // whose current group_num is j ≠ i. Rather than reading
+                        // positionally and wiping the "wrong-slot" entries via
+                        // syncScorerIDs, find each scorer's actual group and
+                        // place them at that position. This reconciles any
+                        // in-flight ordering inconsistency without data loss.
+                        var remapped: [Int] = Array(repeating: 0, count: groups.count)
+                        for scorerId in saved where scorerId != 0 {
+                            for (idx, group) in groups.enumerated() {
+                                if idx < remapped.count && group.contains(where: { $0.id == scorerId }) {
+                                    remapped[idx] = scorerId
+                                    break
+                                }
+                            }
+                        }
+                        scorerIDs = remapped
+                        #if DEBUG
+                        if remapped != saved {
+                            print("[refreshGroupData] Remapped scorer IDs by player location: server=\(saved) → remapped=\(remapped)")
+                        }
+                        #endif
+                    }
+                    // else: keep whatever local scorerIDs has (may be empty on
+                    // first load → syncScorerIDs will fill; may be populated →
+                    // protect it from being stomped by stale/unset server data).
+                    syncScorerIDs()
                 }
-                syncScorerIDs()
+                // When recentlySaved we skip syncScorerIDs — the local state
+                // was just explicitly set by the user (via scorer picker /
+                // PlayerGroupsSheet / tee-time reorder) and running the sync
+                // against the server-derived groups rebuild would re-introduce
+                // the stomp we're trying to prevent.
 
                 // Update tee time / schedule — recompute every refresh so
                 // members pick up changes the creator makes to schedule or
@@ -756,6 +1081,9 @@ struct GroupManagerView: View {
 
     private func saveScorerIds() {
         guard let groupId = supabaseGroupId else { return }
+        // Stamp the save BEFORE the async write fires so the next poll (which
+        // might land before the server acks) sees "recent save, keep local".
+        scorerIdsLastSavedAt = Date()
         Task {
             try? await GroupService().updateGroup(
                 groupId: groupId,
@@ -809,47 +1137,34 @@ struct GroupManagerView: View {
                     .accessibilityLabel("Leaderboard")
                     .accessibilityHint("Shows round and all-time leaderboard")
 
-                    // QR invite — creator only, and only once the group has
-                    // been persisted to Supabase (new groups get their ID on
-                    // first save). Without the ID there's no URL to encode.
-                    if isCreator && supabaseGroupId != nil {
+                    // QR invite — creator only, Premium only, and only once
+                    // the group has been persisted to Supabase (new groups get
+                    // their ID on first save). Hidden entirely in the gated
+                    // state; the empty-state screen handles the upsell.
+                    if isCreator && supabaseGroupId != nil && storeService.isPremium {
                         Button {
-                            if storeService.isPremium {
-                                showQRInvite = true
-                            } else {
-                                presentPaywall(.manageGroup)
-                            }
+                            showQRInvite = true
                         } label: {
-                            ZStack(alignment: .topTrailing) {
-                                Image(systemName: "qrcode")
-                                    .font(.system(size: 16, weight: .bold))
-                                    .foregroundColor(Color.textPrimary)
-                                    .frame(width: 40, height: 40)
-                                    .background(Circle().fill(.white))
-                                    .opacity(storeService.isPremium ? 1.0 : 0.5)
-
-                                if !storeService.isPremium {
-                                    Image("premium-crown")
-                                        .resizable()
-                                        .renderingMode(.template)
-                                        .scaledToFit()
-                                        .frame(width: 10, height: 10)
-                                        .foregroundColor(Color.goldAccent)
-                                        .padding(3)
-                                        .background(Circle().fill(Color.white))
-                                        .offset(x: 2, y: -2)
-                                        .accessibilityHidden(true)
-                                }
-                            }
+                            Image(systemName: "qrcode")
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundColor(Color.textPrimary)
+                                .frame(width: 40, height: 40)
+                                .background(Circle().fill(.white))
                         }
                         .accessibilityLabel("QR invite")
-                        .accessibilityHint(storeService.isPremium
-                            ? "Shows a scannable QR code to invite players"
-                            : "QR invite requires Premium subscription")
+                        .accessibilityHint("Shows a scannable QR code to invite players")
                     }
 
-                    // Group options button — creator only
-                    if isCreator {
+                    // Group options button. Three flavors:
+                    //   Creator + Premium → full settings sheet (game options,
+                    //     manage members, etc.). Unchanged from before.
+                    //   Creator + gated   → compact Menu with just "Delete Group"
+                    //     so exit stays accessible without the premium surface.
+                    //   Member (any role) → compact Menu with just "Leave Group",
+                    //     always visible. Members never need the settings sheet
+                    //     — the only action they ever take from the ⋯ menu is
+                    //     leaving the group, so surface that directly.
+                    if isCreator && storeService.isPremium {
                         Button {
                             showSettings = true
                         } label: {
@@ -861,6 +1176,26 @@ struct GroupManagerView: View {
                         }
                         .accessibilityLabel("Group settings")
                         .accessibilityHint("Opens game settings")
+                    } else if (isCreator && onDeleteGroup != nil) || (!isCreator && onLeaveGroup != nil) {
+                        Menu {
+                            Button(role: .destructive) {
+                                showLeaveDeleteAlert = true
+                            } label: {
+                                Label(
+                                    isCreator
+                                        ? (isQuickGame ? "Delete Game" : "Delete Group")
+                                        : (isQuickGame ? "Leave Game" : "Leave Group"),
+                                    systemImage: "trash"
+                                )
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis")
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundColor(Color.textPrimary)
+                                .frame(width: 40, height: 40)
+                                .background(Circle().fill(.white))
+                        }
+                        .accessibilityLabel(isCreator ? "Group options" : "Leave group")
                     }
                 }
                 .padding(.horizontal, 20)
@@ -1011,8 +1346,10 @@ struct GroupManagerView: View {
                     .padding(.horizontal, 20)
                     .padding(.bottom, 20)
                     .background(Color.bgPrimary)
+                    .opacity(storeService.isPremium ? 1.0 : 0.5)
                 }
 
+                if storeService.isPremium {
                 // "Tee Times" header — pinned above scroll
                 HStack {
                     Text("Tee Times")
@@ -1021,36 +1358,21 @@ struct GroupManagerView: View {
                     Spacer()
                     if isCreator && !isLiveRound && !roundStarted && selectedCount > 0 {
                         Button {
-                            if !storeService.isPremium {
-                                presentPaywall(.manageGroup)
-                            } else if isQuickGame {
+                            if isQuickGame {
                                 showPlayerGroups = true
                             } else {
                                 showManageMembers = true
                             }
                         } label: {
-                            HStack(spacing: 5) {
-                                Text("Invite & Manage")
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundColor(Color.textPrimary)
-                                if !storeService.isPremium {
-                                    Image("premium-crown")
-                                        .resizable()
-                                        .renderingMode(.template)
-                                        .scaledToFit()
-                                        .frame(width: 11, height: 11)
-                                        .foregroundColor(Color.goldAccent)
-                                        .accessibilityHidden(true)
-                                }
-                            }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 4)
-                            .background(Capsule().strokeBorder(Color.textPrimary, lineWidth: 1))
-                            .opacity(storeService.isPremium ? 1.0 : 0.6)
+                            Text("Invite & Manage")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(Color.textPrimary)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 4)
+                                .background(Capsule().strokeBorder(Color.textPrimary, lineWidth: 1))
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("Invite and manage players")
-                        .accessibilityHint(storeService.isPremium ? "" : "Requires Premium subscription")
                     }
                 }
                 .padding(.horizontal, 20)
@@ -1107,9 +1429,65 @@ struct GroupManagerView: View {
                     Spacer().frame(height: 100)
                 }
             }
+                }
+                // Gated state renders nothing in the main VStack after the
+                // meta info — the empty-state is a centered ZStack overlay
+                // below so it sits at true screen center, not just in the
+                // remaining space below the header.
             } // end floating header VStack
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
-            // CTA button pinned to bottom — all roles
+            // Gated empty-state — ZStack overlay centered on the full screen.
+            // Tee times are ephemeral per-round setup, so we hide them for
+            // lapsed users and surface a single clear upgrade CTA. Leaderboard
+            // + history remain free (read-only) via the chart button top-right.
+            if !storeService.isPremium {
+                VStack(spacing: 16) {
+                    VStack(spacing: 12) {
+                        Text("Your subscription has ended")
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundColor(Color.textPrimary)
+                            .multilineTextAlignment(.center)
+                        Text("Subscribe to start games, invite players, and keep your leaderboard going.")
+                            .font(.carry.bodySM)
+                            .foregroundColor(Color.textTertiary)
+                            .multilineTextAlignment(.center)
+                    }
+                    Button {
+                        // .general (no context line) — the empty-state copy
+                        // above already explains why the paywall is showing,
+                        // so "Managing groups is a Premium feature" would be
+                        // redundant. Inline gated buttons keep .manageGroup.
+                        presentPaywall(.general)
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image("premium-crown")
+                                .resizable()
+                                .renderingMode(.template)
+                                .scaledToFit()
+                                .frame(width: 16, height: 16)
+                                .foregroundColor(Color.goldAccent)
+                            Text("Upgrade to Premium")
+                                .font(.carry.bodyLGSemibold)
+                                .foregroundColor(Color.textPrimary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 52)
+                        .contentShape(Rectangle())
+                        .background(
+                            RoundedRectangle(cornerRadius: 14)
+                                .strokeBorder(Color.textPrimary, lineWidth: 1)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 4)
+                }
+                .padding(.horizontal, 24)
+            }
+
+            // CTA button pinned to bottom — all roles. Hidden in the gated
+            // state since the empty-state screen above carries the CTA.
+            if storeService.isPremium {
             VStack {
                 Spacer()
                 if isCreator {
@@ -1122,18 +1500,11 @@ struct GroupManagerView: View {
                             onBack?()
                         } else if needsNextSchedule {
                             showSettings = true
-                        } else if !storeService.isPremium {
-                            presentPaywall(.startRound)
                         } else {
-                            // Check for scorers in groups 2+ that haven't accepted yet
-                            let pending = pendingScorerWarnings
-                            if !pending.isEmpty {
-                                let names = pending.map { "Group \($0.group): \($0.name)" }.joined(separator: "\n")
-                                pendingScorersAlertMessage = "These scorers haven't accepted yet and won't be able to enter scores until they do:\n\n\(names)\n\nMake sure they tap the invite in Carry, or pick a different scorer."
-                                showPendingScorersAlert = true
-                            } else {
-                                Task { await startRoundWithHolesSafetyNet() }
-                            }
+                            // canStartRound already gates on pendingScorerWarnings,
+                            // so if we reached here every Group 2+ scorer has
+                            // accepted. Safe to start the round directly.
+                            Task { await startRoundWithHolesSafetyNet() }
                         }
                     } label: {
                         HStack(spacing: 10) {
@@ -1143,23 +1514,12 @@ struct GroupManagerView: View {
                             }
                             Text(startButtonLabel)
                                 .font(.carry.bodyLGSemibold)
-                            // Crown suffix shown when the tap will hit the
-                            // paywall — signals "this starts a round but
-                            // requires Premium" without disabling the button.
-                            if !storeService.isPremium && !isLiveRound && !needsNextSchedule && canStartRound {
-                                Image("premium-crown")
-                                    .resizable()
-                                    .renderingMode(.template)
-                                    .scaledToFit()
-                                    .frame(width: 14, height: 14)
-                                    .accessibilityHidden(true)
-                            }
                         }
-                        .foregroundColor(buttonEnabled ? .white : Color.textSecondary)
+                        .foregroundColor(buttonLooksActive ? .white : Color.textSecondary)
                         .frame(width: 322, height: 51)
                         .background(
                             RoundedRectangle(cornerRadius: 12)
-                                .fill(buttonEnabled ? Color.textPrimary : Color.borderMedium)
+                                .fill(buttonLooksActive ? Color.textPrimary : Color.borderMedium)
                         )
                     }
                     .disabled(!buttonEnabled)
@@ -1308,6 +1668,7 @@ struct GroupManagerView: View {
                     .padding(.bottom, 20)
                 }
             }
+            } // end isPremium CTA gate
         }
         .refreshable {
             #if DEBUG
@@ -1372,9 +1733,17 @@ struct GroupManagerView: View {
                     if let t = result.teeTime {
                         roundDate = t
                         if teeTimes.isEmpty { syncTeeTimes() }
-                        if !teeTimes.isEmpty { teeTimes[0] = t }
-                        autoFillTeeTimes(from: 0)
+                        if !teeTimes.isEmpty {
+                            let slot = currentUserSlotIndex
+                            teeTimes[slot] = t
+                            autoFillTeeTimes(from: slot)
+                        }
                         onTeeTimeChanged?(t)
+                        // Persist to `tee_times_json` server-side so other
+                        // devices (and a subsequent group refresh on this
+                        // device) see the updated times — otherwise the next
+                        // reload reverts the edit to stale Quick Game values.
+                        syncTeeTimesToSupabase()
                     }
                     if let course = result.changedCourse {
                         currentCourse = course
@@ -1457,14 +1826,42 @@ struct GroupManagerView: View {
         }
         .sheet(isPresented: $showQRInvite) {
             if let groupId = supabaseGroupId {
-                GroupInviteQRSheet(groupId: groupId, groupName: groupName)
-                    // Fitted height (~12 + 447 card + 24 + 56 btn + 24) so
-                    // there's no empty space between the card and the button.
-                    .presentationDetents([.height(590)])
+                GroupInviteQRSheet(groupId: groupId)
+                    // Fitted height matches the Figma 1222:35728 card:
+                    // 55 top + 90 logo + 41 gap + 282 QR + 32 bottom = 500
+                    // inside the card, plus 19 outer padding top/bottom = 538.
+                    // Add a few pt of breathing room so the card doesn't
+                    // squeeze and lose its horizontal margin.
+                    .presentationDetents([.height(560)])
                     .presentationDragIndicator(.visible)
                     .presentationBackground(.white)
             }
         }
+        .fullScreenCover(isPresented: $showFullScreenQR) {
+            if let groupId = supabaseGroupId {
+                FullScreenQRView(groupId: groupId, groupName: groupName)
+            }
+        }
+        #if !DEBUG
+        .onReceive(NotificationCenter.default.publisher(for: .deviceDidShake)) { _ in
+            // Release-only. In Debug the shake opens the Debug menu via
+            // CarryApp's listener — presenting this fullscreen cover at the
+            // same time would collide. Only trigger when we've got a real
+            // group to show a QR for (skip during course selection etc).
+            if supabaseGroupId != nil, !isLiveRound, isCreator {
+                showFullScreenQR = true
+            }
+        }
+        #else
+        .onReceive(NotificationCenter.default.publisher(for: .debugPreviewFullScreenQR)) { _ in
+            // Debug-only test hook: Debug menu → "Preview Fullscreen QR"
+            // posts this notification to simulate the shake behavior that
+            // ships in Release. Same guards as the Release path.
+            if supabaseGroupId != nil, !isLiveRound, isCreator {
+                showFullScreenQR = true
+            }
+        }
+        #endif
         .sheet(isPresented: $showSwapPicker) {
             swapPickerSheet
                 .presentationDetents([.medium])
@@ -1480,6 +1877,9 @@ struct GroupManagerView: View {
         .onChange(of: teeTimes) {
             // Persist first group's tee time back to SavedGroup
             onTeeTimeChanged?(teeTimes.first.flatMap { $0 })
+        }
+        .onChange(of: selectedIDs) { _, _ in
+            persistDeselectedForToday()
         }
         .sheet(item: $scorerPickerItem) { item in
             scorerPickerSheet(groupIndex: item.id)
@@ -1520,7 +1920,14 @@ struct GroupManagerView: View {
                     // Clear removed IDs — user explicitly saved new group arrangement,
                     // so any prior swipe-deletes are superseded by the new state.
                     recentlyRemovedIds.removeAll()
+                    // PlayerGroupsSheet persisted scorerIds to Supabase in its
+                    // own save path (not via saveScorerIds()), so stamp the
+                    // grace window here to protect the parent's local scorer
+                    // state from being stomped by the next 30s refresh before
+                    // the server write has replicated back.
+                    scorerIdsLastSavedAt = Date()
                     onTeeTimeChanged?(teeTimes.first.flatMap { $0 })
+                    syncTeeTimesToSupabase()
                     showPlayerGroups = false
                 },
                 onCancel: {
@@ -1606,10 +2013,14 @@ struct GroupManagerView: View {
                 selectedDayPill: $selectedDayPill,
                 onSet: {
                     if teeTimes.isEmpty { syncTeeTimes() }
-                    if !teeTimes.isEmpty { teeTimes[0] = roundDate }
-                    autoFillTeeTimes(from: 0)
+                    if !teeTimes.isEmpty {
+                        let slot = currentUserSlotIndex
+                        teeTimes[slot] = roundDate
+                        autoFillTeeTimes(from: slot)
+                    }
                     onTeeTimeChanged?(teeTimes.first.flatMap { $0 })
                     onRecurrenceChanged?(buildRecurrence())
+                    syncTeeTimesToSupabase()
                     showDatePicker = false
                     ToastManager.shared.success(scheduleMode == 1 ? "Schedule updated" : "Tee time updated")
                 },
@@ -1630,6 +2041,9 @@ struct GroupManagerView: View {
                 initialRepeatMode = repeatMode
                 initialSelectedDayPill = selectedDayPill
             }
+        }
+        .sheet(isPresented: $showPaywall) {
+            PaywallView(trigger: paywallTrigger)
         }
         .alert("Edit Name", isPresented: $showNameEditor) {
             TextField("Friday Skins", text: $editingName)
@@ -1677,13 +2091,24 @@ struct GroupManagerView: View {
         } message: {
             Text("Your game setup will be lost.")
         }
-        .alert("Scorer not yet joined", isPresented: $showPendingScorersAlert) {
-            Button("Cancel", role: .cancel) { }
-            Button("Start Anyway", role: .destructive) {
-                Task { await startRoundWithHolesSafetyNet() }
+        .alert(
+            "Remove \(pendingQuickGameRemoval?.player.shortName ?? "player") from game?",
+            isPresented: Binding(
+                get: { pendingQuickGameRemoval != nil },
+                set: { if !$0 { pendingQuickGameRemoval = nil } }
+            )
+        ) {
+            Button("Cancel", role: .cancel) {
+                pendingQuickGameRemoval = nil
+            }
+            Button("Remove", role: .destructive) {
+                if let pending = pendingQuickGameRemoval {
+                    removePlayer(pending.player, fromGroup: pending.groupIndex)
+                }
+                pendingQuickGameRemoval = nil
             }
         } message: {
-            Text(pendingScorersAlertMessage)
+            Text("They'll be removed from this Quick Game. If they were the scorer, you'll need to assign someone else.")
         }
         .onAppear {
             // Fresh load on appear and start 30s polling
@@ -1695,12 +2120,29 @@ struct GroupManagerView: View {
                 }
                 startDetailAutoRefresh()
             }
-            // Show share card sheet after quick game → group conversion
-            // Delayed to after first refreshGroupData so round history + winnings are loaded
-            if showInviteCrewOnAppear && allMembers.filter({ !$0.name.isEmpty }).count > 1 {
-                let refreshDelay: Double = isQuickGame ? 3.0 : 0
-                DispatchQueue.main.asyncAfter(deadline: .now() + refreshDelay + 1.5) {
-                    showShareCardSheet = true
+            // Pre-warm the QR code off the main thread so the first tap of
+            // the QR icon presents instantly. Cold-start cost is the CIContext
+            // GPU init + the initial CIQRCodeGenerator render — both ~hundreds
+            // of ms on first use. Generating it now (cached by payload + colors
+            // in QRCodeGenerator) means the sheet animates in with the image
+            // already ready.
+            if let groupId = supabaseGroupId {
+                Task.detached(priority: .utility) {
+                    _ = QRCodeGenerator.image(
+                        for: GroupInviteLink.url(for: groupId).absoluteString,
+                        foreground: UIColor(Color.successGreen),
+                        background: UIColor(Color.successBgLight)
+                    )
+                }
+            }
+            // Post-conversion "bring your crew" UX lives in the convert
+            // sheet's invite-crew phase in GroupsListView. When that sheet
+            // dismisses and the user lands here, auto-open the group name
+            // editor so they can give the auto-generated name a real name.
+            if showInviteCrewOnAppear && isCreator {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    editingName = groupName
+                    showNameEditor = true
                 }
             }
         }
@@ -1838,7 +2280,17 @@ struct GroupManagerView: View {
         )
         config.scorerProfileId = scorerProfileId
         config.scoringMode = scoringMode
+        config.isQuickGame = isQuickGame
         config.winningsDisplay = winningsDisplay
+        // Scorer's own tee time — resolved from teeTimes[] at the group index
+        // containing currentUserId. The creator (who owns this view) is the
+        // scorer of exactly one group; their scorecard header should show
+        // THAT group's time, not the round's earliest. Member devices build
+        // their own RoundConfig in RoundCoordinatorView and set this similarly.
+        if let idx = groupConfigs.firstIndex(where: { $0.playerIDs.contains(currentUserId) }),
+           idx < teeTimes.count {
+            config.scorerTeeTime = teeTimes[idx]
+        }
         return config
     }
 
@@ -1873,14 +2325,16 @@ struct GroupManagerView: View {
     private func removePlayer(_ player: Player, fromGroup groupIndex: Int) {
         guard groupIndex < groups.count else { return }
 
-        // Remove from this group + track so refresh doesn't re-merge
+        // Always remove from the visible tee-sheet group immediately.
         groups[groupIndex].removeAll { $0.id == player.id }
-        recentlyRemovedIds.insert(player.id)
-        allMembers.removeAll { $0.id == player.id }
-        selectedIDs.remove(player.id)
 
         if isQuickGame {
-            // Quick Game: hard delete from Supabase
+            // Quick Game: the tee sheet IS the roster — removing from the tee
+            // sheet means removing from the game. Hard delete from Supabase
+            // and drop from local member state.
+            recentlyRemovedIds.insert(player.id)
+            allMembers.removeAll { $0.id == player.id }
+            selectedIDs.remove(player.id)
             if let groupId = supabaseGroupId, let profileId = player.profileId {
                 Task {
                     do {
@@ -1904,24 +2358,14 @@ struct GroupManagerView: View {
                 }
             }
         } else {
-            // Regular group: mark as 'removed' in Supabase so refresh excludes them
-            if let groupId = supabaseGroupId, let profileId = player.profileId {
-                Task {
-                    do {
-                        try await GroupService().removeMember(groupId: groupId, playerId: profileId)
-                        #if DEBUG
-                        print("[removePlayer] ✅ Marked \(player.name) (\(profileId)) as removed in \(groupId)")
-                        #endif
-                    } catch {
-                        #if DEBUG
-                        print("[removePlayer] ❌ Failed to mark removed: \(error)")
-                        #endif
-                        await MainActor.run {
-                            ToastManager.shared.error("Failed to remove player")
-                        }
-                    }
-                }
-            }
+            // Regular group: swipe-from-tee-sheet removes the player from
+            // THIS round's roster only. They stay an active group member —
+            // still visible under Manage Members → All Members, can be added
+            // back to a later round. No server call, no allMembers mutation:
+            // just deselect so the tee sheet reflects the change. The refresh
+            // intersection preserves the deselection across polls. Exiting
+            // the group entirely is done via Manage Members, not swipe.
+            selectedIDs.remove(player.id)
         }
 
         // If group is now empty, remove the group
@@ -1966,7 +2410,17 @@ struct GroupManagerView: View {
                     .padding(.horizontal, 24)
                     .padding(.bottom, 20)
 
-                ForEach(groups[destIdx]) { destPlayer in
+                // Skins Groups in everyone-scores mode treat all players
+                // as equal — any of them can be swapped out. Quick Games
+                // (and legacy single-scorer Skins Groups) keep the scorer
+                // anchored, so the destination group's scorer is filtered
+                // out of the swap-out candidates.
+                let anchorScorer = isQuickGame || scoringMode != .everyone
+                let destScorerId = destIdx < scorerIDs.count ? scorerIDs[destIdx] : 0
+                let swapCandidates = anchorScorer
+                    ? groups[destIdx].filter { $0.id != destScorerId }
+                    : groups[destIdx]
+                ForEach(swapCandidates) { destPlayer in
                     let destPending = destPlayer.isPendingInvite || destPlayer.isPendingAccept
                     Button {
                         guard !destPending else { return }
@@ -2020,7 +2474,7 @@ struct GroupManagerView: View {
                     }
                     .buttonStyle(.plain)
 
-                    if destPlayer.id != groups[destIdx].last?.id {
+                    if destPlayer.id != swapCandidates.last?.id {
                         Rectangle()
                             .fill(Color.bgPrimary)
                             .frame(height: 1)
@@ -2174,6 +2628,12 @@ struct GroupManagerView: View {
                 // NEW earliest time (position 0 after the reorder), not the
                 // old first-slot time.
                 onTeeTimeChanged?(teeTimes.first.flatMap { $0 })
+                // Persist to `tee_times_json` so the per-cell edit survives
+                // a reload. Without this, a subsequent group refresh pulls
+                // stale server state back and `needsNextSchedule` flips
+                // true again, causing the "Schedule Next Round" button to
+                // re-appear instead of "Awaiting Invited Players…".
+                syncTeeTimesToSupabase()
                 showTeeTimePicker = false
                 ToastManager.shared.success("Tee time updated")
             } label: {
@@ -2194,6 +2654,7 @@ struct GroupManagerView: View {
                 teeTimes = Array(repeating: nil, count: teeTimes.count)
                 teeTimesLinked = false
                 consecutiveInterval = 0
+                syncTeeTimesToSupabase()
                 showTeeTimePicker = false
             } label: {
                 Text("Remove All Tee Times")
@@ -2228,16 +2689,17 @@ struct GroupManagerView: View {
                 .padding(.bottom, 20)
 
             if groupIndex < groups.count {
-                // Show group members if available, otherwise all confirmed members
-                let candidates = groups[groupIndex].isEmpty
-                    ? allAvailable.filter { !$0.isPendingInvite && !$0.isPendingAccept && $0.profileId != nil }
-                    : groups[groupIndex]
+                // Only confirmed Carry users can score — guests have no profile
+                // to attribute scores to, and pending users haven't accepted yet.
+                // If the current group's roster has no eligible scorer, fall back
+                // to the full group roster so the creator can pick someone who
+                // will join later.
+                let source = groups[groupIndex].isEmpty ? allAvailable : groups[groupIndex]
+                let candidates = source.filter(\.canScore)
                 ForEach(candidates) { player in
                     let isCurrentScorer = groupIndex < scorerIDs.count && scorerIDs[groupIndex] == player.id
-                    let isPending = player.isPendingInvite || player.isPendingAccept
 
                     Button {
-                        guard !isPending else { return }
                         // If the group is empty, add the player to it
                         if groups[groupIndex].isEmpty || !groups[groupIndex].contains(where: { $0.id == player.id }) {
                             groups[groupIndex].append(player)
@@ -2250,40 +2712,24 @@ struct GroupManagerView: View {
                             PlayerAvatar(player: player, size: 43)
 
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(player.isPendingInvite ? formatPhoneDisplay(player.phoneNumber) : player.shortName)
+                                Text(player.shortName)
                                     .font(.system(size: 19, weight: .semibold))
-                                    .foregroundColor(isPending ? Color.textPrimary.opacity(0.5) : Color.textPrimary)
+                                    .foregroundColor(Color.textPrimary)
                                     .lineLimit(1)
-                                if isPending {
-                                    Text("Pending")
-                                        .font(.system(size: 14))
-                                        .foregroundColor(Color.pendingFill)
-                                } else {
-                                    let pops: Int = {
-                                        if let tee = currentCourse?.teeBox {
-                                            return tee.playingHandicap(forIndex: player.handicap, percentage: handicapPercentage)
-                                        }
-                                        return Int(player.handicap.rounded())
-                                    }()
-                                    Text(pops != 0 ? "\(formatHandicap(player.handicap)) · \(pops > 0 ? "\(pops)" : "+\(abs(pops))")" : formatHandicap(player.handicap))
-                                        .font(.system(size: 14))
-                                        .foregroundColor(Color.textSecondary)
-                                }
+                                let pops: Int = {
+                                    if let tee = currentCourse?.teeBox {
+                                        return tee.playingHandicap(forIndex: player.handicap, percentage: handicapPercentage)
+                                    }
+                                    return Int(player.handicap.rounded())
+                                }()
+                                Text(pops != 0 ? "\(formatHandicap(player.handicap)) · \(pops > 0 ? "\(pops)" : "+\(abs(pops))")" : formatHandicap(player.handicap))
+                                    .font(.system(size: 14))
+                                    .foregroundColor(Color.textSecondary)
                             }
 
                             Spacer()
 
-                            if isPending {
-                                Text("Pending")
-                                    .font(.system(size: 12))
-                                    .foregroundColor(Color.pendingFill)
-                                    .padding(.horizontal, 7)
-                                    .padding(.vertical, 4)
-                                    .background(
-                                        Capsule().fill(Color.pendingBg)
-                                            .overlay(Capsule().strokeBorder(Color.pendingBorder, lineWidth: 1))
-                                    )
-                            } else if isCurrentScorer {
+                            if isCurrentScorer {
                                 Image(systemName: "checkmark.circle.fill")
                                     .font(.system(size: 22))
                                     .foregroundColor(Color.textPrimary)
@@ -2419,13 +2865,34 @@ struct GroupManagerView: View {
             // group full of guests (or one whose Carry-user scorer moved to
             // another group) has no valid scorer. Tap opens the Manage
             // sheet so the creator can search or SMS-invite one.
-            if needsScorer && isCreator && !isLiveRound && !roundStarted {
+            //
+            // Skins Groups run "everyone-scores" by default — there's no
+            // designated scorer to miss, so the banner would be a confusing
+            // false alarm when (for example) the creator swipes themselves
+            // off the sheet and only guests remain. Gate on single-scorer mode.
+            //
+            // Quick Games now surface this in the main CTA button text
+            // (`missingScorerGroupIndex` → "Group N needs scorer"), which is
+            // where the creator's thumb goes — so the pink banner would be
+            // redundant. Keep the banner only for single-scorer Skins Groups.
+            if needsScorer && isCreator && !isLiveRound && !roundStarted && scoringMode != .everyone && !isQuickGame {
                 missingScorerBanner(forGroup: index)
             }
 
             ForEach(players) { player in
-                SwipeToDeleteRow(enabled: isCreator && !isLiveRound && !roundStarted && player.id != currentUserId) {
-                    removePlayer(player, fromGroup: index)
+                // Self-swipe is only blocked for Quick Games (where swipe
+                // hard-deletes from group_members). In Skins Groups swipe
+                // just deselects from today's tee sheet — fully reversible
+                // via the member pool, so creator self-removal is safe.
+                SwipeToDeleteRow(enabled: isCreator && !isLiveRound && !roundStarted && !(isQuickGame && player.id == currentUserId)) {
+                    if isQuickGame {
+                        // Quick Game swipe hard-deletes — confirm first.
+                        pendingQuickGameRemoval = (player, index)
+                    } else {
+                        // Regular group swipe is non-destructive (deselect
+                        // from today's tee sheet only) — fire immediately.
+                        removePlayer(player, fromGroup: index)
+                    }
                 } content: {
                     VStack(spacing: 0) {
                         groupPlayerRow(player: player, groupIndex: index, isLast: player.id == players.last?.id)
@@ -2449,8 +2916,14 @@ struct GroupManagerView: View {
                 if dropTargetGroup == index,
                    let targetIdx = dropTargetIndex,
                    dragSourceGroup == index {
-                    let headerHeight: CGFloat = 50
-                    let rowHeight: CGFloat = 63
+                    // Measurements reflect the actual layout:
+                    //   Header: Menu button frame 29 + vertical padding 14×2 = 57pt
+                    //   + 1pt divider below header = 58pt to first row's top
+                    //   Row: avatar 38 + vertical padding 12×2 = 62pt
+                    // Previously 50 / 63 caused the drop line to sit ~8pt
+                    // above where it should, visually off-register with rows.
+                    let headerHeight: CGFloat = 58
+                    let rowHeight: CGFloat = 62
                     let y = headerHeight + CGFloat(targetIdx) * rowHeight
                     Capsule()
                         .fill(Color(hexString: "#4A90D9"))
@@ -2460,26 +2933,35 @@ struct GroupManagerView: View {
             }
             .allowsHitTesting(false)
         )
-        .onDrop(of: [.text], delegate: GroupDropDelegate(
-            groupIndex: index,
-            playerCount: players.count,
-            maxGroupSize: maxGroupSize,
-            dragSourceGroup: $dragSourceGroup,
-            dropTargetGroup: $dropTargetGroup,
-            dropTargetIndex: $dropTargetIndex,
-            dragPlayer: $dragPlayer,
-            groups: $groups,
-            startingSides: $startingSides,
-            teeTimes: $teeTimes,
-            scorerIDs: $scorerIDs,
-            showSwapPicker: $showSwapPicker,
-            pendingSwapPlayer: $pendingSwapPlayer,
-            pendingSwapFrom: $pendingSwapFrom,
-            pendingSwapTo: $pendingSwapTo,
-            syncTeeTimes: syncTeeTimes,
-            syncScorerIDs: syncScorerIDs,
-            syncSelectedTees: syncSelectedTees
-        ))
+        .applyIf(isCreator) { view in
+            view.onDrop(of: [.text], delegate: GroupDropDelegate(
+                groupIndex: index,
+                playerCount: players.count,
+                maxGroupSize: maxGroupSize,
+                // "Scorers are anchored" + full-group swap sheet only
+                // apply when scorers are structurally meaningful — i.e.
+                // Quick Games (one scorer per tee time) or legacy Skins
+                // Groups still on single-scorer mode. In everyone-scores
+                // mode (default for all v1 Skins Groups), every player is
+                // functionally equal and should drag freely.
+                scorerAnchored: isQuickGame || scoringMode != .everyone,
+                dragSourceGroup: $dragSourceGroup,
+                dropTargetGroup: $dropTargetGroup,
+                dropTargetIndex: $dropTargetIndex,
+                dragPlayer: $dragPlayer,
+                groups: $groups,
+                startingSides: $startingSides,
+                teeTimes: $teeTimes,
+                scorerIDs: $scorerIDs,
+                showSwapPicker: $showSwapPicker,
+                pendingSwapPlayer: $pendingSwapPlayer,
+                pendingSwapFrom: $pendingSwapFrom,
+                pendingSwapTo: $pendingSwapTo,
+                syncTeeTimes: syncTeeTimes,
+                syncScorerIDs: syncScorerIDs,
+                syncSelectedTees: syncSelectedTees
+            ))
+        }
     }
 
     // MARK: - Missing Scorer Banner
@@ -2637,7 +3119,7 @@ struct GroupManagerView: View {
 
                 Text(pops != 0 ? "\(formatHandicap(player.handicap)) · \(pops > 0 ? "\(pops)" : "+\(abs(pops))")" : formatHandicap(player.handicap))
                     .font(.system(size: 14))
-                    .foregroundColor(Color(hexString: "#BFC0C2"))
+                    .foregroundColor(Color.textSecondary)
                     .opacity(isPendingPlayer ? 0.7 : 1)
             }
 
@@ -2688,25 +3170,45 @@ struct GroupManagerView: View {
 
 
             if groupIndex < scorerIDs.count && scorerIDs[groupIndex] == player.id {
-                if isCreator && !isQuickGame {
-                    Button {
-                        scorerPickerItem = SheetItem(id: groupIndex)
-                    } label: {
-                        Text("Scorer")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(Color.textPrimary)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 4)
-                            .background(Capsule().strokeBorder(Color.textPrimary, lineWidth: 1))
-                    }
-                    .buttonStyle(.plain)
-                } else {
-                    Text("Scorer")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(Color.textPrimary)
+                // Hide the Scorer pill for Skins Groups when "everyone can
+                // score" is on — the pill implies a restriction that doesn't
+                // exist (any player can enter scores). Quick Games always
+                // show it (scorer is structurally the one with the app for
+                // that group). If the creator flips scoringMode back to
+                // .single, the pill returns.
+                let shouldShowPill = isQuickGame || scoringMode != .everyone
+                if shouldShowPill {
+                    let isCreatorRow = player.id == currentUserId
+                    if isCreator && !isQuickGame && !isCreatorRow {
+                        Button {
+                            scorerPickerItem = SheetItem(id: groupIndex)
+                        } label: {
+                            Text("Scorer")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(Color.textPrimary)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 4)
+                                .background(Capsule().strokeBorder(Color.textPrimary, lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        // Creator's own scorer pill is locked — add a lock icon
+                        // on the right to signal it can't be reassigned. The
+                        // creator always scores whichever group they're in.
+                        HStack(spacing: 5) {
+                            Text("Scorer")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(Color.textPrimary)
+                            if isCreatorRow {
+                                Image(systemName: "lock.fill")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundColor(Color.textPrimary)
+                            }
+                        }
                         .padding(.horizontal, 10)
                         .padding(.vertical, 4)
                         .background(Capsule().strokeBorder(Color.textPrimary, lineWidth: 1))
+                    }
                 }
             }
 
@@ -2721,11 +3223,16 @@ struct GroupManagerView: View {
         .padding(.vertical, 12)
         .contentShape(Rectangle())
         .opacity(1.0)
-        .onDrag(isCreator ? {
-            dragPlayer = player
-            dragSourceGroup = groupIndex
-            return NSItemProvider(object: String(player.id) as NSString)
-        } : { NSItemProvider() })
+        // Only creators can drag players between groups / reorder. Members
+        // see a static tee sheet — no drag affordance, no accidental
+        // rearrangement that would confuse the creator's source-of-truth.
+        .applyIf(isCreator) { view in
+            view.onDrag {
+                dragPlayer = player
+                dragSourceGroup = groupIndex
+                return NSItemProvider(object: String(player.id) as NSString)
+            }
+        }
 
         if !isLast {
             Rectangle()
@@ -2976,6 +3483,15 @@ struct GroupManagerView: View {
                 .fill(Color.bgPrimary)
                 .frame(height: 8)
 
+            Text("Stats")
+                .font(Font.system(size: 24, weight: .bold))
+                .foregroundColor(Color.textPrimary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 24)
+                .padding(.top, 20)
+                .padding(.bottom, 4)
+                .accessibilityAddTraits(.isHeader)
+
             VStack(spacing: 0) {
                 ForEach(Array(statsPlayers.enumerated()), id: \.element.id) { idx, player in
                     leaderboardStatsRow(player: player, lastRound: lastRound)
@@ -2984,7 +3500,7 @@ struct GroupManagerView: View {
                         Rectangle()
                             .fill(Color.borderFaint)
                             .frame(height: 1)
-                            .padding(.leading, 72)
+                            .padding(.leading, 82)
                             .padding(.trailing, 24)
                     }
                 }
@@ -3022,13 +3538,14 @@ struct GroupManagerView: View {
                 Spacer()
 
                 Text(moneyLabel(money))
-                    .font(.carry.bodyLGBold)
+                    .font(Font.system(size: 17, weight: .medium))
                     .monospacedDigit()
                     .foregroundColor(
                         money > 0 ? Color.goldMuted
                         : money < 0 ? Color.textDisabled
                         : Color.borderSoft
                     )
+                    .frame(width: 72, alignment: .trailing)
             }
 
             Group {
@@ -3040,7 +3557,7 @@ struct GroupManagerView: View {
                         Text("\u{00B7}")
                             .foregroundColor(Color.textDisabled)
                         Text("Holes \(holesList)")
-                            .foregroundColor(Color.textTertiary)
+                            .foregroundColor(Color.textPrimary)
                     }
                 } else {
                     Text("No Skins")
@@ -3050,7 +3567,7 @@ struct GroupManagerView: View {
             .font(.carry.bodySM)
             .padding(.leading, 50) // align under the name (38 avatar + 12 spacing)
         }
-        .padding(.horizontal, 18)
+        .padding(.horizontal, 24)
         .padding(.vertical, 12)
     }
 
@@ -3520,33 +4037,6 @@ struct GroupManagerView: View {
         ToastManager.shared.success("\(guest.name) added to \(groupName)")
     }
 
-    // MARK: - Move Player
-
-    private func movePlayer(_ player: Player, from sourceGroup: Int, to destGroup: Int) {
-        withAnimation(.easeOut(duration: 0.2)) {
-            guard sourceGroup < groups.count, destGroup < groups.count else { return }
-            // Don't allow moving the only player out of a group
-            if groups[sourceGroup].count == 1 {
-                ToastManager.shared.success("Remove the group to move the scorer")
-                return
-            }
-            groups[sourceGroup].removeAll { $0.id == player.id }
-            groups[destGroup].append(player)
-            // Remove empty groups
-            groups.removeAll { $0.isEmpty }
-            // Adjust starting sides array
-            while startingSides.count < groups.count {
-                startingSides.append(startingSides.count % 2 == 0 ? "front" : "back")
-            }
-            while startingSides.count > groups.count {
-                startingSides.removeLast()
-            }
-            syncTeeTimes()
-            syncScorerIDs()
-            syncSelectedTees()
-        }
-    }
-
     // MARK: - Move Group (reorder)
 
     private func moveGroup(from source: Int, to target: Int) {
@@ -3601,7 +4091,13 @@ struct GroupManagerView: View {
         withAnimation(.easeOut(duration: 0.2)) {
             groups = sortedOrder.map { groups[$0] }
             teeTimes = sortedOrder.map { teeTimes[$0] }
-            if scorerIDs.count == n { scorerIDs = sortedOrder.map { scorerIDs[$0] } }
+            if scorerIDs.count == n {
+                scorerIDs = sortedOrder.map { scorerIDs[$0] }
+                // Persist the new scorer order + stamp the grace window so a
+                // poll landing before the server write ack doesn't stomp the
+                // reorder with the old scorer-to-group mapping.
+                saveScorerIds()
+            }
             if startingSides.count == n { startingSides = sortedOrder.map { startingSides[$0] } }
             if selectedTees.count == n { selectedTees = sortedOrder.map { selectedTees[$0] } }
         }
@@ -4209,7 +4705,7 @@ struct GroupOptionsSheet: View {
                                 get: { Double(localBuyIn) ?? 0 },
                                 set: { localBuyIn = "\(Int($0))" }
                             ),
-                            in: 0...1000,
+                            in: 0...500,
                             step: 5
                         )
                         .tint(Color.goldAccent)
@@ -4280,8 +4776,12 @@ struct GroupOptionsSheet: View {
                     Text("When no one wins a hole outright, the skin carries over and adds to the next hole's value. The next outright winner takes all accumulated skins.\n\nWhen off, tied holes are dead — no carryover.")
                 }
 
-                // Scoring Mode (hidden for quick games — single scorer only)
-                if !isQuickGame {
+                // Scoring Mode (hidden for launch — we're shipping with
+                // "everyone can score" as the only Skins Group model. Quick
+                // Games still use single-scorer structurally. Leaving the
+                // underlying enum + state in place so the toggle can return
+                // later without a migration, but the UI is gone for v1.
+                if false, !isQuickGame {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Everyone Can Score")
                         .font(.carry.bodySMBold)
@@ -4399,6 +4899,12 @@ struct GroupDropDelegate: DropDelegate {
     let groupIndex: Int
     let playerCount: Int
     let maxGroupSize: Int
+    /// When true, scorers can't be dragged between groups and full-group
+    /// drops trigger the swap picker. When false, all players are
+    /// interchangeable — any drag lands freely, full groups reject drops
+    /// with a toast (no swap UI). v1 Skins Groups use everyone-scores so
+    /// this is false; Quick Games still have structural scorers.
+    let scorerAnchored: Bool
     @Binding var dragSourceGroup: Int?
     @Binding var dropTargetGroup: Int?
     @Binding var dropTargetIndex: Int?
@@ -4473,14 +4979,27 @@ struct GroupDropDelegate: DropDelegate {
             return true
         }
 
-        // Only player in source group — block the drag to preserve group structure
-        if groups[sourceGroup].count == 1 {
-            ToastManager.shared.success("Remove the group to move the scorer")
+        // Scorer anchoring — only applies when scorers are structurally
+        // meaningful (Quick Games, or legacy single-scorer Skins Groups).
+        // In everyone-scores mode (v1 default) every player is equal and
+        // can move freely between groups.
+        if scorerAnchored,
+           sourceGroup < scorerIDs.count,
+           scorerIDs[sourceGroup] == player.id {
+            ToastManager.shared.error("Scorers are anchored — change scorers in Manage Members.")
             resetDrag()
-            return true
+            return false
         }
 
-        // Full group — show swap picker, no move yet
+        // Single-player source drags are allowed — the not-full path
+        // below collapses the emptied source group via
+        // `groups.removeAll { $0.isEmpty }` and re-syncs parallel arrays.
+
+        // Full-group handling — open the swap picker so the user
+        // explicitly chooses who to bump out. The picker itself filters
+        // candidates based on `scorerAnchored`: Skins Groups (everyone
+        // equal) show all players, Quick Games exclude the anchored
+        // scorer from the swap-out list.
         if playerCount >= maxGroupSize {
             pendingSwapPlayer = player
             pendingSwapFrom = sourceGroup
@@ -4538,16 +5057,29 @@ private struct SwipeToDeleteRow<Content: View>: View {
     var body: some View {
         if enabled {
             ZStack(alignment: .trailing) {
-                // Delete button behind the row — centered vertically
+                // Delete button behind the row — only rendered while the row
+                // is revealed or actively swiping. Previously it sat behind
+                // every row full-time; when the user picked a row up via
+                // onDrag, SwiftUI lifts the content view off its slot and the
+                // trash button briefly showed through as a red flash on drop.
+                if isRevealed || offset < 0 {
                 HStack {
                     Spacer()
                     Button {
+                        // Collapse the swipe state immediately. The parent
+                        // owns whether the row actually goes away (regular
+                        // groups remove from the list; Quick Games confirm
+                        // first and may cancel). Previously we slid the row
+                        // off-screen before calling onDelete, which left the
+                        // cell stuck at offset=-500 when a Quick Game cancel
+                        // kept the player in place. Resetting to 0 on tap
+                        // avoids that stuck state and lets ForEach's natural
+                        // transition handle the disappearance on real delete.
                         withAnimation(.easeInOut(duration: 0.2)) {
-                            offset = -500 // slide off screen
+                            offset = 0
+                            isRevealed = false
                         }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                            onDelete()
-                        }
+                        onDelete()
                     } label: {
                         Image(systemName: "trash.fill")
                             .font(.system(size: 18, weight: .semibold))
@@ -4560,6 +5092,7 @@ private struct SwipeToDeleteRow<Content: View>: View {
                     }
                     .frame(width: deleteWidth)
                     .frame(maxHeight: .infinity)
+                }
                 }
 
                 // Main content — slides left on drag
@@ -4625,6 +5158,16 @@ enum GroupInviteLink {
 /// (good balance of compactness and scan tolerance) and optional tinting
 /// via `CIFalseColor` so the code can match brand colors.
 enum QRCodeGenerator {
+    /// Shared CIContext — creating one per call is hundreds of ms of cold-start
+    /// overhead and was causing the QR sheet to feel laggy on present. A single
+    /// global instance is the standard CoreImage pattern.
+    private static let ciContext = CIContext()
+
+    /// In-memory cache keyed on (payload, scale, fg, bg) so repeated body
+    /// re-evaluations for the same QR don't re-rasterize. SwiftUI calls the
+    /// view's body multiple times during layout/animation.
+    private static var cache: [String: UIImage] = [:]
+
     /// - Parameters:
     ///   - string: the payload to encode (URL string, text, etc.)
     ///   - scale: pixel multiplier per QR module (10 is crisp at 240pt display size)
@@ -4636,6 +5179,9 @@ enum QRCodeGenerator {
         foreground: UIColor = .black,
         background: UIColor = .white
     ) -> UIImage? {
+        let cacheKey = "\(string)|\(scale)|\(foreground.cgColor.components ?? [])|\(background.cgColor.components ?? [])"
+        if let cached = cache[cacheKey] { return cached }
+
         guard let data = string.data(using: .utf8) else { return nil }
         let generator = CIFilter(name: "CIQRCodeGenerator")
         generator?.setValue(data, forKey: "inputMessage")
@@ -4651,10 +5197,12 @@ enum QRCodeGenerator {
         tint?.setValue(CIColor(color: background), forKey: "inputColor1")
         guard let tinted = tint?.outputImage else { return nil }
 
-        guard let cgImage = CIContext().createCGImage(tinted, from: tinted.extent) else {
+        guard let cgImage = ciContext.createCGImage(tinted, from: tinted.extent) else {
             return nil
         }
-        return UIImage(cgImage: cgImage)
+        let image = UIImage(cgImage: cgImage)
+        cache[cacheKey] = image
+        return image
     }
 }
 
@@ -4699,84 +5247,112 @@ struct QRCodeView: View {
 /// flows use, so scanning it opens Carry directly for installed users
 /// (and falls through to the App Store page for non-installed users).
 ///
-/// Layout per Figma `1124:5297`:
-/// - Light-green rounded card (`successBgLight`, 38pt radius, 32pt padding)
-///   - "Scan to Join" title (24pt regular)
-///   - Dark-green QR on matching light-green background (271pt)
-/// - Dark "Done" button below the card (12pt radius, 56pt tall)
+/// Layout per Figma `1222:35728`: light-green rounded card with the Carry
+/// brand mark on top, a 282pt dark-green QR below, 41pt gap. No title, no
+/// group name — the brand + QR carry the moment. Users dismiss by swiping
+/// the sheet down (drag indicator visible).
 struct GroupInviteQRSheet: View {
     let groupId: UUID
-    let groupName: String
-    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        // Figma 1124:5297 — content-sized layout.
-        //   Card (19pt H margin, 32pt all-side padding, corner 38)
-        //     Title: "Scan to Join" 24pt reg + group name 26pt bold (14pt gap)
-        //     48pt gap → QR 271×271 dark-green on matching light-green
-        //   24pt gap
-        //   Done button (27pt H margin, 56pt tall, 12pt radius)
-        // Sheet uses `.height(...)` detent sized to fit content exactly, so
-        // there's no empty space below the button.
-        VStack(spacing: 24) {
-            // Card
-            VStack(spacing: 48) {
-                VStack(spacing: 14) {
-                    Text("Scan to Join")
-                        .font(.system(size: 24, weight: .regular))
-                        .foregroundColor(Color.textDark)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: .infinity)
+        VStack(spacing: 41) {
+            Image("carry-logo")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 128.669, height: 90.137)
+                .foregroundColor(Color.successGreen)
+                .accessibilityLabel("Carry")
 
-                    Text(groupName)
-                        .font(.system(size: 26, weight: .bold))
-                        .foregroundColor(Color.deepNavy)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: .infinity)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.8)
-                }
-
-                QRCodeView(
-                    string: GroupInviteLink.url(for: groupId).absoluteString,
-                    size: 271,
-                    foreground: UIColor(Color.greenDark),
-                    background: UIColor(Color.successBgLight)
-                )
-            }
-            .padding(32)
-            .frame(maxWidth: .infinity)
-            .background(
-                RoundedRectangle(cornerRadius: 38).fill(Color.successBgLight)
+            QRCodeView(
+                string: GroupInviteLink.url(for: groupId).absoluteString,
+                size: 282,
+                foreground: UIColor(Color.successGreen),
+                background: UIColor(Color.successBgLight)
             )
-            .padding(.horizontal, 19)
-
-            // Done button
-            Button {
-                dismiss()
-            } label: {
-                Text("Done")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 56)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12).fill(Color.textPrimary)
-                    )
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 27)
         }
-        .padding(.top, 12)
-        .padding(.bottom, 24)
+        .padding(.top, 55)
+        .padding(.bottom, 32)
+        .padding(.horizontal, 32)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 38).fill(Color.successBgLight)
+        )
+        .padding(19)
         .frame(maxWidth: .infinity)
     }
 }
 
 #if DEBUG
 #Preview("Group Invite QR") {
-    GroupInviteQRSheet(groupId: UUID(), groupName: "Ruby Hill Gc Skins")
+    GroupInviteQRSheet(groupId: UUID())
         .presentationDetents([.large])
+}
+#endif
+
+/// Fullscreen QR — triggered by shake-phone inside a group detail (Release
+/// only). Designed for the "multiple people crowd around my phone to scan"
+/// moment: Carry-branded light-green surface with the full-size QR centered,
+/// tap-anywhere to dismiss. No group name or "Scan to Join" text — the
+/// brand + QR do the job. Matches Figma node 1171:9486.
+struct FullScreenQRView: View {
+    let groupId: UUID
+    let groupName: String
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        ZStack {
+            Color.successBgLight.ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                Spacer().frame(height: 60)
+
+                // Carry logo (glyph + wordmark), tinted successGreen (#064102)
+                // to match the brand's darkest-green-on-light-green palette.
+                Image("carry-logo")
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(height: 146)
+                    .foregroundColor(Color.successGreen)
+                    .accessibilityLabel("Carry")
+
+                Spacer()
+
+                // Big QR — centered, sized to the narrower dimension with a
+                // margin. `.interpolation(.none)` in QRCodeView keeps modules
+                // sharp at any size. Green-on-green matches the brand surface.
+                GeometryReader { geo in
+                    let side = min(geo.size.width - 80, 320)
+                    QRCodeView(
+                        string: GroupInviteLink.url(for: groupId).absoluteString,
+                        size: side,
+                        foreground: UIColor(Color.successGreen),
+                        background: UIColor(Color.successBgLight)
+                    )
+                    .frame(width: geo.size.width, height: geo.size.height, alignment: .center)
+                }
+                .aspectRatio(1, contentMode: .fit)
+
+                Spacer()
+
+                Text("Tap anywhere to close")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(Color.successGreen)
+                    .padding(.bottom, 48)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { dismiss() }
+        // Request the screen stays bright & awake so the QR doesn't dim out
+        // while friends are scanning.
+        .onAppear { UIApplication.shared.isIdleTimerDisabled = true }
+        .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
+    }
+}
+
+#if DEBUG
+#Preview("Fullscreen QR") {
+    FullScreenQRView(groupId: UUID(), groupName: "Midweek Warriors")
 }
 #endif

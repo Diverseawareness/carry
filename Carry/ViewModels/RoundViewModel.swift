@@ -32,6 +32,17 @@ class RoundViewModel: ObservableObject {
     @Published var gameEvents: [GameEvent] = []
     @Published var activeProposal: (playerId: Int, holeNum: Int, original: Int, proposed: Int, proposedByUUID: UUID)? = nil
     @Published var roundWasCancelled = false
+    /// How the round ended, when it ended by the host. Drives member-side
+    /// alert copy: Cancel Round (hard delete) vs End Game (status=cancelled)
+    /// carry different UX intent and should read differently.
+    ///   .cancelled → creator tapped "Cancel Round" (round row deleted)
+    ///   .ended     → creator tapped "End Game"   (row stays, status=cancelled)
+    @Published var roundCancellationKind: RoundCancellationKind? = nil
+
+    enum RoundCancellationKind {
+        case cancelled  // hard delete (Cancel Round menu action)
+        case ended      // soft cancel (End Game menu action)
+    }
 
     /// When a proposal is active, no one can enter new scores until it's resolved.
     var isScoringBlocked: Bool { activeProposal != nil }
@@ -314,19 +325,8 @@ class RoundViewModel: ObservableObject {
         }
     }
 
-    // Allow scoring: (a) any hole already scored by a group player, or
-    // (b) holes at or before the active hole in play order.
     func canScore(holeNum: Int) -> Bool {
-        guard let active = activeHole else { return true }   // round complete → all editable
-
-        // Any hole that already has a score from a group player can be edited
-        let hasScore = groupPlayers.contains { scores[$0.id]?[holeNum] != nil }
-        if hasScore { return true }
-
-        // Otherwise, only allow holes up to and including the active hole
-        guard let activeIdx = playOrder.firstIndex(where: { $0.num == active }),
-              let holeIdx = playOrder.firstIndex(where: { $0.num == holeNum }) else { return true }
-        return holeIdx <= activeIdx
+        return true
     }
 
     // Clear a previously entered score
@@ -380,7 +380,13 @@ class RoundViewModel: ObservableObject {
                         holeNum: holeNum,
                         score: score
                     )
+                    #if DEBUG
+                    print("[Score.write] OK hole=\(holeNum) player=\(playerUUID) score=\(score)")
+                    #endif
                 } catch {
+                    #if DEBUG
+                    print("[Score.write] FAILED hole=\(holeNum) player=\(playerUUID) score=\(score) error=\(error)")
+                    #endif
                     // Network failed — queue for retry when connectivity returns
                     await SyncQueue.shared.enqueueScore(
                         roundId: roundId,
@@ -388,8 +394,15 @@ class RoundViewModel: ObservableObject {
                         holeNum: holeNum,
                         score: score
                     )
+                    #if DEBUG
+                    print("[Score.write] queued hole=\(holeNum) player=\(playerUUID) for retry")
+                    #endif
                 }
             }
+        } else {
+            #if DEBUG
+            print("[Score.write] SKIPPED — roundId=\(String(describing: config.supabaseRoundId)) playerUUID=\(String(describing: playerUUIDs[playerId]))")
+            #endif
         }
 
         checkForNewSkinWins()
@@ -483,6 +496,24 @@ class RoundViewModel: ObservableObject {
         }
     }
 
+    /// Clear `activeProposal` if the server state no longer reflects a live proposal.
+    /// The realtime subscription is supposed to clear it when the proposed_score
+    /// column is nulled, but events can be missed (backgrounded app, brief disconnect,
+    /// race on initial subscribe). Called from the 15s poll and initial load so any
+    /// missed resolution reconciles within one poll cycle instead of wedging scoring
+    /// forever via `isScoringBlocked`.
+    private func reconcileActiveProposal(from scoreDTOs: [ScoreDTO]) {
+        guard let proposal = activeProposal,
+              let playerUUID = playerUUIDs[proposal.playerId] else { return }
+        let match = scoreDTOs.first(where: { $0.playerId == playerUUID && $0.holeNum == proposal.holeNum })
+        if match == nil || match?.proposedScore == nil {
+            #if DEBUG
+            print("[RoundVM] reconcileActiveProposal: clearing stale local proposal hole=\(proposal.holeNum) player=\(proposal.playerId)")
+            #endif
+            activeProposal = nil
+        }
+    }
+
     // MARK: - Supabase Realtime
 
     /// Subscribe to realtime score changes from other players/scorers.
@@ -547,13 +578,18 @@ class RoundViewModel: ObservableObject {
                 if hadLocalScores {
                     let roundStillExists = (try? await roundService.fetchRoundById(roundId: roundId)) != nil
                     if !roundStillExists {
-                        await MainActor.run { roundWasCancelled = true }
+                        await MainActor.run {
+                            roundWasCancelled = true
+                            roundCancellationKind = .cancelled
+                        }
                     }
                 }
                 return
             }
 
             await MainActor.run {
+                reconcileActiveProposal(from: scoreDTOs)
+
                 var updated = false
                 for dto in scoreDTOs {
                     guard let intId = uuidToPlayerId[dto.playerId] else { continue }
@@ -644,13 +680,37 @@ class RoundViewModel: ObservableObject {
     /// A network failure returns false so the rest of the poll continues — offline must
     /// not kill the round.
     private func detectRemoteRoundEnd(roundId: UUID) async -> Bool {
-        guard let round = try? await roundService.fetchRoundById(roundId: roundId) else {
-            return false  // Network error or row gone — handled elsewhere.
+        let maybeRound: RoundDTO?
+        do {
+            maybeRound = try await roundService.fetchRoundById(roundId: roundId)
+        } catch {
+            // Network/transport error — don't conclude anything. Offline must
+            // not kill the round; next poll will retry.
+            return false
+        }
+
+        guard let round = maybeRound else {
+            // Query succeeded but the row doesn't exist — the round was
+            // hard-deleted server-side (creator tapped Cancel Round). Treat
+            // as cancelled regardless of whether this device has scored yet.
+            // Previously this case relied on the score-empty path, which was
+            // gated on `hadLocalScores` and silently missed cancellations for
+            // members who hadn't entered a score yet.
+            await MainActor.run {
+                if !self.roundWasCancelled {
+                    self.roundWasCancelled = true
+                    self.roundCancellationKind = .cancelled
+                }
+            }
+            return true
         }
 
         if round.status == "cancelled" {
             await MainActor.run {
-                if !self.roundWasCancelled { self.roundWasCancelled = true }
+                if !self.roundWasCancelled {
+                    self.roundWasCancelled = true
+                    self.roundCancellationKind = .ended
+                }
             }
             return true
         }
@@ -776,6 +836,8 @@ class RoundViewModel: ObservableObject {
 
             // Merge Supabase scores into local scores
             await MainActor.run {
+                reconcileActiveProposal(from: scoreDTOs)
+
                 var updated = false
                 for dto in scoreDTOs {
                     guard let intId = uuidToPlayerId[dto.playerId] else { continue }
@@ -1019,7 +1081,17 @@ class RoundViewModel: ObservableObject {
         // holes presence before mounting the scorecard, so this should never be empty.
         let resolved = config.holes ?? config.teeBox?.holes ?? []
         if resolved.isEmpty {
+            // RoundCoordinatorView gates on holes presence before mounting
+            // the scorecard, so this path should be unreachable. Keep the
+            // assertion for dev-time visibility, and log via NSLog for
+            // crash-report traceability in Release (assertionFailure is a
+            // silent no-op in optimized builds, so the Release log is the
+            // only signal a user-facing break could ever surface).
+            #if DEBUG
             assertionFailure("RoundViewModel mounted without holes — RoundCoordinatorView should have blocked this")
+            #else
+            NSLog("[RoundViewModel] ⚠️ Mounted without holes — upstream gate failure, scorecard will be non-functional")
+            #endif
         }
         self.holes = resolved
         #if DEBUG

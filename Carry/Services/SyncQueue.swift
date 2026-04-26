@@ -15,11 +15,18 @@ final class SyncQueue: ObservableObject {
     private let monitor = NWPathMonitor()
     private let monitorQueue = DispatchQueue(label: "carry.network.monitor")
     private var retryTask: Task<Void, Never>?
+    private var periodicRetryTask: Task<Void, Never>?
     private let roundService = RoundService()
+
+    /// How often to re-attempt the queue while the app is in the foreground.
+    /// Short enough that a scorer won't finish a hole with stale data queued,
+    /// long enough not to hammer Supabase during a flaky-signal scroll.
+    private let periodicRetryInterval: Duration = .seconds(30)
 
     private init() {
         loadQueue()
         startMonitoring()
+        startPeriodicRetry()
         // Flush queued scores when app returns to foreground
         NotificationCenter.default.addObserver(
             forName: UIApplication.willEnterForegroundNotification,
@@ -28,6 +35,26 @@ final class SyncQueue: ObservableObject {
             Task { @MainActor in
                 guard let self, self.pendingCount > 0, self.isOnline else { return }
                 self.flushQueue()
+            }
+        }
+    }
+
+    /// Foreground retry loop. Without this the queue only flushed on
+    /// foreground/network transitions — a score that failed while the user
+    /// kept the app open and online would sit unsynced until they
+    /// backgrounded the app, meaning the round could finalize with missing
+    /// scores. The loop attempts a flush every 30s whenever there's pending
+    /// work, so the indicator can't persist past that window.
+    private func startPeriodicRetry() {
+        periodicRetryTask?.cancel()
+        periodicRetryTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: self?.periodicRetryInterval ?? .seconds(30))
+                if Task.isCancelled { return }
+                await MainActor.run {
+                    guard let self, self.pendingCount > 0, self.isOnline else { return }
+                    self.flushQueue()
+                }
             }
         }
     }

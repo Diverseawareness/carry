@@ -198,6 +198,12 @@ struct CourseSelectionView: View {
                     .fill(.white)
                     .shadow(color: .black.opacity(0.03), radius: 4, y: 1)
             )
+            .overlay(
+                // Matches the tee-row stroke — subtle grey border so white
+                // cards read as distinct from the white sheet background.
+                RoundedRectangle(cornerRadius: 16)
+                    .strokeBorder(Color.borderLight, lineWidth: 1)
+            )
             .padding(.horizontal, 16)
             .padding(.bottom, 6)
         }
@@ -304,6 +310,12 @@ struct CourseSelectionView: View {
                 RoundedRectangle(cornerRadius: 16)
                     .fill(.white)
                     .shadow(color: .black.opacity(0.03), radius: 4, y: 1)
+            )
+            .overlay(
+                // Matches the tee-row stroke — subtle grey border so white
+                // cards read as distinct from the white sheet background.
+                RoundedRectangle(cornerRadius: 16)
+                    .strokeBorder(Color.borderLight, lineWidth: 1)
             )
             .padding(.horizontal, 16)
             .padding(.bottom, 6)
@@ -451,6 +463,13 @@ struct CourseSelectionView: View {
                 RoundedRectangle(cornerRadius: 16)
                     .fill(.white)
                     .shadow(color: .black.opacity(0.03), radius: 4, y: 1)
+            )
+            .overlay(
+                // Thin border — the shadow alone doesn't separate white
+                // cards from the white sheet background; a subtle stroke
+                // makes each tee card visually distinct.
+                RoundedRectangle(cornerRadius: 16)
+                    .strokeBorder(Color.borderLight, lineWidth: 1)
             )
             .padding(.horizontal, 16)
             .padding(.bottom, 6)

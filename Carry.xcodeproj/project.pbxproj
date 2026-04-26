@@ -89,6 +89,7 @@
 		F50099 /* CarryColors.swift in Sources */ = {isa = PBXBuildFile; fileRef = F60099 /* CarryColors.swift */; };
 		F70001 /* ImageCropView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F80001 /* ImageCropView.swift */; };
 		F70002 /* CameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F80002 /* CameraView.swift */; };
+		QR0001 /* QRScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = QR0002 /* QRScannerView.swift */; };
 		F90001 /* ANDONESI.ttf in Resources */ = {isa = PBXBuildFile; fileRef = F90002 /* ANDONESI.ttf */; };
 		F90003 /* ManageMembersSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F90004 /* ManageMembersSheet.swift */; };
 		GS0001 /* GroupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = GS0002 /* GroupService.swift */; };
@@ -210,6 +211,7 @@
 		F60099 /* CarryColors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarryColors.swift; sourceTree = "<group>"; };
 		F80001 /* ImageCropView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageCropView.swift; sourceTree = "<group>"; };
 		F80002 /* CameraView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraView.swift; sourceTree = "<group>"; };
+		QR0002 /* QRScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRScannerView.swift; sourceTree = "<group>"; };
 		F90002 /* ANDONESI.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = ANDONESI.ttf; sourceTree = "<group>"; };
 		F90004 /* ManageMembersSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManageMembersSheet.swift; sourceTree = "<group>"; };
 		FC29B0CF11FF413AA819A069 /* GolfCourseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GolfCourseService.swift; sourceTree = "<group>"; };
@@ -407,6 +409,7 @@
 				D20009 /* LaunchSplashView.swift */,
 				F80001 /* ImageCropView.swift */,
 				F80002 /* CameraView.swift */,
+				QR0002 /* QRScannerView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -684,6 +687,7 @@
 				F50002 /* DebugScenario.swift in Sources */,
 				F70001 /* ImageCropView.swift in Sources */,
 				F70002 /* CameraView.swift in Sources */,
+				QR0001 /* QRScannerView.swift in Sources */,
 				602CE3392F735F7C0028D0AF /* ScoringInfoModal.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -772,7 +776,7 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 48;
+				CURRENT_PROJECT_VERSION = 49;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = CarryWidgets/Info.plist;
@@ -809,7 +813,7 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 48;
+				CURRENT_PROJECT_VERSION = 49;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = CarryWidgets/Info.plist;
@@ -844,7 +848,7 @@
 				CODE_SIGN_ENTITLEMENTS = Carry/Carry.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 48;
+				CURRENT_PROJECT_VERSION = 49;
 				INFOPLIST_FILE = Carry/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -872,7 +876,7 @@
 				CODE_SIGN_ENTITLEMENTS = Carry/Carry.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 48;
+				CURRENT_PROJECT_VERSION = 49;
 				INFOPLIST_FILE = Carry/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;

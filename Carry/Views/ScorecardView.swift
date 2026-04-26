@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ScorecardView: View {
     @EnvironmentObject var storeService: StoreService
+    @EnvironmentObject var appRouter: AppRouter
 
     let config: RoundConfig
     @State private var isViewer: Bool
@@ -31,6 +32,12 @@ struct ScorecardView: View {
     @State private var showGameEndedAlert = false
     // Generic failure alert for End Game network/server errors (offline, auth, etc.)
     @State private var showEndGameFailedAlert = false
+    /// Set to a short status string while a destructive menu action (Cancel
+    /// Round / End Game / End & Save Results) is in flight. Drives a full-
+    /// screen blocking overlay so the user gets feedback that something's
+    /// happening — and can't re-tap — on flaky networks where the Supabase
+    /// call might take several seconds to either succeed or fail.
+    @State private var menuActionInFlight: String? = nil
     @State private var showCourseSelector = false
     @State private var showScorerPicker = false
     @State private var activeToast: GameEvent?
@@ -39,6 +46,22 @@ struct ScorecardView: View {
     @State private var showPaywall = false
 
     private static let scoringInfoKeyPrefix = "scoringInfoShownCount"
+
+    /// Time-only formatter for the scorer's tee time in the header subtitle.
+    /// Matches the "12:28 PM" format used elsewhere (group detail meta info).
+    static let teeTimeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.timeStyle = .short
+        f.dateStyle = .none
+        return f
+    }()
+
+    /// Truncate long course names so the header subtitle doesn't wrap or
+    /// crowd the tee time + tee box elements. "Ruby Hill GC" = 12 chars is
+    /// the reference width; anything longer gets an ellipsis.
+    private static func truncatedCourse(_ name: String, max: Int = 12) -> String {
+        name.count <= max ? name : String(name.prefix(max)) + "…"
+    }
 
     let currentUserId: Int
 
@@ -180,6 +203,32 @@ struct ScorecardView: View {
                 .zIndex(10)
             }
         }
+        .overlay {
+            if let label = menuActionInFlight {
+                ZStack {
+                    Color.black.opacity(0.35).ignoresSafeArea()
+                    VStack(spacing: 14) {
+                        ProgressView()
+                            .progressViewStyle(.circular)
+                            .scaleEffect(1.1)
+                        Text(label)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(Color.textPrimary)
+                    }
+                    .padding(.horizontal, 28)
+                    .padding(.vertical, 24)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(.regularMaterial)
+                    )
+                }
+                .transition(.opacity)
+                .zIndex(20)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(label)
+            }
+        }
+        .animation(.easeInOut(duration: 0.18), value: menuActionInFlight)
         .onReceive(viewModel.$myGroupFinished) { finished in
             if finished && !showRoundComplete {
                 withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
@@ -195,10 +244,12 @@ struct ScorecardView: View {
             Button("Keep Playing", role: .cancel) { }
             Button("Cancel Round", role: .destructive) {
                 Task {
+                    await MainActor.run { menuActionInFlight = "Cancelling round…" }
                     if let roundId = viewModel.config.supabaseRoundId {
                         try? await RoundService().deleteRound(roundId: roundId)
                     }
                     await MainActor.run {
+                        menuActionInFlight = nil
                         NotificationCenter.default.post(name: .didCancelRound, object: nil)
                         onBack?()
                     }
@@ -215,19 +266,34 @@ struct ScorecardView: View {
                         await MainActor.run { showEndGameFailedAlert = true }
                         return
                     }
+                    await MainActor.run { menuActionInFlight = "Ending game…" }
                     do {
                         try await RoundService().endGameDestructively(roundId: roundId)
+                        // Quick Games have no life beyond the current round —
+                        // ending the game should also remove the skins_groups
+                        // row so it stops showing in everyone's Games tab.
+                        // Skins Groups keep their group entity; only the round
+                        // is cancelled.
+                        if isQuickGame, let groupId = viewModel.config.supabaseGroupId {
+                            try? await GroupService().deleteGroup(groupId: groupId)
+                        }
                         await MainActor.run {
+                            menuActionInFlight = nil
                             NotificationCenter.default.post(name: .didCancelRound, object: nil)
                             onBack?()
                         }
                     } catch {
-                        await MainActor.run { showEndGameFailedAlert = true }
+                        await MainActor.run {
+                            menuActionInFlight = nil
+                            showEndGameFailedAlert = true
+                        }
                     }
                 }
             }
         } message: {
-            Text("This will delete the game and all scores for everyone. All participants will be notified.")
+            Text(isQuickGame
+                ? "This will delete the Quick Game and all scores for everyone. All participants will be notified."
+                : "This will delete the round and all scores for everyone. All participants will be notified.")
         }
         .alert("End Game & Save Results?", isPresented: $showEndGameSaveAlert) {
             Button("Keep Playing", role: .cancel) { }
@@ -237,12 +303,14 @@ struct ScorecardView: View {
                         await MainActor.run { showEndGameFailedAlert = true }
                         return
                     }
+                    await MainActor.run { menuActionInFlight = "Saving results…" }
                     do {
                         try await RoundService().forceEndRoundWithResults(roundId: roundId)
                         if let groupId = viewModel.config.supabaseGroupId {
                             await GroupService().advanceScheduledDateIfRecurring(groupId: groupId)
                         }
                         await MainActor.run {
+                            menuActionInFlight = nil
                             viewModel.forceCompleted = true
                             viewModel.calculateSkins()
                             NotificationCenter.default.post(name: .didEndRound, object: nil)
@@ -252,7 +320,10 @@ struct ScorecardView: View {
                             }
                         }
                     } catch {
-                        await MainActor.run { showEndGameFailedAlert = true }
+                        await MainActor.run {
+                            menuActionInFlight = nil
+                            showEndGameFailedAlert = true
+                        }
                     }
                 }
             }
@@ -261,12 +332,42 @@ struct ScorecardView: View {
                  ? "This will end the game and save final results for everyone. All participants will be notified."
                  : "This will end the game for all groups and save results with whatever scores exist. Skins will be calculated from completed holes. All participants will be notified.")
         }
-        .alert("Game Ended", isPresented: $showGameEndedAlert) {
+        .alert(
+            viewModel.roundCancellationKind == .cancelled ? "Round Cancelled" : "Game Ended",
+            isPresented: $showGameEndedAlert
+        ) {
             Button("OK") {
+                // After a cancel (round deleted, group preserved), route
+                // members straight to the Quick Game detail view so they
+                // land somewhere useful instead of the Home tab with a
+                // vanished card. End Game (group removed) and creator
+                // actions keep the normal exit path — the group no longer
+                // exists / they're the one who chose to leave.
+                let isMember = viewModel.config.creatorId.map { $0 != currentUserId } ?? false
+                if viewModel.roundCancellationKind == .cancelled,
+                   isMember,
+                   isQuickGame,
+                   let groupId = viewModel.config.supabaseGroupId {
+                    appRouter.navigateToTab = "skinGames"
+                    appRouter.pendingRoundGroupId = groupId
+                }
                 onBack?()
             }
         } message: {
-            Text("The host ended this game. No scores were saved.")
+            Text({
+                switch viewModel.roundCancellationKind {
+                case .cancelled:
+                    return isQuickGame
+                        ? "The host cancelled this round. No scores were saved — they can start a new round anytime."
+                        : "The host cancelled this round. No scores were saved."
+                case .ended:
+                    return isQuickGame
+                        ? "The host ended this game. The Quick Game was removed and no scores were saved."
+                        : "The host ended this game. No scores were saved."
+                case .none:
+                    return "The round has ended."
+                }
+            }())
         }
         .alert("Couldn't End Game", isPresented: $showEndGameFailedAlert) {
             Button("OK", role: .cancel) { }
@@ -405,7 +506,15 @@ struct ScorecardView: View {
                     }
                 }
                 HStack(spacing: 4) {
-                    Text(config.course)
+                    if let teeTime = config.scorerTeeTime {
+                        Text(Self.teeTimeFormatter.string(from: teeTime))
+                            .font(.carry.caption)
+                            .foregroundColor(Color.textSecondary)
+                        Text("·")
+                            .font(.carry.caption)
+                            .foregroundColor(Color.textDisabled)
+                    }
+                    Text(Self.truncatedCourse(config.course))
                         .font(.carry.caption)
                         .foregroundColor(Color.textSecondary)
                     if let tee = config.teeBox {
@@ -448,7 +557,10 @@ struct ScorecardView: View {
                     // whole flow back to setup phase which is a footgun while scores
                     // exist. onEditPlayers prop kept for future lighter edit paths.
 
-                    if isRoundCreator && !isQuickGame {
+                    // Change Scorer is meaningless in "everyone scores" mode —
+                    // there's no single designated scorer to swap. Only surface
+                    // it for Skins Groups running the single-scorer variant.
+                    if isRoundCreator && !isQuickGame && config.scoringMode != .everyone {
                         Button {
                             showScorerPicker = true
                         } label: {
@@ -605,10 +717,33 @@ struct ScorecardView: View {
                 circleSize: layout.circleSize,
                 isYou: isYou,
                 onTapCell: { holeNum, p in
-                    guard !isViewer else { return }
-                    guard !viewModel.isScoringBlocked else { return }
-                    guard !showRoundComplete || roundCompleteCollapsed else { return }
-                    guard viewModel.canScore(holeNum: holeNum) else { return }
+                    if isViewer {
+                        #if DEBUG
+                        print("[Scorecard.tap] BLOCKED isViewer=true scoringMode=\(config.scoringMode) passedIsViewer=unknown hole=\(holeNum) player=\(p.id)")
+                        #endif
+                        return
+                    }
+                    if viewModel.isScoringBlocked {
+                        #if DEBUG
+                        print("[Scorecard.tap] BLOCKED isScoringBlocked activeProposal=\(String(describing: viewModel.activeProposal)) hole=\(holeNum) player=\(p.id)")
+                        #endif
+                        return
+                    }
+                    if showRoundComplete && !roundCompleteCollapsed {
+                        #if DEBUG
+                        print("[Scorecard.tap] BLOCKED showRoundComplete=true collapsed=\(roundCompleteCollapsed) hole=\(holeNum) player=\(p.id)")
+                        #endif
+                        return
+                    }
+                    if !viewModel.canScore(holeNum: holeNum) {
+                        #if DEBUG
+                        print("[Scorecard.tap] BLOCKED canScore=false hole=\(holeNum) player=\(p.id)")
+                        #endif
+                        return
+                    }
+                    #if DEBUG
+                    print("[Scorecard.tap] OK hole=\(holeNum) player=\(p.id) scoringMode=\(config.scoringMode)")
+                    #endif
                     inputHole = holeNum
                     inputPlayer = p
                     sheetDrag = 0

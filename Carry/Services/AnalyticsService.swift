@@ -62,6 +62,18 @@ enum Analytics {
         PostHogSDK.shared.capture("onboarding_completed")
     }
 
+    // MARK: - Email Events
+
+    static func welcomeEmailSent() {
+        PostHogSDK.shared.capture("welcome_email_sent")
+    }
+
+    static func welcomeEmailFailed(reason: String) {
+        PostHogSDK.shared.capture("welcome_email_failed", properties: [
+            "reason": reason
+        ])
+    }
+
     // MARK: - Scorecard Events
 
     static func scorecardOpened(groupName: String) {

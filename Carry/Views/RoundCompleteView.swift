@@ -112,7 +112,10 @@ struct RoundCompleteView: View {
             // Bottom sheet
             if showSheet {
                 VStack(spacing: 0) {
-                    // Rounded content area
+                    // Rounded content area. Shadow is scoped to this view
+                    // (not the outer VStack) so it only casts off the top
+                    // rounded edge of the sheet when collapsed — the white
+                    // safe-area extension below stays shadow-free.
                     sheetContainer
                         .background(Color.white)
                         .clipShape(
@@ -124,12 +127,12 @@ struct RoundCompleteView: View {
                                 style: .continuous
                             )
                         )
+                        .shadow(color: isCollapsed ? .black.opacity(0.09) : .clear, radius: 10, y: -2)
 
                     // Plain white fill extending into bottom safe area
                     Color.white
                         .frame(height: 50)
                 }
-                .shadow(color: isCollapsed ? .black.opacity(0.08) : .clear, radius: 12, y: -4)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .gesture(sheetDragGesture)
             }
@@ -202,17 +205,19 @@ struct RoundCompleteView: View {
                 VStack(spacing: 12) {
                     Button {
                         if storeService.isPremium {
-                            // Mark round as completed before converting to group
-                            if let roundId = viewModel.config.supabaseRoundId {
-                                Task {
-                                    try? await RoundService().updateRoundStatus(roundId: roundId, status: "completed")
-                                    if let groupId = viewModel.config.supabaseGroupId {
-                                        await GroupService().advanceScheduledDateIfRecurring(groupId: groupId)
-                                    }
+                            showCreateGroupCard = false
+                            let roundId = viewModel.config.supabaseRoundId
+                            let groupId = viewModel.config.supabaseGroupId
+                            Task {
+                                if let roundId {
+                                    async let statusUpdate: Void = (try? await RoundService().updateRoundStatus(roundId: roundId, status: "completed")) ?? ()
+                                    async let advance: Void = { if let groupId { await GroupService().advanceScheduledDateIfRecurring(groupId: groupId) } }()
+                                    _ = await (statusUpdate, advance)
+                                }
+                                await MainActor.run {
+                                    onCreateGroup?()
                                 }
                             }
-                            showCreateGroupCard = false
-                            onCreateGroup?()
                         } else {
                             showPaywall = true
                         }
@@ -231,17 +236,19 @@ struct RoundCompleteView: View {
 
                     Button {
                         showCreateGroupCard = false
-                        // Mark round as completed — removes the active card
-                        if let roundId = viewModel.config.supabaseRoundId {
-                            Task {
-                                try? await RoundService().updateRoundStatus(roundId: roundId, status: "completed")
-                                if let groupId = viewModel.config.supabaseGroupId {
-                                    await GroupService().advanceScheduledDateIfRecurring(groupId: groupId)
-                                }
+                        let roundId = viewModel.config.supabaseRoundId
+                        let groupId = viewModel.config.supabaseGroupId
+                        Task {
+                            if let roundId {
+                                async let statusUpdate: Void = (try? await RoundService().updateRoundStatus(roundId: roundId, status: "completed")) ?? ()
+                                async let advance: Void = { if let groupId { await GroupService().advanceScheduledDateIfRecurring(groupId: groupId) } }()
+                                _ = await (statusUpdate, advance)
+                            }
+                            await MainActor.run {
+                                onDeclineGroup?()
+                                if let onExitRound { onExitRound() } else { onDismiss() }
                             }
                         }
-                        onDeclineGroup?()
-                        if let onExitRound { onExitRound() } else { onDismiss() }
                     } label: {
                         Text("Skip")
                             .font(.system(size: 16, weight: .semibold))
@@ -306,10 +313,10 @@ struct RoundCompleteView: View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text(pendingHoles.isEmpty ? "Final Results" : "Pending Results")
-                    .font(.carry.bodySemibold)
+                    .font(.carry.labelBold)
                     .foregroundColor(Color.textPrimary)
                 Text(viewModel.config.course)
-                    .font(.carry.caption)
+                    .font(.carry.bodySM)
                     .foregroundColor(Color.textSecondary)
             }
             Spacer()
@@ -702,10 +709,10 @@ struct RoundCompleteView: View {
                 if entry.isYou {
                     Text("You")
                         .font(Font.system(size: 12, weight: .semibold))
-                        .foregroundColor(Color.gold)
+                        .foregroundColor(Color.textDark)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 1)
-                        .background(Capsule().fill(Color.gold.opacity(0.10)))
+                        .background(Capsule().fill(Color.textDark.opacity(0.10)))
                 }
             }
 
@@ -798,10 +805,34 @@ struct RoundCompleteView: View {
                         )
                 }
                 .buttonStyle(.plain)
-            } else {
-                // Final results — exit round
+            } else if !isCreator {
+                // Member view — all groups finished, results are final, but
+                // round-state transitions are creator-only (End & Save Results,
+                // End Game, Cancel Round). Members just exit; the round stays
+                // in whatever state the creator has put it in. No server write.
                 Button {
-                    if isCreator && isQuickGame {
+                    if let onExitRound { onExitRound() } else { onDismiss() }
+                } label: {
+                    Text("Done")
+                        .font(Font.system(size: 20, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 18)
+                        .background(
+                            RoundedRectangle(cornerRadius: 19)
+                                .fill(Color.textPrimary)
+                        )
+                }
+                .buttonStyle(.plain)
+            } else {
+                // Creator — finalize the round
+                Button {
+                    // Only offer "convert this crew to a permanent group" when
+                    // the round actually played to completion. If the host
+                    // force-ended early (5 holes, rain, whatever), that's a
+                    // scratch round — not worth pushing a conversion prompt.
+                    let playedFullRound = isQuickGame && !viewModel.forceCompleted
+                    if playedFullRound {
                         // Show create group card instead of exiting immediately
                         withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
                             showCreateGroupCard = true
@@ -906,11 +937,19 @@ struct RoundCompleteView: View {
 
     private var pendingSkins: [PendingSkin] {
         let skins = viewModel.cachedSkins
+        // When the host force-ended the round, unscored holes are never going
+        // to be played — they shouldn't show up as "pending" and flip the UI
+        // back into a live-scoring state. Treat them as excluded from the
+        // round entirely. Without this filter, a round force-ended at hole 5
+        // leaves holes 6-18 marked `.pending`, which makes the final sheet
+        // incorrectly show "Pending Results" and the home card keep rendering
+        // a live scorecard.
+        let forceEnded = viewModel.forceCompleted
         return skins.compactMap { (hole, status) in
             switch status {
             case .provisional(let leaders, let bestNet, _, let scored, let total):
                 return PendingSkin(id: hole, holeNum: hole, leaders: leaders, bestNet: bestNet, scored: scored, total: total)
-            case .pending:
+            case .pending where !forceEnded:
                 let total = viewModel.allPlayers.count
                 return PendingSkin(id: hole, holeNum: hole, leaders: [], bestNet: 0, scored: 0, total: total)
             default:
@@ -1099,13 +1138,21 @@ struct RoundStatsView: View {
     }
 
     var body: some View {
-        // Inline full-width stats — matches ResultsSheet's spectator view.
-        // No header/card/collapse — just a thin gray separator bar above
-        // the rows and full-field stats below.
+        // Inline full-width stats — matches ResultsSheet's spectator view
+        // and the Leaderboard sheet's stats section for visual consistency.
         VStack(spacing: 0) {
             Rectangle()
                 .fill(Color.bgPrimary)
                 .frame(height: 8)
+
+            Text("Stats")
+                .font(Font.system(size: 24, weight: .bold))
+                .foregroundColor(Color.textPrimary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 24)
+                .padding(.top, 20)
+                .padding(.bottom, 4)
+                .accessibilityAddTraits(.isHeader)
 
             VStack(spacing: 0) {
                 ForEach(Array(sortedPlayers.enumerated()), id: \.element.id) { index, player in
@@ -1115,8 +1162,8 @@ struct RoundStatsView: View {
                         Rectangle()
                             .fill(Color.borderFaint)
                             .frame(height: 1)
-                            .padding(.leading, 68) // row 18 + avatar 38 + spacing 12
-                            .padding(.trailing, 18)
+                            .padding(.leading, 82) // row 24 + avatar 38 + name offset
+                            .padding(.trailing, 24)
                     }
                 }
             }
@@ -1145,10 +1192,10 @@ struct RoundStatsView: View {
                         if isYou {
                             Text("You")
                                 .font(.carry.micro)
-                                .foregroundColor(Color.gold)
+                                .foregroundColor(Color.textDark)
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 1)
-                                .background(Capsule().fill(Color.gold.opacity(0.10)))
+                                .background(Capsule().fill(Color.textDark.opacity(0.10)))
                         }
                     }
 
@@ -1162,13 +1209,14 @@ struct RoundStatsView: View {
                 Spacer()
 
                 Text(moneyText(money))
-                    .font(.carry.bodyLGBold)
+                    .font(Font.system(size: 17, weight: .medium))
                     .monospacedDigit()
                     .foregroundColor(
                         money > 0 ? Color.goldMuted
                         : money < 0 ? Color.textDisabled
                         : Color.borderSoft
                     )
+                    .frame(width: 72, alignment: .trailing)
             }
 
             VStack(alignment: .leading, spacing: 4) {
@@ -1193,7 +1241,7 @@ struct RoundStatsView: View {
             }
             .padding(.leading, 50) // align under the name (38 avatar + 12 spacing)
         }
-        .padding(.horizontal, 18)
+        .padding(.horizontal, 24)
         .padding(.vertical, 15)
     }
 
@@ -1208,7 +1256,7 @@ struct RoundStatsView: View {
                     .foregroundColor(Color.textDisabled)
                 Text(detail)
                     .font(.carry.bodySM)
-                    .foregroundColor(Color.textTertiary)
+                    .foregroundColor(Color.textPrimary)
             }
         }
     }

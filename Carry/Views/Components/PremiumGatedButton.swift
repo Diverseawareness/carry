@@ -72,7 +72,6 @@ struct PremiumGatedButton<Label: View>: View {
         case .createGroup:         return "Create Skins Group"
         case .scoreRound:          return "Score Round"
         case .manageGroup:         return "Manage Group"
-        case .quickGameLimit:      return "Quick Game"
         case .allTimeLeaderboard:  return "All-time Leaderboard"
         case .general:             return "Premium feature"
         }

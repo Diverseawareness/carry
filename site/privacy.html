@@ -156,7 +156,7 @@
     <main class="legal-body">
         <div class="container">
             <h1>Privacy Policy</h1>
-            <p class="effective-date">Effective Date: March 22, 2026</p>
+            <p class="effective-date">Effective Date: April 23, 2026</p>
 
             <p>Diverse Awareness Inc. ("Carry," "we," "us," or "our") operates the Carry mobile application ("App"). This Privacy Policy explains how we collect, use, disclose, and protect your personal information when you use the App. By using Carry, you consent to the practices described in this policy.</p>
 
@@ -165,9 +165,9 @@
             <h3>Information You Provide</h3>
             <ul>
                 <li><strong>Account Information:</strong> When you sign in using Apple Sign-In, we receive your name and email address (or a private relay email address if you choose to hide your email).</li>
-                <li><strong>Profile Information:</strong> Your display name, avatar photo (captured via camera or selected from photo library), home golf club, club membership status (member or non-member), and GHIN handicap number (optional).</li>
+                <li><strong>Profile Information:</strong> Your display name, avatar photo (captured via camera or selected from photo library), home golf club, club membership status (member or non-member), and GHIN handicap number (optional). The camera is also used to scan QR codes for joining skins groups. QR scans are processed on-device only &mdash; no image data is sent or stored.</li>
                 <li><strong>Golf Scores:</strong> Scores you enter for each hole during skins games, including handicap index for net scoring.</li>
-                <li><strong>Group Membership:</strong> Information about the player groups you create or join, including group names, player associations, tee times, buy-in amounts, and game recurrence settings.</li>
+                <li><strong>Group Membership:</strong> Information about the player groups you create or join, including group names, player associations, tee times, buy-in amounts, and game recurrence settings. Group invites can be shared as QR codes or invite links; when you scan or tap a group invite, you are added to that group with your consent.</li>
                 <li><strong>Course Preferences:</strong> Golf courses you select or save for your games.</li>
                 <li><strong>SMS Invitations:</strong> When you invite players via SMS, the App opens the native SMS composer on your device. We do not access, store, or transmit phone numbers or contact data; the invitation is sent directly from your device's messaging app.</li>
                 <li><strong>Quick Game Guest Profiles:</strong> When a scorer creates a Quick Game, we automatically generate guest profiles for each participant using the name and handicap entered by the scorer. Game scores are stored under these guest profiles.</li>
@@ -179,6 +179,7 @@
                 <li><strong>Usage Data:</strong> Basic information about how you interact with the App, such as features used and session duration, to help us improve the experience.</li>
                 <li><strong>Push Notifications:</strong> If you opt in, we use Apple Push Notification service (APNs) to send game-started alerts, group invite notifications, round completion updates, and scorer assignment changes. Your device token is stored securely on our Supabase servers solely to deliver these notifications. We do not use notifications for marketing or advertising purposes. You can disable push notifications at any time through your device settings.</li>
                 <li><strong>Locally Cached Data:</strong> Scores and game state are stored locally on your device using UserDefaults and local storage to support offline functionality. This data syncs to the cloud when an internet connection is available.</li>
+                <li><strong>Clipboard Access:</strong> When you tap a "Download Carry" link from an invite page in Safari, the web page copies the invite URL to your clipboard. On your next launch of Carry, we check (via iOS's privacy-preserving pasteboard API) whether the clipboard contains any URL and, if so, surface a one-tap "Join Skins Game" alert. The clipboard is only read after you tap Join on that alert &mdash; nothing is read without your action, and no clipboard content is stored or transmitted beyond matching a Carry invite link.</li>
             </ul>
 
             <h3>Information We Do Not Collect</h3>

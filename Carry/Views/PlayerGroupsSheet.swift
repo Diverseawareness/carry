@@ -1,5 +1,38 @@
 import SwiftUI
 
+// MARK: - Architecture Invariants (DO NOT VIOLATE)
+//
+// These invariants protect the Manage sheet's data integrity. Violating
+// any of them will cause silent server-side data loss — the exact class
+// of bug that wiped Hhhhhh's membership in April 2026.
+//
+// 1. `groups: [[Player]]` is the SINGLE source of truth for group
+//    composition. Never maintain a parallel `@State` array tracking
+//    positions or slot assignments — they WILL drift.
+//
+// 2. `slotAssignments` must stay a computed property derived from
+//    `groups`. If you need to re-introduce position state (e.g. to hold
+//    empty placeholders), use `[Player?]` directly in `groups` rather
+//    than a sidecar array.
+//
+// 3. Any removal from `groups[gi]` (i.e. a player leaving the group, NOT
+//    moving to another group) MUST go through `trackedRemove(...)` below.
+//    That's the only function that populates `userRemovedProfileIds`,
+//    which is the only input to server-side `status="removed"` writes.
+//    Bypassing this path = stale server rows = visual/server drift.
+//
+// 4. Server step 3b in `saveAndDismiss` writes ONLY the profiles in
+//    `userRemovedProfileIds`. Never re-introduce "diff cleanResult vs.
+//    server" inference — local state divergence can make that destructive.
+//
+// 5. The creator is locked as scorer of whichever group they're in.
+//    `syncScorerIDs` enforces this; never bypass via direct
+//    `scorerIDs[i] = …` writes without re-running the sync after.
+//
+// Runtime checks in DEBUG assert these hold before server writes fire.
+// If you see `[PlayerGroupsSheet] INVARIANT VIOLATED` in logs, STOP and
+// read this block — you've introduced a regression.
+
 /// Result returned from PlayerGroupsSheet on Save.
 struct PlayerGroupsResult {
     let groups: [[Player]]
@@ -53,10 +86,27 @@ struct PlayerGroupsSheet: View {
     @State private var emptySlotHCs: [String: String] = [:]
     @State private var scorerSlots: [ScorerSlot] = []
 
-    /// Fixed-position slot tracking: 3 non-scorer slots per group.
-    /// Each slot is either an assigned player ID or nil (empty).
-    /// Prevents players from shifting up when a slot is cleared.
-    @State private var slotAssignments: [[Int?]] = []
+    /// Slot view of `groups`. Computed every time so it cannot diverge from
+    /// the source of truth. Each group exposes 3 non-scorer slots; an entry
+    /// is the player's `id` or `nil` if the slot is empty. Replaces a
+    /// duplicate `@State` array that used to be mutated independently of
+    /// `groups`, which silently dropped players when the two went out of sync.
+    private var slotAssignments: [[Int?]] {
+        groups.enumerated().map { (gi, group) in
+            let scorerId = gi < scorerIDs.count ? scorerIDs[gi] : 0
+            let nonScorer = group.filter { $0.id != scorerId }
+            return (0..<3).map { i in i < nonScorer.count ? nonScorer[i].id : nil }
+        }
+    }
+
+    /// Explicit-removal set — Carry profile IDs the user actively removed via
+    /// the X button or by deleting an entire group. Server marks ONLY these
+    /// rows as `status="removed"` on save. Adds, searches, moves, or any
+    /// incidental state divergence cannot trigger a server-side removal.
+    /// This replaces the prior "diff cleanResult vs server" logic, which
+    /// could silently wipe members when local slot tracking lost track of
+    /// them (e.g. a search-result selection overwriting an occupied slot).
+    @State private var userRemovedProfileIds: Set<UUID> = []
 
     @State private var showRemoveGroupConfirm = false
     @State private var removeGroupIndex: Int? = nil
@@ -193,7 +243,6 @@ struct PlayerGroupsSheet: View {
                             withAnimation(.easeInOut(duration: 0.2)) {
                                 groups.append([])
                                 scorerSlots.append(ScorerSlot())
-                                slotAssignments.append([nil, nil, nil])
                                 syncTeeTimes()
                                 syncScorerIDs()
                             }
@@ -266,12 +315,7 @@ struct PlayerGroupsSheet: View {
                 )
             }
 
-            // Build fixed-position slot assignments from existing groups
-            slotAssignments = groups.enumerated().map { (gi, group) in
-                let scorerId = gi < scorerIDs.count ? scorerIDs[gi] : 0
-                let nonScorer = group.filter { $0.id != scorerId }
-                return (0..<3).map { i in i < nonScorer.count ? nonScorer[i].id : nil }
-            }
+            // slotAssignments is now derived from `groups` — no seed required.
         }
         .alert("Remove Group?", isPresented: $showRemoveGroupConfirm) {
             Button("Remove", role: .destructive) {
@@ -384,7 +428,7 @@ struct PlayerGroupsSheet: View {
                 // Players
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
-                        Text("Group \(groupIndex + 1)")
+                        Text("Players")
                             .font(.carry.bodySMBold)
                             .foregroundColor(Color.textPrimary)
                         Spacer()
@@ -438,9 +482,9 @@ struct PlayerGroupsSheet: View {
             // Name field with avatar for Carry users
             HStack(spacing: 8) {
                 if isCarryUser {
-                    PlayerAvatar(player: displayPlayer, size: 28)
+                    PlayerAvatar(player: displayPlayer, size: 34)
 
-                    VStack(alignment: .leading, spacing: 1) {
+                    VStack(alignment: .leading, spacing: 2) {
                         Text(player.name)
                             .font(.carry.bodySemibold)
                             .foregroundColor(Color.textPrimary)
@@ -449,7 +493,7 @@ struct PlayerGroupsSheet: View {
                             .compactMap { $0 }.joined(separator: " · ")
                         if !subtitle.isEmpty {
                             Text(subtitle)
-                                .font(.carry.caption)
+                                .font(.carry.bodySM)
                                 .foregroundColor(Color(hexString: "#BFC0C2"))
                         }
                     }
@@ -532,13 +576,23 @@ struct PlayerGroupsSheet: View {
         let key = "\(groupIndex)-\(slotIndex)"
         let isActiveSearch = activePlayerSearchSlot?.group == groupIndex && activePlayerSearchSlot?.slot == slotIndex
         let showResults = isActiveSearch && !playerSearchResults.isEmpty
-        let showInviteOption = isActiveSearch && (emptySlotNames[key] ?? "").trimmingCharacters(in: .whitespaces).count >= 2 && !showResults
+        // Quick Game player slots (non-scorer) don't show SMS invite. Quick
+        // Game promise is "only scorers need the app"; surfacing an invite
+        // option on regular player slots contradicts that. Typeahead to pick
+        // an existing Carry user stays — convenient shortcut when the player
+        // already has Carry. SMS-inviting a new *scorer* still happens via
+        // the scorer slot's ScorerAssignmentView path, untouched by this.
+        let showInviteOption = !isQuickGame
+            && isActiveSearch
+            && (emptySlotNames[key] ?? "").trimmingCharacters(in: .whitespaces).count >= 2
+            && !showResults
 
         return VStack(spacing: 0) {
             HStack(spacing: 10) {
                 CarryTextField(
                     "Enter name",
                     text: emptyNameSearchBinding(groupIndex: groupIndex, slotIndex: slotIndex),
+                    height: 58,
                     onFocusChange: { isFocused in
                         if isFocused {
                             focusedEmptySlot = (group: groupIndex, slot: slotIndex)
@@ -696,7 +750,7 @@ struct PlayerGroupsSheet: View {
             Text(isPlaceholder ? "HC" : formatHandicap(value))
                 .font(.carry.bodyLG)
                 .foregroundColor(isPlaceholder ? Color.textDisabled : Color.textPrimary)
-                .frame(width: 56, height: 50)
+                .frame(width: 56, height: 58)
                 .background(RoundedRectangle(cornerRadius: 14).fill(.white))
                 .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.borderLight, lineWidth: 1))
         }
@@ -760,6 +814,14 @@ struct PlayerGroupsSheet: View {
             },
             set: { newValue in
                 guard groupIndex < scorerSlots.count else { return }
+                // Creator is locked as scorer of whichever group they're in.
+                // Reject any attempt to reassign that slot via the scorer
+                // picker — the lock icon on the creator's row signals this
+                // isn't editable.
+                if groupIndex < groups.count,
+                   groups[groupIndex].contains(where: { $0.id == currentUserId }) {
+                    return
+                }
                 let oldValue = scorerSlots[groupIndex]
                 scorerSlots[groupIndex] = newValue
 
@@ -786,29 +848,18 @@ struct PlayerGroupsSheet: View {
                                 // that group until a new scorer is added.
                                 scorerIDs[gi] = 0
                             }
-                            // Clear them from that group's UI slot assignments
-                            // too so the non-scorer slot list renders correctly.
-                            if gi < slotAssignments.count {
-                                for slotIdx in slotAssignments[gi].indices
-                                where slotAssignments[gi][slotIdx] == player.id {
-                                    slotAssignments[gi][slotIdx] = nil
-                                }
-                            }
+                            // slotAssignments is derived from groups[gi]; the
+                            // remove above cleans up the non-scorer slot view
+                            // automatically — no separate sync needed.
                         }
                     }
 
                     // Within-group promotion: if the selected player is a
                     // Carry member currently occupying a NON-scorer slot of
-                    // THIS group, clear that slot. Without this, they'd
-                    // appear twice — once as the scorer at the top, once
-                    // as a player in the list below. Guests can't reach
-                    // this branch (profileId is nil in search results).
-                    if groupIndex < slotAssignments.count {
-                        for slotIdx in slotAssignments[groupIndex].indices
-                        where slotAssignments[groupIndex][slotIdx] == player.id {
-                            slotAssignments[groupIndex][slotIdx] = nil
-                        }
-                    }
+                    // THIS group, remove them from groups so they don't show
+                    // twice (once as scorer, once as a player). The append
+                    // below puts them at the right position.
+                    groups[groupIndex].removeAll { $0.id == player.id && $0.id != currentUserId }
 
                     if let existingIdx = groups[groupIndex].firstIndex(where: { $0.id == player.id }) {
                         // Already in this group — just update pending status
@@ -906,13 +957,8 @@ struct PlayerGroupsSheet: View {
             homeClub: profile.homeClub
         )
 
-        // Add to groups array
+        // Append to groups — slotAssignments derives the new slot view.
         groups[groupIndex].append(player)
-
-        // Assign to fixed slot position
-        if groupIndex < slotAssignments.count {
-            slotAssignments[groupIndex][slotIndex] = player.id
-        }
 
         // Clear search state
         let key = "\(groupIndex)-\(slotIndex)"
@@ -951,11 +997,7 @@ struct PlayerGroupsSheet: View {
 
         // Add to groups array
         groups[groupIndex].append(player)
-
-        // Assign to fixed slot position
-        if groupIndex < slotAssignments.count {
-            slotAssignments[groupIndex][slotIndex] = player.id
-        }
+        // slotAssignments derives the new slot view from groups.
 
         // Open native SMS
         let body = "Score our skins game on Carry! Download: https://carryapp.site"
@@ -976,29 +1018,69 @@ struct PlayerGroupsSheet: View {
 
     // MARK: - Actions
 
+    /// Canonical player-leaves-group removal. Tracks the profileId in
+    /// `userRemovedProfileIds` (so server step 3b flips the row to
+    /// "removed") and takes them out of `groups[gi]`. This is the ONLY
+    /// function that should remove a player without re-adding them to a
+    /// different group — bypassing this path leaves a stale server row.
+    ///
+    /// Returns `false` if the removal was refused (creator can't self-remove).
+    @discardableResult
+    private func trackedRemove(playerId: Int, fromGroup gi: Int) -> Bool {
+        guard gi < groups.count,
+              let idx = groups[gi].firstIndex(where: { $0.id == playerId })
+        else { return false }
+
+        // Creator guard — enforced centrally so every removal path gets it.
+        guard playerId != currentUserId else {
+            ToastManager.shared.error("You can't remove yourself — use Delete Game to exit.")
+            return false
+        }
+
+        let player = groups[gi][idx]
+        if let profileId = player.profileId {
+            userRemovedProfileIds.insert(profileId)
+        }
+        groups[gi].remove(at: idx)
+        return true
+    }
+
     private func clearPlayer(groupIndex: Int, slotIndex: Int) {
         // Find the player ID assigned to this slot
         guard groupIndex < slotAssignments.count,
               slotIndex < slotAssignments[groupIndex].count,
               let playerId = slotAssignments[groupIndex][slotIndex] else { return }
 
-        // Clear the slot assignment (position preserved — no shifting)
-        slotAssignments[groupIndex][slotIndex] = nil
-
-        // Remove from groups array
-        if let idx = groups[groupIndex].firstIndex(where: { $0.id == playerId }) {
-            groups[groupIndex].remove(at: idx)
-        }
+        guard trackedRemove(playerId: playerId, fromGroup: groupIndex) else { return }
 
         // Clear any stale empty slot data for this position
         let key = "\(groupIndex)-\(slotIndex)"
         emptySlotNames[key] = nil
         emptySlotHCs[key] = nil
+
+        // If removing this player left the group with no players AND there's
+        // more than one group, collapse the empty group via `removeGroup` so
+        // the tee-time schedule and parallel arrays stay in sync. Matches
+        // user expectation: deleting the last non-scorer in Group N removes
+        // Group N entirely. Group 1 is never auto-removed (always keep at
+        // least one group); `removeGroup` already enforces `groups.count > 1`.
+        if groups[groupIndex].isEmpty && groups.count > 1 {
+            removeGroup(at: groupIndex)
+        }
     }
 
     private func removeGroup(at index: Int) {
         guard groups.count > 1, index < groups.count else { return }
         let removedPlayers = groups[index]
+        // Route every non-creator player through the canonical tracked
+        // removal so server step 3b stays centralized. Players who get
+        // spilled into another group below re-appear in `cleanResult` and
+        // step 3b skips them via the `!cleanProfileIds.contains` guard.
+        // The creator is skipped — they're locked into the game and the
+        // spill loop re-seats them in another group.
+        for player in removedPlayers where player.id != currentUserId {
+            trackedRemove(playerId: player.id, fromGroup: index)
+        }
         withAnimation(.easeOut(duration: 0.2)) {
             groups.remove(at: index)
             if index < scorerIDs.count { scorerIDs.remove(at: index) }
@@ -1006,7 +1088,7 @@ struct PlayerGroupsSheet: View {
             if index < startingSides.count { startingSides.remove(at: index) }
             if index < selectedTees.count { selectedTees.remove(at: index) }
             if index < scorerSlots.count { scorerSlots.remove(at: index) }
-            if index < slotAssignments.count { slotAssignments.remove(at: index) }
+            // slotAssignments derives from `groups` — no separate remove.
 
             // Clean up emptySlotNames/HCs for removed group and re-key remaining
             var newNames: [String: String] = [:]
@@ -1023,19 +1105,12 @@ struct PlayerGroupsSheet: View {
             emptySlotNames = newNames
             emptySlotHCs = newHCs
 
+            // Spill removed players into the smallest non-full group.
+            // slotAssignments will derive their position automatically.
             for player in removedPlayers {
                 if let minIdx = groups.indices.min(by: { groups[$0].count < groups[$1].count }),
                    groups[minIdx].count < maxGroupSize {
                     groups[minIdx].append(player)
-                    // Find first empty slot in target group
-                    if minIdx < slotAssignments.count {
-                        let scorerId = minIdx < scorerIDs.count ? scorerIDs[minIdx] : 0
-                        if player.id != scorerId {
-                            if let emptySlot = slotAssignments[minIdx].firstIndex(where: { $0 == nil }) {
-                                slotAssignments[minIdx][emptySlot] = player.id
-                            }
-                        }
-                    }
                 }
             }
             syncTeeTimes()
@@ -1053,12 +1128,16 @@ struct PlayerGroupsSheet: View {
             // Never auto-assign a guest or phone invite — they can't score.
             // If no valid Carry user exists yet, leave 0 so the missing-scorer
             // banner prompts the creator to pick someone.
-            let firstConfirmed = groups[scorerIDs.count].first(where: {
-                !$0.isGuest && !$0.isPendingInvite && !$0.isPendingAccept && $0.profileId != nil
-            })
+            let firstConfirmed = groups[scorerIDs.count].first(where: \.canScore)
             scorerIDs.append(firstConfirmed?.id ?? 0)
         }
         while scorerIDs.count > groups.count { scorerIDs.removeLast() }
+        // Creator-locked-as-scorer invariant: the group the creator sits in
+        // always has the creator as its scorer. Mirrors GroupManagerView's
+        // sync — the scorer slot for the creator's group is not editable.
+        for i in 0..<groups.count where groups[i].contains(where: { $0.id == currentUserId }) {
+            scorerIDs[i] = currentUserId
+        }
     }
 
     // MARK: - Save
@@ -1102,7 +1181,6 @@ struct PlayerGroupsSheet: View {
                     isGuest: true
                 )
                 groups[guest.groupIndex].append(player)
-                slotAssignments[guest.groupIndex][guest.slotIndex] = player.id
                 nextGuestID += 1
             }
             onSave(buildResult())
@@ -1148,10 +1226,6 @@ struct PlayerGroupsSheet: View {
                             isGuest: true, profileId: uuid
                         )
                         groups[guestInfo.groupIndex].append(player)
-                        // Track in slotAssignments so buildResult() includes them
-                        if guestInfo.groupIndex < slotAssignments.count {
-                            slotAssignments[guestInfo.groupIndex][guestInfo.slotIndex] = player.id
-                        }
                         allMembers.append(player)
                         selectedIDs.insert(player.id)
                         nextGuestID += 1
@@ -1182,9 +1256,16 @@ struct PlayerGroupsSheet: View {
         let cleanResult = await MainActor.run { buildResult() }
         let cleanProfileIds: Set<UUID> = Set(cleanResult.groups.flatMap { $0 }.compactMap(\.profileId))
 
-        // 3. Sync group_members to match clean groups:
-        //    - Activate/insert members IN clean groups
-        //    - Remove members NOT in clean groups
+        // 3. Sync group_members. Two distinct mutations on the server:
+        //    3a. Add — every Carry profile in cleanResult that doesn't have
+        //        an active/invited row gets one (insert as invited or
+        //        re-activate a removed/declined row).
+        //    3b. Remove — ONLY the profiles the user explicitly cleared via
+        //        the X button or removeGroup. Membership is never inferred
+        //        from "absent from cleanResult" — local slot tracking can
+        //        drop a player due to a UI race (e.g. a search overwriting
+        //        an occupied slot), and that must not cascade into a
+        //        destructive server delete.
         do {
             let existingMembers: [GroupMemberDTO] = (try? await SupabaseManager.shared.client
                 .from("group_members")
@@ -1232,17 +1313,35 @@ struct PlayerGroupsSheet: View {
                 }
             }
 
-            // 3b. Remove members NOT in clean groups (mark as "removed")
-            for member in existingMembers where member.status == "active" || member.status == "invited" {
-                if !cleanProfileIds.contains(member.playerId) {
-                    let updates: [String: String] = ["status": "removed"]
-                    _ = try? await SupabaseManager.shared.client
-                        .from("group_members")
-                        .update(updates)
-                        .eq("group_id", value: groupId.uuidString)
-                        .eq("player_id", value: member.playerId.uuidString)
-                        .execute()
-                }
+            // INVARIANT CHECK (DEBUG) — see top-of-file architecture block.
+            // Catches regressions that would re-introduce destructive bugs.
+            #if DEBUG
+            // Invariant 1: creator's profileId must never be in the
+            // removal set. If it is, the creator-self-delete guard was
+            // bypassed somewhere.
+            if let creator = allMembers.first(where: { $0.id == currentUserId }),
+               let creatorProfileId = creator.profileId,
+               userRemovedProfileIds.contains(creatorProfileId) {
+                assertionFailure("[PlayerGroupsSheet] INVARIANT VIOLATED: creator is in userRemovedProfileIds. Check trackedRemove() call sites.")
+            }
+            // Invariant 2: players who are visible in cleanResult must NOT
+            // also be queued for removal unless they're being reabsorbed.
+            // The where-filter below covers reabsorption; this just logs
+            // anything suspicious for visibility.
+            let willRemove = userRemovedProfileIds.filter { !cleanProfileIds.contains($0) }
+            print("[PlayerGroupsSheet] saveAndDismiss → removing \(willRemove.count) members explicitly")
+            #endif
+
+            // 3b. Mark explicitly-removed members as "removed". Skip any
+            // profile that ended up back in cleanResult (e.g. user deleted
+            // a group but the players got reabsorbed into another group).
+            for profileId in userRemovedProfileIds where !cleanProfileIds.contains(profileId) {
+                _ = try? await SupabaseManager.shared.client
+                    .from("group_members")
+                    .update(["status": "removed"])
+                    .eq("group_id", value: groupId.uuidString)
+                    .eq("player_id", value: profileId.uuidString)
+                    .execute()
             }
         }
 
@@ -1283,27 +1382,24 @@ struct PlayerGroupsSheet: View {
     }
 
     private func buildResult() -> PlayerGroupsResult {
-        // Reconstruct clean groups from slotAssignments + scorer.
-        // This prevents any untracked players in the raw groups array
-        // from leaking through and creating duplicates.
+        // `groups` is the single source of truth — order each group as
+        // [scorer, ...non-scorers]. The scorer-first ordering keeps the
+        // scorer pinned at the top of the slot view; the rest preserve
+        // insertion order from groups. Dedup defensively in case a player
+        // somehow appears twice in the same group's array.
         var cleanGroups: [[Player]] = []
         for gi in groups.indices {
             var groupPlayers: [Player] = []
+            var addedIds = Set<Int>()
 
-            // 1. Add scorer
             let scorerId = gi < scorerIDs.count ? scorerIDs[gi] : 0
             if let scorer = groups[gi].first(where: { $0.id == scorerId }) {
                 groupPlayers.append(scorer)
+                addedIds.insert(scorer.id)
             }
-
-            // 2. Add players from slot assignments (preserves slot order)
-            let slots = gi < slotAssignments.count ? slotAssignments[gi] : []
-            for si in 0..<slots.count {
-                guard let playerId = slots[si],
-                      let player = groups[gi].first(where: { $0.id == playerId }) else { continue }
-                // Don't double-add if scorer happens to be in a slot
-                if player.id == scorerId { continue }
+            for player in groups[gi] where !addedIds.contains(player.id) {
                 groupPlayers.append(player)
+                addedIds.insert(player.id)
             }
 
             cleanGroups.append(groupPlayers)
