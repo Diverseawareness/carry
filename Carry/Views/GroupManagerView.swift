@@ -794,19 +794,58 @@ struct GroupManagerView: View {
             await MainActor.run {
                 let hadGroups = !groups.isEmpty && !groups.allSatisfy({ $0.isEmpty })
 
+                // Capture previous active member IDs BEFORE we overwrite
+                // `allMembers` below. Used to compute which members are newly
+                // active in this refresh (either brand-new joiners or
+                // pending → active transitions when an invitee accepts).
+                let prevActiveMemberIds = Set(
+                    allMembers
+                        .filter { !$0.isPendingInvite && !$0.isPendingAccept }
+                        .map(\.id)
+                )
+
                 // Filter out players that were just manually removed (refresh race condition)
                 let filteredFreshMembers = freshGroup.members.filter { !recentlyRemovedIds.contains($0.id) }
                 allMembers = filteredFreshMembers
                 let memberIds = Set(filteredFreshMembers.map(\.id))
-                // Preserve the user's playing roster across refreshes. Previously
-                // we rebuilt selectedIDs from scratch on every refresh, which
-                // silently re-added anyone they'd deselected in Manage Members
-                // (the reported bug). Intersection keeps their selection stable
-                // while dropping IDs for members who left / were removed from
-                // the group. Newly joined members don't auto-opt into the round
-                // — they appear under "All Members" for the creator to add
-                // deliberately.
-                selectedIDs = selectedIDs.intersection(memberIds)
+
+                // Preserve the user's playing roster across refreshes, but with
+                // a critical fix layered on top:
+                //
+                // OLD behavior — `selectedIDs.intersection(memberIds)` only.
+                // Kept the user's existing selection stable and dropped IDs
+                // for members who left, but had a fatal gap: newly-joined
+                // active members and pending-→-active transitions were
+                // never added. Result: a member viewing the group via this
+                // long-lived view (no remount) never saw new joiners on
+                // their tee sheet until they backed out and re-entered.
+                // Pull-to-refresh appeared "broken" while navigate-away-and-
+                // back worked — because the latter forced a fresh init that
+                // re-seeded selectedIDs from defaultSel.
+                //
+                // NEW behavior — intersection (drop leavers) UNION newly-active
+                // members, minus any IDs the user has explicitly persisted to
+                // the deselected UserDefaults key (swipe-offs survive across
+                // joiners — if you swiped someone off and they leave + rejoin,
+                // they stay off until you re-add them).
+                //
+                // Manage Members deselections that aren't yet persisted to
+                // UserDefaults are still preserved, because those deselected
+                // members were already in `prevActiveMemberIds` — so they
+                // don't show up as "newly active" and aren't re-added.
+                let newlyActiveMemberIds = Set(
+                    filteredFreshMembers
+                        .filter { !$0.isPendingInvite && !$0.isPendingAccept && !prevActiveMemberIds.contains($0.id) }
+                        .map(\.id)
+                )
+                let persistedDeselectedIds: Set<Int> = {
+                    guard let gid = supabaseGroupId else { return [] }
+                    let arr = UserDefaults.standard.array(forKey: "deselectedIDs_\(gid.uuidString)") as? [Int] ?? []
+                    return Set(arr)
+                }()
+                selectedIDs = selectedIDs
+                    .intersection(memberIds)
+                    .union(newlyActiveMemberIds.subtracting(persistedDeselectedIds))
 
                 if hadGroups {
                     // Rebuild groups authoritatively from server's group_num so
