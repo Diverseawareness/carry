@@ -70,25 +70,39 @@ serve(async (req) => {
         console.log("[branch] game force-ended");
         return await handleGameForceEnded(supabase, record, jwt);
       }
-      if (record.status === "completed") {
+      // Status transition guards: the trigger fires on EVERY row UPDATE
+      // (e.g. iOS rewriting scheduled_date on an already-active round), so
+      // status-based branches must check that the status actually changed.
+      // INSERT has no old_record — always counts as a transition.
+      if (record.status === "completed" && (type === "INSERT" || old_record?.status !== "completed")) {
         console.log("[branch] round ended");
         return await handleRoundEnded(supabase, record, jwt);
-      } else if (record.status === "active") {
+      } else if (record.status === "active" && (type === "INSERT" || old_record?.status !== "active")) {
         console.log("[branch] round started");
         return await handleRoundStarted(supabase, record, jwt);
       }
       console.log("[branch] round status not actionable");
       return new Response(JSON.stringify({ message: "Round status not actionable" }), { status: 200 });
-    } else if (record.status === "invited" && record.player_id && record.role) {
+    } else if (record.status === "invited" && record.player_id && record.role
+               && (type === "INSERT" || old_record?.status !== "invited")) {
+      // Same transition guard for group_members: `saveGroupNums` and other
+      // iOS writes UPDATE invited rows (group_num, sort_order) without
+      // changing status — those must NOT fire a duplicate invite push.
       console.log("[branch] group invite");
       return await handleGroupInvite(supabase, record, jwt);
-    } else if (record.status === "active" && record.role === "member" && record.player_id && type === "UPDATE") {
+    } else if (record.status === "active" && record.role === "member" && record.player_id
+               && type === "UPDATE" && old_record?.status !== "active") {
       console.log("[branch] member joined");
       return await handleMemberJoined(supabase, record, jwt);
-    } else if (record.status === "declined" && record.role && record.player_id) {
+    } else if (record.status === "declined" && record.role && record.player_id
+               && (type === "INSERT" || old_record?.status !== "declined")) {
       console.log("[branch] member declined");
       return await handleMemberDeclined(supabase, record, jwt);
-    } else if (record.hole_num !== undefined && record.proposed_score !== null && record.proposed_score !== undefined) {
+    } else if (record.hole_num !== undefined && record.proposed_score !== null && record.proposed_score !== undefined
+               && (type === "INSERT" || old_record?.proposed_score !== record.proposed_score)) {
+      // Transition guard: only fire when proposed_score is newly set or
+      // changed. An UPDATE that touches another column (e.g. re-entering
+      // `score`) on a row with an open dispute must NOT re-push.
       console.log("[branch] score dispute");
       return await handleScoreDispute(supabase, record, jwt);
     } else if (record.hole_num !== undefined && record.round_id && type === "INSERT") {

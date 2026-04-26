@@ -15,26 +15,30 @@ This is the pickup point for the next conversation. Read this top-to-bottom; it 
 
 ---
 
-## 🔴 Active blocker — the only thing the next session should start with
+## ✅ Duplicate "You're Invited" pushes — RESOLVED in working tree
 
-### Duplicate "You're Invited" pushes — confirmed bug
+The dup-push bug (4× pushes per single invite action) was diagnosed and fixed in `supabase/functions/send-push-notification/index.ts`. Root cause: the DB trigger fires the function on **every** UPDATE of `group_members` rows, including writes that don't change status (e.g. iOS `saveGroupNums` reordering tee-time slots). Pre-fix the dispatch matched on `record.status === "invited"` regardless of whether status had just transitioned, so each subsequent UPDATE re-fired `handleGroupInvite`.
 
-When Daniel invites a Carry user (Emese) to a group via search-and-add, the recipient receives **4 identical "You're Invited!" iOS push notifications** for what is one user-perceived invite action. Confirmed reproducing on Build 57 with fresh installs — not the earlier pg_net-retry-of-401-queue artifact (that issue is resolved).
+Fix applied: **transition guards** added to every status-driven dispatch branch:
 
-**Diagnosis path**: open Supabase function dispatch logs:
-https://supabase.com/dashboard/project/seeitehizboxjbnccnyd/functions/send-push-notification/logs
+```ts
+} else if (record.status === "invited" && record.player_id && record.role
+           && (type === "INSERT" || old_record?.status !== "invited")) {
+  return await handleGroupInvite(...);
+}
+```
 
-Find 4 `[dispatch]` entries from a single test invite. Pattern tells you the layer:
+Same pattern added to `round started`, `round ended`, `member joined`, `member declined`, and `score dispute` branches. INSERT always counts as a transition (no `old_record`); UPDATE only counts if the relevant field changed.
 
-| Pattern | Cause | Fix layer |
-|---|---|---|
-| 4 `[dispatch]` with **identical** payload (same `record_player_id`, `record_group_id`, `record_role`) | DB trigger firing N times for one INSERT, OR webhook duplication | Supabase Studio — Database → Webhooks for `group_members` |
-| 4 `[dispatch]` with **different** group_num / slot values per entry | iOS calling `inviteMember` multiple times during PlayerGroupsSheet save | `Carry/Views/PlayerGroupsSheet.swift` saveAndDismiss + `Carry/Services/GroupService.swift` inviteMember |
-| 4 `[dispatch]` with **same** payload but timestamps spread seconds apart | pg_net retry on a flaky function call | Webhook retry config |
+**Function deploy state**: edit is in the working tree only. **Redeploy is required** for the fix to take effect:
 
-**Likely culprit (best guess from earlier session evidence)**: the second pattern — iOS firing multiple `inviteMember` calls. Earlier we saw multiple INSERTs with the same `record_player_id` at very close timestamps. **Verify before fixing** — v57's other fixes may have changed the surface.
+```bash
+supabase functions deploy send-push-notification --project-ref seeitehizboxjbnccnyd --no-verify-jwt
+```
 
-Detailed memory note: `memory/dup_push_investigation.md`.
+After redeploy: re-test by inviting a Carry user. Should produce **one** `[dispatch]` → `[branch] group invite` → `[apns] status:200` cycle, **one** push delivered.
+
+Side benefit: the same transition guards likely fix the parked **"round-started push didn't land on Ziggy"** issue too — the previous code may have fired ghost "round started" pushes on irrelevant UPDATEs that exhausted some recipient state. Verify after redeploy.
 
 ---
 
@@ -61,9 +65,7 @@ Also removed in this session (already in v57 / earlier commits):
 These were noticed but not blocking. Mention them up-front if the user starts a session by saying "what's left?"
 
 ### 1. Round-started push didn't land on Ziggy's iPhone 12
-Daniel tapped Start Round → Emese got "Round Started" iOS push → Ziggy did not. Both UI buttons updated correctly. Could be: (a) an iPhone 12 quirk, (b) the function not iterating Ziggy in `handleRoundStarted`'s recipient list, or (c) Ziggy's device token was stale in that moment. Daniel agreed to park as iPhone-12-only for launch — verify on a non-iPhone-12 user later.
-
-**Diagnostic path if it recurs**: function logs, look for `[apns]` entries from a Start Round event. Count `token_prefix` values. If only one prefix appears for a 3-person group, function is filtering. If two prefixes (excluding the round-starter), problem is at the missing device.
+Daniel tapped Start Round → Emese got "Round Started" iOS push → Ziggy did not. Both UI buttons updated correctly. **Possibly resolved by the same transition-guard fix above** — the previous dispatch may have been firing `handleRoundStarted` on UPDATEs that didn't actually transition status to active, which could have caused recipient-state weirdness. **Re-verify after function redeploy.** If it still misses pushes only on iPhone 12, dig further (function log `[apns]` token_prefix counts).
 
 ### 2. Pull-to-refresh stale state on iPhone 12
 Even with v55's `selectedIDs` union fix, Ziggy's iPhone 12 had a moment where pull-to-refresh didn't reload the roster but navigate-away-and-back did. Could be a slower-CPU race window unrelated to the v55 fix. Park unless it keeps recurring; revisit if a non-iPhone-12 user reports.
@@ -127,11 +129,18 @@ For every App Store archive after this session:
 
 ## How to start the next session
 
-Open with: *"Carry pickup — read `docs/session-handoff.md` first. We were diagnosing duplicate `You're Invited` pushes (4× per invite). Build 57 just uploaded. What's our move?"*
+Open with: *"Carry pickup — read `docs/session-handoff.md` first. Function transition guards are in the working tree but not deployed; redeploy and verify the duplicate-push bug is gone. Build 57 already on TestFlight."*
 
-Or, if you've decided what to do already: *"Carry pickup — diagnose the duplicate push bug per `memory/dup_push_investigation.md`. Pull the last few `[dispatch]` log entries and tell me the pattern."*
+The new session's first move should be:
+1. Redeploy `send-push-notification` with `--no-verify-jwt`
+2. Have Daniel send a fresh test invite to a Carry user
+3. Confirm exactly one `[dispatch]` → `[branch] group invite` → `[apns] 200` cycle in function logs
+4. Confirm recipient sees exactly one banner notification
+5. If verified, commit the function file change with a tight message and push
 
-Either way, the new agent should not re-investigate problems already solved by v52–v57. They're all in the table above.
+If the dup-push bug persists post-deploy, fall back to the diagnostic table previously in this section (now in git history): inspect `[dispatch]` payloads to determine whether iOS is multi-firing `inviteMember`, the DB trigger is duplicated, or pg_net is retrying.
+
+The new agent should not re-investigate problems already solved by v52–v57. Those are in the table above.
 
 ---
 
