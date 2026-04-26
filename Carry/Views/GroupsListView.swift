@@ -1826,7 +1826,13 @@ struct GroupsListView: View {
         let data = shareCardData(for: group)
         let inviteURL = GroupInviteLink.url(for: group.id)
         let subject = "Join my Skins Group on Carry"
-        let message = "\(subject) — \(inviteURL.absoluteString)"
+        // Don't include the subject in `message` — when ShareLink targets
+        // Messages, iOS inserts both subject + message into the body
+        // separated by a newline. Repeating the subject here produced the
+        // "Join my Skins Group on Carry / Join my Skins Group on Carry —"
+        // duplicate that beta testers reported. Keep `message` to just the
+        // link so the SMS body is one CTA + one URL.
+        let message = inviteURL.absoluteString
 
         if let image = ShareCardRenderer.render(data: data, theme: .light) {
             ShareLink(
