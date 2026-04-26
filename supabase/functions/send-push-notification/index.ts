@@ -31,46 +31,72 @@ serve(async (req) => {
 
     const { type, old_record } = payload;
 
+    // Diagnostic: log every inbound webhook so the dispatch decision is
+    // visible in Logs. Without this, all early-return paths look identical
+    // (HTTP 200, no log line) and we can't tell which branch matched.
+    console.log("[dispatch]", JSON.stringify({
+      type,
+      record_status: record?.status,
+      record_role: record?.role,
+      record_scorer_id: record?.scorer_id,
+      record_created_by: record?.created_by,
+      record_player_id: record?.player_id,
+      record_invited_phone: record?.invited_phone,
+      record_hole_num: record?.hole_num,
+      record_proposed_score: record?.proposed_score,
+      record_force_completed: record?.force_completed,
+      record_round_id: record?.round_id,
+      record_group_id: record?.group_id,
+      old_status: old_record?.status,
+      old_scorer_id: old_record?.scorer_id,
+      old_force_completed: old_record?.force_completed,
+    }));
+
     // Route based on record shape (webhooks don't include table name)
     // Rounds have scorer_id field; group_members have role field
     if (record.scorer_id !== undefined || (record.created_by && !record.role)) {
       // Check for scorer change (UPDATE with different scorer_id)
       if (type === "UPDATE" && old_record && record.scorer_id !== old_record.scorer_id && record.scorer_id) {
+        console.log("[branch] scorer changed");
         return await handleScorerChanged(supabase, record, jwt);
       }
       // End Game (destructive): status = 'cancelled' set by creator. Notify everyone.
       if (type === "UPDATE" && record.status === "cancelled" && old_record?.status !== "cancelled") {
+        console.log("[branch] game deleted");
         return await handleGameDeleted(supabase, record, jwt);
       }
       // End Game & Save Results: status = 'concluded' + force_completed flipped true.
       if (type === "UPDATE" && record.force_completed === true && old_record?.force_completed !== true && record.status === "concluded") {
+        console.log("[branch] game force-ended");
         return await handleGameForceEnded(supabase, record, jwt);
       }
       if (record.status === "completed") {
-        // ROUND ENDED — notify all group members
+        console.log("[branch] round ended");
         return await handleRoundEnded(supabase, record, jwt);
       } else if (record.status === "active") {
-        // ROUND CREATED — notify all group members except creator
+        console.log("[branch] round started");
         return await handleRoundStarted(supabase, record, jwt);
       }
+      console.log("[branch] round status not actionable");
       return new Response(JSON.stringify({ message: "Round status not actionable" }), { status: 200 });
     } else if (record.status === "invited" && record.player_id && record.role) {
-      // GROUP INVITE — notify invited user
+      console.log("[branch] group invite");
       return await handleGroupInvite(supabase, record, jwt);
     } else if (record.status === "active" && record.role === "member" && record.player_id && type === "UPDATE") {
-      // MEMBER ACCEPTED INVITE — notify group creator (UPDATE only, not INSERT)
+      console.log("[branch] member joined");
       return await handleMemberJoined(supabase, record, jwt);
     } else if (record.status === "declined" && record.role && record.player_id) {
-      // MEMBER DECLINED INVITE — notify group creator
+      console.log("[branch] member declined");
       return await handleMemberDeclined(supabase, record, jwt);
     } else if (record.hole_num !== undefined && record.proposed_score !== null && record.proposed_score !== undefined) {
-      // SCORE DISPUTE — notify all group members
+      console.log("[branch] score dispute");
       return await handleScoreDispute(supabase, record, jwt);
     } else if (record.hole_num !== undefined && record.round_id && type === "INSERT") {
-      // SCORE INSERT — check if all groups are now active
+      console.log("[branch] score insert (check all-groups-active)");
       return await handleAllGroupsActive(supabase, record, jwt);
     }
 
+    console.log("[branch] UNHANDLED — fell through dispatch");
     return new Response(JSON.stringify({ message: "Unhandled event, skipping" }), { status: 200 });
   } catch (error) {
     console.error("Error:", error);
@@ -696,6 +722,17 @@ async function sendPush(deviceToken: string, payload: any, jwt: string) {
     },
     body: JSON.stringify(payload),
   });
+
+  // Diagnostic: log the APNs result so we can see in Logs whether Apple
+  // accepted the push (200) or rejected (4xx/5xx) for any reason. Without
+  // this the function silently completes regardless of delivery.
+  console.log("[apns]", JSON.stringify({
+    host: APNS_HOST,
+    status: response.status,
+    ok: response.ok,
+    token_prefix: deviceToken.substring(0, 12) + "...",
+    type: payload?.type,
+  }));
 
   if (!response.ok) {
     const errorBody = await response.text();

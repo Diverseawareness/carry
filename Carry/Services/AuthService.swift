@@ -93,8 +93,26 @@ final class AuthService: ObservableObject {
                 ])
             }
             // Register for push notifications on session restore (only if already onboarded —
-            // new users get the prompt during onboarding's "Enable Notifications" step)
-            if isOnboarded && UserDefaults.standard.bool(forKey: "disclaimerAccepted") {
+            // new users get the prompt during onboarding's "Enable Notifications" step).
+            //
+            // We deliberately DO NOT also check the local `disclaimerAccepted` UserDefaults
+            // flag here. UserDefaults gets wiped on app delete, but Apple preserves the
+            // Supabase Keychain session across delete+reinstall — meaning a returning user
+            // who reinstalls hits this session-restore path with `isOnboarded=true` (from
+            // the server) but `disclaimerAccepted=false` (UserDefaults reset). With the
+            // old `&& disclaimerAccepted` gate, permission was never requested, the
+            // Notifications row never appeared in iOS Settings, and pushes silently
+            // failed forever for that user. The server-side `isOnboarded=true` is
+            // sufficient evidence that the user has completed the disclaimer at some
+            // point in their account's history.
+            //
+            // Sync the local disclaimerAccepted flag to match the server truth so any
+            // other code paths that check it locally see a consistent value after this
+            // restore.
+            if isOnboarded {
+                if !UserDefaults.standard.bool(forKey: "disclaimerAccepted") {
+                    UserDefaults.standard.set(true, forKey: "disclaimerAccepted")
+                }
                 NotificationService.shared.requestPermissionAndRegister()
             }
         } catch {
