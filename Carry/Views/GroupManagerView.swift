@@ -1452,7 +1452,22 @@ struct GroupManagerView: View {
 
                     // Groups section
                     if selectedCount > 0 {
-                        ForEach(Array(groups.enumerated()), id: \.offset) { groupIdx, group in
+                        // Hide groups with zero displayable players. Empty
+                        // groups happen when:
+                        //   - All members assigned to that group_num are
+                        //     still pending (e.g. Quick Game → Skins Group
+                        //     conversion before invitees accept)
+                        //   - All members in that slot were swiped off
+                        //
+                        // Showing an empty card looked broken — testers
+                        // reported "why is Group 2 sitting there empty?"
+                        // The underlying `groups` array stays intact (so
+                        // `groupIdx` keeps mapping to the correct position
+                        // in scorerIDs / teeTimes / round_players); we only
+                        // skip rendering. As soon as a member becomes active
+                        // (auto-add via the refresh union in v55), they
+                        // populate `groups[groupIdx]` and the card appears.
+                        ForEach(Array(groups.enumerated()).filter { !$0.element.isEmpty }, id: \.offset) { groupIdx, group in
                             groupCard(index: groupIdx, players: group)
                                 .id(group.map(\.id))  // force re-render when players change
                                 .padding(.horizontal, 20)
