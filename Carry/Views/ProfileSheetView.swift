@@ -12,7 +12,6 @@ struct ProfileView: View {
     @State private var showGhinEdit = false
     @State private var showNotifications = false
     @State private var showClubEdit = false
-    @State private var showPaywall = false
     @State private var showPhotoPicker = false
     @State private var showPhotoOptions = false
     @State private var showCamera = false
@@ -210,7 +209,7 @@ struct ProfileView: View {
                         }
                     }
 
-                    // MARK: Subscription / Upgrade
+                    // MARK: Subscription (premium users only — free users hit the paywall via gates)
                     if storeService.isPremium {
                         capsHeader("SUBSCRIPTION")
                         settingsGroup {
@@ -226,30 +225,6 @@ struct ProfileView: View {
                                 Task { try? await AppStore.sync() }
                             }
                         }
-                    } else {
-                        Button {
-                            showPaywall = true
-                        } label: {
-                            HStack(spacing: 10) {
-                                Image("premium-crown")
-                                    .resizable()
-                                    .scaledToFit()
-                                    .frame(width: 20, height: 20)
-                                Text("Upgrade to Premium")
-                                    .font(.system(size: 16, weight: .semibold))
-                                    .foregroundColor(Color.deepNavy)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 56)
-                            .background(
-                                RoundedRectangle(cornerRadius: 16)
-                                    .strokeBorder(Color.deepNavy, lineWidth: 1.5)
-                            )
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 1)
                     }
 
                     // MARK: Data
@@ -395,9 +370,6 @@ struct ProfileView: View {
                 .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
                 .presentationBackground(.white)
-        }
-        .sheet(isPresented: $showPaywall) {
-            PaywallView()
         }
         .confirmationDialog("Profile Photo", isPresented: $showPhotoOptions, titleVisibility: .visible) {
             Button("Take Photo") { showCamera = true }
