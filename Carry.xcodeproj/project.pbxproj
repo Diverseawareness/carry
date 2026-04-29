@@ -89,12 +89,12 @@
 		F50099 /* CarryColors.swift in Sources */ = {isa = PBXBuildFile; fileRef = F60099 /* CarryColors.swift */; };
 		F70001 /* ImageCropView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F80001 /* ImageCropView.swift */; };
 		F70002 /* CameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F80002 /* CameraView.swift */; };
-		QR0001 /* QRScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = QR0002 /* QRScannerView.swift */; };
 		F90001 /* ANDONESI.ttf in Resources */ = {isa = PBXBuildFile; fileRef = F90002 /* ANDONESI.ttf */; };
 		F90003 /* ManageMembersSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F90004 /* ManageMembersSheet.swift */; };
 		GS0001 /* GroupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = GS0002 /* GroupService.swift */; };
 		M10002 /* MembershipRadioButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = M10001 /* MembershipRadioButton.swift */; };
 		N10002 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = N10001 /* NotificationService.swift */; };
+		QR0001 /* QRScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = QR0002 /* QRScannerView.swift */; };
 		S10002 /* SyncQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = S10001 /* SyncQueue.swift */; };
 /* End PBXBuildFile section */
 
@@ -211,7 +211,6 @@
 		F60099 /* CarryColors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarryColors.swift; sourceTree = "<group>"; };
 		F80001 /* ImageCropView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageCropView.swift; sourceTree = "<group>"; };
 		F80002 /* CameraView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraView.swift; sourceTree = "<group>"; };
-		QR0002 /* QRScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRScannerView.swift; sourceTree = "<group>"; };
 		F90002 /* ANDONESI.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = ANDONESI.ttf; sourceTree = "<group>"; };
 		F90004 /* ManageMembersSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManageMembersSheet.swift; sourceTree = "<group>"; };
 		FC29B0CF11FF413AA819A069 /* GolfCourseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GolfCourseService.swift; sourceTree = "<group>"; };
@@ -219,6 +218,7 @@
 		GS0002 /* GroupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupService.swift; sourceTree = "<group>"; };
 		M10001 /* MembershipRadioButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MembershipRadioButton.swift; sourceTree = "<group>"; };
 		N10001 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
+		QR0002 /* QRScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRScannerView.swift; sourceTree = "<group>"; };
 		S10001 /* SyncQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncQueue.swift; sourceTree = "<group>"; };
 		SC0001 /* Secrets.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Secrets.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -776,7 +776,7 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 55;
+				CURRENT_PROJECT_VERSION = 59;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = CarryWidgets/Info.plist;
@@ -813,7 +813,7 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 55;
+				CURRENT_PROJECT_VERSION = 59;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = CarryWidgets/Info.plist;
@@ -848,7 +848,7 @@
 				CODE_SIGN_ENTITLEMENTS = Carry/Carry.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 55;
+				CURRENT_PROJECT_VERSION = 59;
 				INFOPLIST_FILE = Carry/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -876,7 +876,7 @@
 				CODE_SIGN_ENTITLEMENTS = Carry/Carry.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 55;
+				CURRENT_PROJECT_VERSION = 59;
 				INFOPLIST_FILE = Carry/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
