@@ -32,3 +32,8 @@ Pods/
 .DS_Store
 .AppleDouble
 .LSOverride
+
+# macOS Finder folder-icon artifacts. Filename is "Icon" + carriage return,
+# but git strips trailing whitespace from gitignore patterns. "Icon?" matches
+# "Icon" + exactly one char — safe here, no other "Icon" + single-char files.
+Icon?
