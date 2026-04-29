@@ -123,6 +123,34 @@ final class AuthService: ObservableObject {
         }
     }
 
+    // MARK: - Provider-agnostic post-auth wrap-up
+    //
+    // Apple/Google/Email all share the same end-of-flow steps: load profile,
+    // flip auth flags, identify in PostHog, and decide if the user needs to
+    // run onboarding. The only thing that differs is how we got the session.
+    private func finishProviderSignIn(userId: UUID, providerLabel: String) async {
+        await loadProfile(userId: userId)
+        isAuthenticated = true
+
+        if let profile = currentUser {
+            PostHogSDK.shared.identify(userId.uuidString, userProperties: [
+                "name": profile.displayName,
+                "handicap": profile.handicap
+            ])
+            let hasName = !profile.displayName.trimmingCharacters(in: .whitespaces).isEmpty && profile.displayName != "Player"
+            isNewUser = !hasName
+        } else {
+            isNewUser = true
+        }
+        PostHogSDK.shared.capture("user_signed_in", properties: ["provider": providerLabel])
+
+        isOnboarded = isNewUser ? false : hasValidProfile
+
+        if isOnboarded {
+            NotificationService.shared.requestPermissionAndRegister()
+        }
+    }
+
     // MARK: - Apple Sign-In
 
     func signInWithApple(credential: ASAuthorizationAppleIDCredential) async throws {
@@ -168,33 +196,48 @@ final class AuthService: ObservableObject {
                 .execute()
         }
 
-        await loadProfile(userId: session.user.id)
-        isAuthenticated = true
+        await finishProviderSignIn(userId: session.user.id, providerLabel: "apple")
+    }
 
-        // Identify user in PostHog
-        if let profile = currentUser {
-            PostHogSDK.shared.identify(session.user.id.uuidString, userProperties: [
-                "name": profile.displayName,
-                "handicap": profile.handicap
-            ])
+    // MARK: - Google Sign-In
+    //
+    // Caller (AuthView) drives the GIDSignIn flow and hands us the idToken.
+    // We just exchange it with Supabase, exactly like the Apple path.
+    func signInWithGoogle(idToken: String, accessToken: String?) async throws {
+        let session = try await client.auth.signInWithIdToken(
+            credentials: .init(
+                provider: .google,
+                idToken: idToken,
+                accessToken: accessToken
+            )
+        )
+        await finishProviderSignIn(userId: session.user.id, providerLabel: "google")
+    }
+
+    // MARK: - Email Sign-Up / Sign-In
+
+    /// Creates a new account. With email confirmation required (Supabase dashboard
+    /// setting), `signUp` returns a user but no session — the user must click the
+    /// confirmation link before they can sign in. We surface that as
+    /// `emailConfirmationPending` so the UI can show a "Check your email" state.
+    func signUpWithEmail(email: String, password: String) async throws {
+        let response = try await client.auth.signUp(email: email, password: password)
+        if response.session == nil {
+            throw AuthError.emailConfirmationPending
         }
-        PostHogSDK.shared.capture("user_signed_in")
+        await finishProviderSignIn(userId: response.user.id, providerLabel: "email")
+    }
 
-        // New user: profile exists but default avatar/color = hasn't customized yet
-        if let profile = currentUser {
-            let hasName = !profile.displayName.trimmingCharacters(in: .whitespaces).isEmpty && profile.displayName != "Player"
-            isNewUser = !hasName
-        }
+    func signInWithEmail(email: String, password: String) async throws {
+        let session = try await client.auth.signIn(email: email, password: password)
+        await finishProviderSignIn(userId: session.user.id, providerLabel: "email")
+    }
 
-        // New users always go through onboarding (photo, handicap, club)
-        // even if Apple provided their name
-        isOnboarded = isNewUser ? false : hasValidProfile
-
-        // Only register for push if already onboarded — new users get
-        // the system prompt during onboarding's "Enable Notifications" step
-        if isOnboarded {
-            NotificationService.shared.requestPermissionAndRegister()
-        }
+    func sendPasswordReset(email: String) async throws {
+        try await client.auth.resetPasswordForEmail(
+            email,
+            redirectTo: URL(string: "https://carryapp.site/reset")
+        )
     }
 
     // MARK: - Dev Skip (bypass auth for testing)
@@ -529,13 +572,16 @@ final class AuthService: ObservableObject {
 enum AuthError: LocalizedError {
     case missingToken
     case profileSaveVerificationFailed
+    case emailConfirmationPending
 
     var errorDescription: String? {
         switch self {
         case .missingToken:
-            return "Missing identity token from Apple Sign-In"
+            return "Missing identity token from sign-in"
         case .profileSaveVerificationFailed:
             return "Couldn't confirm your profile was saved. Please try again."
+        case .emailConfirmationPending:
+            return nil
         }
     }
 }
