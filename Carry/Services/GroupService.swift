@@ -84,10 +84,14 @@ final class GroupService {
             groupNum: memberGroupNums[createdBy] ?? 1
         )]
 
-        // Insert other members — active (Quick Start) or invited (normal flow)
-        // For Quick Games, scorers for groups 2+ are inserted as 'invited' so they
-        // get a push notification and invite card (instead of relying on a separate UPDATE)
-        for memberId in memberIds where memberId != createdBy {
+        // Insert other members — active (Quick Start) or invited (normal flow).
+        // Dedupe by playerId: the partial UNIQUE INDEX on
+        // `group_members(group_id, player_id) WHERE invited_phone IS NULL`
+        // (added in 20260426000000) rejects a batch containing duplicates,
+        // which would fail the entire createGroup transaction. Dedupe defensively
+        // so any caller-side duplication never reaches the DB.
+        var seenPlayerIds: Set<UUID> = [createdBy]
+        for memberId in memberIds where seenPlayerIds.insert(memberId).inserted {
             let status: String
             if scorerIdsToInvite.contains(memberId) {
                 status = "invited"
@@ -1545,6 +1549,7 @@ final class GroupService {
                 roundPlayers: roundPlayers,
                 groupScorerIds: groupScorerIds
             )
+            emptyRound.scorerPlayerIds = groupScorerIds
             return emptyRound
         }
 
@@ -1722,6 +1727,7 @@ final class GroupService {
             roundPlayers: roundPlayers,
             groupScorerIds: groupScorerIds
         )
+        round.scorerPlayerIds = groupScorerIds
         round.scoringMode = ScoringMode(rawValue: roundDTO.scoringMode ?? "single") ?? .single
         round.skinRules = SkinRules(
             net: roundDTO.net,

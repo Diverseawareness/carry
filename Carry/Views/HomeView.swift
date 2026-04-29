@@ -25,6 +25,7 @@ struct HomeRound: Identifiable {
     let invitedBy: String?     // name of person who invited (for .invited)
     let creatorId: Int         // player ID of round creator
     var scorerPlayerId: Int? = nil  // player ID of designated scorer (nil = creator scores)
+    var scorerPlayerIds: [Int]? = nil  // full per-group scorer player IDs (Quick Game gate)
     var teeBox: TeeBox? = nil       // tee box for handicap calculations
     var supabaseGroupId: UUID? = nil // group ID for Supabase linking
     var roundsPlayed: Int = 0  // total rounds played in this group
@@ -1395,6 +1396,8 @@ struct HomeView: View {
         config.supabaseGroupId = round.supabaseGroupId
         config.scoringMode = round.scoringMode
         config.isQuickGame = round.isQuickGame
+        config.scorerPlayerId = round.scorerPlayerId
+        config.scorerPlayerIds = round.scorerPlayerIds
         // HomeRound.scheduledDate is already resolved to the CURRENT user's
         // tee time (buildHomeRound picks teeTimes[userGroup-1] per memory).
         // Pipe through to the scorecard header's subtitle.

@@ -45,6 +45,8 @@ struct RoundConfig {
     var supabaseRoundId: UUID? = nil
     var supabaseGroupId: UUID? = nil
     var scorerProfileId: UUID? = nil  // UUID of the designated scorer
+    var scorerPlayerId: Int? = nil  // Player ID of the scorer for the current user's tee-time group (Quick Game scorer-only gate). nil = unknown / fall back to allow.
+    var scorerPlayerIds: [Int]? = nil  // Full per-group scorer player IDs from skins_groups.scorer_ids. Used by the QG gate to allow ANY designated scorer (group 1 OR group 2+) to enter scores.
     var scoringMode: ScoringMode = .single
     var isQuickGame: Bool = false  // Quick Game flag — lifts the sequential-hole scoring gate so multi-group parallel play can score any hole at any time
     var winningsDisplay: String = "gross"  // "gross" or "net" — controls scorecard cash bar display

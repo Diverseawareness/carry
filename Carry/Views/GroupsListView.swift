@@ -946,6 +946,10 @@ struct GroupsListView: View {
         )
         config.supabaseRoundId = round.id
         config.supabaseGroupId = group.id
+        config.scoringMode = round.scoringMode
+        config.isQuickGame = group.isQuickGame
+        config.scorerPlayerId = round.scorerPlayerId
+        config.scorerPlayerIds = group.scorerIds
         // HomeRound.scheduledDate is already resolved to the CURRENT user's
         // tee time (buildHomeRound picks teeTimes[userGroup-1] per memory).
         // Pipe through to the scorecard header's subtitle.

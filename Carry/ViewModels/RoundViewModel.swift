@@ -329,6 +329,37 @@ class RoundViewModel: ObservableObject {
         return true
     }
 
+    /// True if the current user is a designated scorer of any tee-time group in
+    /// the round. Only consulted in Quick Game mode (Skins Groups use everyone-scores).
+    ///
+    /// Three-layer check, ordered most→least specific:
+    /// 1. Primary: full per-group scorer array (`scorerPlayerIds`). Allows ANY
+    ///    designated scorer to enter scores — group 1 creator/scorer AND group
+    ///    2+ non-creator scorers like Emese both pass. Since the scorecard
+    ///    only renders the user's own group, "is the user a scorer of any
+    ///    group" is equivalent to "can the user score the players in front
+    ///    of them" without the int-id-mapping fragility of the per-user-group
+    ///    resolution path.
+    /// 2. Single-scorer plumb (`scorerPlayerId`). Older code paths populate
+    ///    only this; falls back when the array is missing.
+    /// 3. Last-resort creator-only check. Quick Games always lock the creator
+    ///    as a scorer of their own group (memory hard rule), so this is safe
+    ///    for the common single-group case. Will incorrectly block group 2+
+    ///    non-creator scorers if both layers above are missing — which only
+    ///    happens on legacy paths that don't plumb either field.
+    var isCurrentUserScorerForOwnGroup: Bool {
+        if let ids = config.scorerPlayerIds, !ids.isEmpty {
+            return ids.contains(currentUserId)
+        }
+        if let scorerId = config.scorerPlayerId {
+            return scorerId == currentUserId
+        }
+        if let creatorId = config.creatorId {
+            return creatorId == currentUserId
+        }
+        return true
+    }
+
     // Clear a previously entered score
     func clearScore(playerId: Int, holeNum: Int) {
         scores[playerId]?[holeNum] = nil

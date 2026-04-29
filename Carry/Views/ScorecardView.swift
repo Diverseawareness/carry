@@ -134,6 +134,10 @@ struct ScorecardView: View {
         .onAppear {
             // Only show scoring info when scorecard opens to hole 1 (not from final results)
             guard viewModel.activeHole == 1 else { return }
+            // Quick Games: only the dedicated scorer sees the "Keeping Score" coachmark.
+            // Non-scorers (other Carry users in the group) can't enter scores, so the
+            // "You're the Scorer" copy doesn't apply to them.
+            if isQuickGame && !viewModel.isCurrentUserScorerForOwnGroup { return }
             let perUserKey = "\(Self.scoringInfoKeyPrefix)_\(currentUserId)"
             let count = UserDefaults.standard.integer(forKey: perUserKey)
             if count < 5 {
@@ -738,6 +742,12 @@ struct ScorecardView: View {
                     if !viewModel.canScore(holeNum: holeNum) {
                         #if DEBUG
                         print("[Scorecard.tap] BLOCKED canScore=false hole=\(holeNum) player=\(p.id)")
+                        #endif
+                        return
+                    }
+                    if config.isQuickGame && !viewModel.isCurrentUserScorerForOwnGroup {
+                        #if DEBUG
+                        print("[Scorecard.tap] BLOCKED Quick Game scorer-only — current user is not designated scorer for their group")
                         #endif
                         return
                     }
