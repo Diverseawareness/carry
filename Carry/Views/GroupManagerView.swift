@@ -1741,6 +1741,16 @@ struct GroupManagerView: View {
             #endif
             await refreshGroupData()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .didReceiveGroupStateChangePush)) { notification in
+            // memberJoined / memberDeclined push received while this view is on
+            // screen. Refresh now instead of waiting up to 30s for the timer.
+            guard let pushedGroupId = notification.object as? UUID,
+                  pushedGroupId == supabaseGroupId else { return }
+            #if DEBUG
+            print("[GroupManagerView] memberJoined/Declined push received — refreshing")
+            #endif
+            Task { await refreshGroupData() }
+        }
         .ignoresSafeArea(.container, edges: .top)
         .sheet(isPresented: $showAddSheet) {
             addPlayerSheet

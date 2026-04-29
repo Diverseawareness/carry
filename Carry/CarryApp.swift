@@ -95,6 +95,15 @@ class CarryAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCente
             // Immediately trigger invite check when push arrives in foreground
             NotificationCenter.default.post(name: .didTapGroupInviteNotification, object: nil)
         }
+        if type == "memberJoined" || type == "memberDeclined" {
+            // Creator viewing GroupManagerView when an invitee accepts/declines:
+            // poll every 30s would catch it eventually, but the push gives us
+            // an immediate signal — refresh the group state now.
+            if let groupIdString = userInfo["groupId"] as? String,
+               let groupId = UUID(uuidString: groupIdString) {
+                NotificationCenter.default.post(name: .didReceiveGroupStateChangePush, object: groupId)
+            }
+        }
         completionHandler([.banner, .sound])
     }
 
@@ -130,6 +139,11 @@ extension NSNotification.Name {
     static let didCancelRound = NSNotification.Name("didCancelRound")
     static let showNewGamePicker = NSNotification.Name("showNewGamePicker")
     static let showDebugGuestClaim = NSNotification.Name("showDebugGuestClaim")
+    /// Posted when the creator's device receives a memberJoined / memberDeclined
+    /// push while the app is foregrounded. Object = group UUID. GroupManagerView
+    /// listens to refresh its roster immediately instead of waiting for the 30s
+    /// auto-refresh poll.
+    static let didReceiveGroupStateChangePush = NSNotification.Name("didReceiveGroupStateChangePush")
 }
 
 @main
