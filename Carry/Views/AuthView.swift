@@ -5,6 +5,7 @@ struct AuthView: View {
     @EnvironmentObject var authService: AuthService
     @State private var error: String?
     @State private var isSigningIn = false
+    @State private var showEmailSheet = false
 
     /// Optional: in debug/test flows, tapping the sign-in button calls this instead of real Apple Sign-In.
     var onDebugSkip: (() -> Void)? = nil
@@ -48,36 +49,72 @@ struct AuthView: View {
                     // Flexible gap pushes button toward bottom
                     Spacer()
 
-                    // Sign in with Apple
-                    if let skip = onDebugSkip {
-                        // Debug mode: tappable button that skips real sign-in
-                        Button(action: skip) {
+                    // Sign-in buttons (Email, Google, Apple) per Figma 1324:2750
+                    VStack(spacing: 12) {
+                        // Email
+                        Button { showEmailSheet = true } label: {
                             HStack(spacing: 12) {
-                                Image(systemName: "apple.logo")
+                                Image(systemName: "envelope")
                                     .font(.system(size: 20))
-                                Text("Sign in using Apple")
+                                Text("Sign in using Email")
                                     .font(.carry.label)
                                     .tracking(CarryTracking.tight)
                             }
-                            .foregroundColor(.white)
+                            .foregroundColor(Color(hexString: "#064102"))
                             .frame(maxWidth: .infinity)
-                            .frame(height: 51)
-                            .background(RoundedRectangle(cornerRadius: 18).fill(.black))
+                            .frame(height: 52)
+                            .background(RoundedRectangle(cornerRadius: 18).fill(Color(hexString: "#BCF0B5")))
                         }
-                        .padding(.horizontal, w * 0.084)
-                    } else {
-                        // Real sign-in flow — use native Apple button directly
-                        SignInWithAppleButton(.signIn) { request in
-                            request.requestedScopes = [.fullName, .email]
-                        } onCompletion: { result in
-                            handleSignIn(result: result)
-                        }
-                        .signInWithAppleButtonStyle(.black)
-                        .frame(height: 51)
-                        .cornerRadius(18)
                         .disabled(isSigningIn)
-                        .padding(.horizontal, w * 0.084)
+
+                        // Google
+                        Button(action: handleGoogleSignIn) {
+                            HStack(spacing: 12) {
+                                Image("google-logo")
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 20, height: 20)
+                                Text("Sign in using Google")
+                                    .font(.carry.label)
+                                    .tracking(CarryTracking.tight)
+                            }
+                            .foregroundColor(.black)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 52)
+                            .background(RoundedRectangle(cornerRadius: 18).fill(.white))
+                        }
+                        .disabled(isSigningIn)
+
+                        // Apple
+                        if let skip = onDebugSkip {
+                            // Debug mode: tappable button that skips real sign-in
+                            Button(action: skip) {
+                                HStack(spacing: 12) {
+                                    Image(systemName: "apple.logo")
+                                        .font(.system(size: 20))
+                                    Text("Sign in using Apple")
+                                        .font(.carry.label)
+                                        .tracking(CarryTracking.tight)
+                                }
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 52)
+                                .background(RoundedRectangle(cornerRadius: 18).fill(.black))
+                            }
+                        } else {
+                            // Real sign-in flow — use native Apple button directly
+                            SignInWithAppleButton(.signIn) { request in
+                                request.requestedScopes = [.fullName, .email]
+                            } onCompletion: { result in
+                                handleSignIn(result: result)
+                            }
+                            .signInWithAppleButtonStyle(.black)
+                            .frame(height: 52)
+                            .cornerRadius(18)
+                            .disabled(isSigningIn)
+                        }
                     }
+                    .padding(.horizontal, w * 0.084)
 
                     if isSigningIn {
                         ProgressView()
@@ -141,6 +178,31 @@ struct AuthView: View {
         .ignoresSafeArea()
         .preferredColorScheme(.dark)
         .statusBarHidden(false)
+        .sheet(isPresented: $showEmailSheet) {
+            EmailAuthSheet()
+                .environmentObject(authService)
+        }
+    }
+
+    private func handleGoogleSignIn() {
+        guard let rootVC = UIApplication.shared.connectedScenes
+            .compactMap({ ($0 as? UIWindowScene)?.keyWindow?.rootViewController })
+            .first else { return }
+        isSigningIn = true
+        error = nil
+        Task {
+            do {
+                let tokens = try await GoogleSignInService.signIn(presenting: rootVC)
+                try await authService.signInWithGoogle(idToken: tokens.idToken, accessToken: tokens.accessToken)
+            } catch GoogleSignInService.Failure.cancelled {
+                // user dismissed — silent
+            } catch let e as GoogleSignInService.Failure {
+                self.error = e.errorDescription ?? "Sign in failed. Please try again."
+            } catch {
+                self.error = "Sign in failed. Please try again."
+            }
+            isSigningIn = false
+        }
     }
 
     private func handleSignIn(result: Result<ASAuthorization, Error>) {
