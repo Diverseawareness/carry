@@ -17,6 +17,8 @@
 		60385FE52F7A167800FBF213 /* SMSInviteSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60385FE42F7A167800FBF213 /* SMSInviteSheet.swift */; };
 		6067A5C52F75E4140055DE9A /* PostHog in Frameworks */ = {isa = PBXBuildFile; productRef = 6067A5C42F75E4140055DE9A /* PostHog */; };
 		6067A5C72F75E7980055DE9A /* AnalyticsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6067A5C62F75E7980055DE9A /* AnalyticsService.swift */; };
+		606FCC162FA1BE5600C79B91 /* GoogleSignInService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 606FCC152FA1BE5600C79B91 /* GoogleSignInService.swift */; };
+		606FCC182FA1BEE300C79B91 /* EmailAuthSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 606FCC172FA1BEE300C79B91 /* EmailAuthSheet.swift */; };
 		608DA9452F8A3A0200B69072 /* PostHog in Frameworks */ = {isa = PBXBuildFile; productRef = CT0001 /* PostHog */; };
 		608DA9462F8A3A0200B69072 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = CT0002 /* Supabase */; };
 		6096464F2F8F5D8B002F3BA9 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6096464E2F8F5D8B002F3BA9 /* WidgetKit.framework */; };
@@ -89,12 +91,12 @@
 		F50099 /* CarryColors.swift in Sources */ = {isa = PBXBuildFile; fileRef = F60099 /* CarryColors.swift */; };
 		F70001 /* ImageCropView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F80001 /* ImageCropView.swift */; };
 		F70002 /* CameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F80002 /* CameraView.swift */; };
-		QR0001 /* QRScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = QR0002 /* QRScannerView.swift */; };
 		F90001 /* ANDONESI.ttf in Resources */ = {isa = PBXBuildFile; fileRef = F90002 /* ANDONESI.ttf */; };
 		F90003 /* ManageMembersSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F90004 /* ManageMembersSheet.swift */; };
 		GS0001 /* GroupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = GS0002 /* GroupService.swift */; };
 		M10002 /* MembershipRadioButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = M10001 /* MembershipRadioButton.swift */; };
 		N10002 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = N10001 /* NotificationService.swift */; };
+		QR0001 /* QRScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = QR0002 /* QRScannerView.swift */; };
 		S10002 /* SyncQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = S10001 /* SyncQueue.swift */; };
 /* End PBXBuildFile section */
 
@@ -139,6 +141,8 @@
 		60385FE42F7A167800FBF213 /* SMSInviteSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SMSInviteSheet.swift; sourceTree = "<group>"; };
 		6056B3532F71DA0E00943125 /* Configuration.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; name = Configuration.storekit; path = Carry/Configuration.storekit; sourceTree = "<group>"; };
 		6067A5C62F75E7980055DE9A /* AnalyticsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsService.swift; sourceTree = "<group>"; };
+		606FCC152FA1BE5600C79B91 /* GoogleSignInService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleSignInService.swift; sourceTree = "<group>"; };
+		606FCC172FA1BEE300C79B91 /* EmailAuthSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailAuthSheet.swift; sourceTree = "<group>"; };
 		608DA91A2F8A35F900B69072 /* CarryTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CarryTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		6096464C2F8F5D8B002F3BA9 /* CarryWidgetsExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = CarryWidgetsExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		6096464E2F8F5D8B002F3BA9 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
@@ -211,7 +215,6 @@
 		F60099 /* CarryColors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarryColors.swift; sourceTree = "<group>"; };
 		F80001 /* ImageCropView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageCropView.swift; sourceTree = "<group>"; };
 		F80002 /* CameraView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraView.swift; sourceTree = "<group>"; };
-		QR0002 /* QRScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRScannerView.swift; sourceTree = "<group>"; };
 		F90002 /* ANDONESI.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = ANDONESI.ttf; sourceTree = "<group>"; };
 		F90004 /* ManageMembersSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManageMembersSheet.swift; sourceTree = "<group>"; };
 		FC29B0CF11FF413AA819A069 /* GolfCourseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GolfCourseService.swift; sourceTree = "<group>"; };
@@ -219,6 +222,7 @@
 		GS0002 /* GroupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupService.swift; sourceTree = "<group>"; };
 		M10001 /* MembershipRadioButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MembershipRadioButton.swift; sourceTree = "<group>"; };
 		N10001 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
+		QR0002 /* QRScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRScannerView.swift; sourceTree = "<group>"; };
 		S10001 /* SyncQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncQueue.swift; sourceTree = "<group>"; };
 		SC0001 /* Secrets.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Secrets.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -364,6 +368,7 @@
 		C10006 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				606FCC172FA1BEE300C79B91 /* EmailAuthSheet.swift */,
 				60385FE42F7A167800FBF213 /* SMSInviteSheet.swift */,
 				60385FE02F78D10200FBF213 /* ResultsShareCard.swift */,
 				FEC0B2BCD1224503A328768D /* GuestClaimView.swift */,
@@ -417,6 +422,7 @@
 		C10007 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				606FCC152FA1BE5600C79B91 /* GoogleSignInService.swift */,
 				609646682F8F6140002F3BA9 /* LiveActivityService.swift */,
 				60385FE22F78D12100FBF213 /* ShareCardRenderer.swift */,
 				60385FDE2F76EC9B00FBF213 /* GuestProfileService.swift */,
@@ -618,6 +624,7 @@
 				A10004 /* SkinResult.swift in Sources */,
 				A10005 /* ScoreLabel.swift in Sources */,
 				A10006 /* RoundConfig.swift in Sources */,
+				606FCC182FA1BEE300C79B91 /* EmailAuthSheet.swift in Sources */,
 				A10020 /* SupabaseModels.swift in Sources */,
 				A10007 /* RoundViewModel.swift in Sources */,
 				A10021 /* SupabaseManager.swift in Sources */,
@@ -672,6 +679,7 @@
 				B5263A87AFF44D4C95F2CB91 /* CourseSelectionView.swift in Sources */,
 				C20001 /* AppRouter.swift in Sources */,
 				C20002 /* GroupInviteParser.swift in Sources */,
+				606FCC162FA1BE5600C79B91 /* GoogleSignInService.swift in Sources */,
 				C20005 /* ScoreInputSheet.swift in Sources */,
 				C20006 /* RoundCompleteView.swift in Sources */,
 				C20007 /* DebugMenuView.swift in Sources */,

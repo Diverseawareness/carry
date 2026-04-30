@@ -46,11 +46,16 @@ struct AuthView: View {
                     }
                     .multilineTextAlignment(.center)
 
-                    // Flexible gap pushes button toward bottom
-                    Spacer()
+                    // Flexible gap pushes button toward bottom — minLength keeps a
+                    // breathing margin between tagline and Email button when the
+                    // 3-button stack would otherwise crowd the text on shorter screens.
+                    Spacer(minLength: 40)
 
-                    // Sign-in buttons (Email, Google, Apple) per Figma 1324:2750
+                    // Sign-in buttons per Figma 1324:2750. Email + Google are
+                    // gated to DEBUG until the Google Cloud / Supabase setup
+                    // lands — Apple is the only auth in App Store builds.
                     VStack(spacing: 12) {
+                        #if DEBUG
                         // Email
                         Button { showEmailSheet = true } label: {
                             HStack(spacing: 12) {
@@ -70,7 +75,7 @@ struct AuthView: View {
                         // Google
                         Button(action: handleGoogleSignIn) {
                             HStack(spacing: 12) {
-                                Image("google-logo")
+                                Image("googleIcon")
                                     .resizable()
                                     .scaledToFit()
                                     .frame(width: 20, height: 20)
@@ -84,6 +89,7 @@ struct AuthView: View {
                             .background(RoundedRectangle(cornerRadius: 18).fill(.white))
                         }
                         .disabled(isSigningIn)
+                        #endif
 
                         // Apple
                         if let skip = onDebugSkip {
