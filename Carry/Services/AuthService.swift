@@ -62,14 +62,18 @@ final class AuthService: ObservableObject {
         UserDefaults.standard.bool(forKey: "onboardingCompleted")
     }
 
-    /// A profile is valid for skipping onboarding if it has a real display name.
-    /// If the profile exists in Supabase with a valid name, the user has already onboarded
-    /// (possibly on another device or before an app reinstall).
+    /// A profile is valid for skipping onboarding if the user has previously
+    /// completed the Golf Profile step (homeClub is required there). A real
+    /// displayName alone isn't proof — Apple Sign In writes the Apple name to
+    /// the profile before onboarding runs, so a brand-new Apple user has a real
+    /// displayName but no homeClub.
     private var hasValidProfile: Bool {
         guard let profile = currentUser else { return false }
         let name = profile.displayName.trimmingCharacters(in: .whitespaces)
-        if !name.isEmpty && name != "Player" {
-            // Profile exists in Supabase — restore the onboarding flag
+        let hasRealName = !name.isEmpty && name != "Player"
+        let hasHomeClub = profile.homeClubId != nil ||
+            (profile.homeClub.map { !$0.trimmingCharacters(in: .whitespaces).isEmpty } ?? false)
+        if hasRealName && hasHomeClub {
             if !hasCompletedOnboarding {
                 UserDefaults.standard.set(true, forKey: "onboardingCompleted")
             }
@@ -137,8 +141,7 @@ final class AuthService: ObservableObject {
                 "name": profile.displayName,
                 "handicap": profile.handicap
             ])
-            let hasName = !profile.displayName.trimmingCharacters(in: .whitespaces).isEmpty && profile.displayName != "Player"
-            isNewUser = !hasName
+            isNewUser = !hasValidProfile
         } else {
             isNewUser = true
         }

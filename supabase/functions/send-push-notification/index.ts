@@ -29,7 +29,7 @@ serve(async (req) => {
 
     const jwt = await generateAPNsJWT();
 
-    const { type, old_record } = payload;
+    const { type, old_record, self_initiated: selfInitiated = false } = payload;
 
     // Diagnostic: log every inbound webhook so the dispatch decision is
     // visible in Logs. Without this, all early-return paths look identical
@@ -88,8 +88,8 @@ serve(async (req) => {
       // Same transition guard for group_members: `saveGroupNums` and other
       // iOS writes UPDATE invited rows (group_num, sort_order) without
       // changing status — those must NOT fire a duplicate invite push.
-      console.log("[branch] group invite");
-      return await handleGroupInvite(supabase, record, jwt);
+      console.log("[branch] group invite", { selfInitiated });
+      return await handleGroupInvite(supabase, record, jwt, selfInitiated);
     } else if (record.status === "active" && record.role === "member" && record.player_id
                && type === "UPDATE" && old_record?.status !== "active") {
       console.log("[branch] member joined");
@@ -120,7 +120,16 @@ serve(async (req) => {
 
 // ─── Group Invite Push ───────────────────────────────────────────
 
-async function handleGroupInvite(supabase: any, record: any, jwt: string) {
+async function handleGroupInvite(supabase: any, record: any, jwt: string, selfInitiated: boolean) {
+  // Self-initiated joins (user scanned a QR / tapped their own invite link)
+  // arrive as an INSERT with status='invited' against their own player_id.
+  // The iOS client immediately promotes the row to 'active', so the only push
+  // here would be telling the user they were invited to a group they just
+  // actively joined. Skip it.
+  if (selfInitiated) {
+    return new Response(JSON.stringify({ message: "Self-initiated join, no invite push" }), { status: 200 });
+  }
+
   const { data: invitedProfile } = await supabase
     .from("profiles")
     .select("device_token, display_name")
