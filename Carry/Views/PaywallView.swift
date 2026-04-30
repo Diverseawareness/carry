@@ -17,11 +17,11 @@ enum PaywallTrigger {
     /// One-line context shown just under the hero title.
     var contextLine: String {
         switch self {
-        case .startRound:          return "Starting rounds is a Premium feature"
-        case .createGroup:         return "Recurring Skins Groups are Premium"
-        case .scoreRound:          return "Scoring rounds is a Premium feature"
-        case .manageGroup:         return "Managing groups is a Premium feature"
-        case .allTimeLeaderboard:  return "All-time leaderboards are a Premium feature"
+        case .startRound:          return "Starting rounds requires a subscription"
+        case .createGroup:         return "Recurring Skins Groups require a subscription"
+        case .scoreRound:          return "Scoring rounds requires a subscription"
+        case .manageGroup:         return "Managing groups requires a subscription"
+        case .allTimeLeaderboard:  return "All-time leaderboards require a subscription"
         case .general:             return ""
         }
     }
@@ -45,7 +45,7 @@ struct PaywallView: View {
     /// get the reassuring framing (you had this, you can have it back)
     /// instead of a cold first-time pitch.
     private var heroTitle: String {
-        storeService.hadPremium ? "Premium Trial Ended" : "Go Premium"
+        storeService.hadPremium ? "Trial Ended" : "Start Your Free Trial"
     }
 
     /// CTA button label flips for post-trial users — "Try It Free" would

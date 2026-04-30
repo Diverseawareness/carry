@@ -614,7 +614,7 @@ struct QuickGameSheet: View {
                                 .scaledToFit()
                                 .frame(height: 11)
                                 .foregroundColor(Color.goldDark)
-                            Text("Premium feature")
+                            Text("Subscription required")
                                 .font(.carry.caption)
                                 .foregroundColor(Color.textDisabled)
                         }
@@ -714,7 +714,7 @@ struct QuickGameSheet: View {
                             .scaledToFit()
                             .frame(height: 11)
                             .foregroundColor(Color.goldDark)
-                        Text("Premium feature")
+                        Text("Subscription required")
                             .font(.carry.caption)
                             .foregroundColor(Color.textDisabled)
                     }

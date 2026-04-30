@@ -207,7 +207,7 @@ struct PlayerGroupsSheet: View {
                                     .frame(width: 16, height: 16)
                                     .foregroundColor(Color.goldAccent)
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text("Managing groups requires Premium")
+                                    Text("Managing groups requires a subscription")
                                         .font(.carry.bodySMBold)
                                         .foregroundColor(Color.textPrimary)
                                     Text("Upgrade to save changes")
@@ -231,7 +231,7 @@ struct PlayerGroupsSheet: View {
                         .buttonStyle(.plain)
                         .padding(.horizontal, 16)
                         .padding(.bottom, 8)
-                        .accessibilityLabel("Upgrade to Premium to manage groups")
+                        .accessibilityLabel("Subscribe to manage groups")
                     }
 
                     ForEach(Array(groups.enumerated()), id: \.offset) { groupIdx, groupPlayers in

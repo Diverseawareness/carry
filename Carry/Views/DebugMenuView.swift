@@ -129,16 +129,16 @@ struct DebugMenuView: View {
                 }
                 divider
                 // Forces hadPremium=false so the paywall renders its
-                // first-time state: "Go Premium" hero, "30 days free"
-                // plan subtitles, "Try It Free" CTA.
+                // first-time state: "Start your free trial" hero, "30 days
+                // free" plan subtitles, "Try It Free" CTA.
                 actionRow("Show Paywall — New User (Trial)", icon: "crown") {
                     storeService._debugSetHadPremium(false)
                     showPaywallPreview = true
                 }
                 divider
                 // Forces hadPremium=true so the paywall renders its
-                // post-trial state: "Your Premium trial ended" hero,
-                // plan subtitles without "30 days free", "Subscribe" CTA.
+                // post-trial state: "Trial Ended" hero, plan subtitles
+                // without "30 days free", "Subscribe" CTA.
                 actionRow("Show Paywall — Trial Ended", icon: "crown.fill") {
                     storeService._debugSetHadPremium(true)
                     showPaywallPreview = true

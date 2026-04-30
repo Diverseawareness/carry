@@ -42,7 +42,7 @@ enum DebugScenario: String, CaseIterable, Identifiable {
         case .homeConcluded:   return "Home (Concluded)"
         case .homeEmpty:       return "Home (Empty)"
         case .homeFree:        return "Home (Free User)"
-        case .homePremium:     return "Home (Premium)"
+        case .homePremium:     return "Home (Subscriber)"
         case .homeSpectator:   return "Home (Spectator)"
         case .groupCreator:    return "Group Setup (Creator)"
         case .groupMember:     return "Group Setup (Member)"

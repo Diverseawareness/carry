@@ -56,7 +56,7 @@ struct PremiumGatedButton<Label: View>: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(accessibilityLabel)
-        .accessibilityHint(storeService.isPremium ? "" : "Requires Premium subscription")
+        .accessibilityHint(storeService.isPremium ? "" : "Requires a subscription")
         .sheet(isPresented: $showPaywall) {
             PaywallView(trigger: trigger)
                 .environmentObject(storeService)

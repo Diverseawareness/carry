@@ -1509,13 +1509,13 @@ struct GroupManagerView: View {
             if !storeService.isPremium {
                 VStack(spacing: 16) {
                     VStack(spacing: 12) {
-                        Text(storeService.hadPremium ? "Your subscription has ended" : "Start your free trial")
+                        Text(storeService.hadPremium ? "Your subscription has ended" : "Start Your Free Trial")
                             .font(.system(size: 20, weight: .bold))
                             .foregroundColor(Color.textPrimary)
                             .multilineTextAlignment(.center)
                         Text(storeService.hadPremium
                              ? "Subscribe to start games, invite players, and keep your leaderboard going."
-                             : "Try Carry Premium free for 30 days. Start games, invite players, and keep your leaderboard going.")
+                             : "Try Carry free for 30 days. Start games, invite players, and keep your leaderboard going.")
                             .font(.carry.bodySM)
                             .foregroundColor(Color.textTertiary)
                             .multilineTextAlignment(.center)
@@ -4494,7 +4494,7 @@ struct GroupOptionsSheet: View {
                                 .frame(width: 16, height: 16)
                                 .foregroundColor(Color.goldAccent)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Editing requires Premium")
+                                Text("Editing requires a subscription")
                                     .font(.carry.bodySMBold)
                                     .foregroundColor(Color.textPrimary)
                                 Text("Upgrade to change group settings")
@@ -4518,7 +4518,7 @@ struct GroupOptionsSheet: View {
                     .buttonStyle(.plain)
                     .padding(.horizontal, 20)
                     .padding(.bottom, 20)
-                    .accessibilityLabel("Upgrade to Premium to edit group settings")
+                    .accessibilityLabel("Subscribe to edit group settings")
                 }
 
                 // Group Name (hidden for quick games)
@@ -4725,7 +4725,7 @@ struct GroupOptionsSheet: View {
                                         .scaledToFit()
                                         .frame(height: 11)
                                         .foregroundColor(Color.goldDark)
-                                    Text("Premium feature")
+                                    Text("Subscription required")
                                         .font(.carry.caption)
                                         .foregroundColor(Color.textDisabled)
                                 }
@@ -4818,7 +4818,7 @@ struct GroupOptionsSheet: View {
                                         .scaledToFit()
                                         .frame(height: 11)
                                         .foregroundColor(Color.goldDark)
-                                    Text("Premium feature")
+                                    Text("Subscription required")
                                         .font(.carry.caption)
                                         .foregroundColor(Color.textDisabled)
                                 }
