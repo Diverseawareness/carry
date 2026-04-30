@@ -70,7 +70,7 @@ struct AuthView: View {
                         // Google
                         Button(action: handleGoogleSignIn) {
                             HStack(spacing: 12) {
-                                Image("google-logo")
+                                Image("googleIcon")
                                     .resizable()
                                     .scaledToFit()
                                     .frame(width: 20, height: 20)
