@@ -804,16 +804,16 @@ struct HomeView: View {
         // Join triggers the "Allow Paste" prompt and routes the URL
         // through the same `handleScannedInvite` path as a QR scan,
         // landing the user directly inside the group.
-        .alert("Join Skins Game", isPresented: Binding(
+        .alert("Open your invite?", isPresented: Binding(
             get: { clipboardInviteAvailable && !didDismissClipboardInvite },
             set: { if !$0 { markClipboardInviteAcknowledged() } }
         )) {
-            Button("Join") { consumeClipboardInvite() }
-            Button("Cancel", role: .cancel) {
+            Button("Open") { consumeClipboardInvite() }
+            Button("Not Now", role: .cancel) {
                 markClipboardInviteAcknowledged()
             }
         } message: {
-            Text("Someone invited you to a skins game. Tap Join to accept.")
+            Text("Tap Open and choose Allow Paste when iOS asks — we'll take you straight to your group.")
         }
         .alert("Leave Group?", isPresented: Binding(
             get: { roundToLeave != nil },
@@ -1060,11 +1060,16 @@ struct HomeView: View {
     /// flow as a QR scan. Non-Carry URLs dismiss silently (no error
     /// toast for incidental clipboard contents).
     private func consumeClipboardInvite() {
-        markClipboardInviteAcknowledged()
-        guard let url = UIPasteboard.general.url ?? UIPasteboard.general.string.flatMap(URL.init(string:)),
-              GroupInviteParser.parse(url) != nil else {
+        let urlOpt = UIPasteboard.general.url ?? UIPasteboard.general.string.flatMap(URL.init(string:))
+        guard let url = urlOpt, GroupInviteParser.parse(url) != nil else {
+            // Either the user denied the iOS Paste prompt or the clipboard
+            // held something that wasn't a Carry invite. Surface a recovery
+            // hint so they're not stranded.
+            ToastManager.shared.error("Tap the QR icon to scan your invite.")
+            markClipboardInviteAcknowledged()
             return
         }
+        markClipboardInviteAcknowledged()
         handleScannedInvite(url.absoluteString)
     }
 

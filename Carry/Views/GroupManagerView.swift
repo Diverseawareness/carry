@@ -1509,11 +1509,13 @@ struct GroupManagerView: View {
             if !storeService.isPremium {
                 VStack(spacing: 16) {
                     VStack(spacing: 12) {
-                        Text("Your subscription has ended")
+                        Text(storeService.hadPremium ? "Your subscription has ended" : "Start your free trial")
                             .font(.system(size: 20, weight: .bold))
                             .foregroundColor(Color.textPrimary)
                             .multilineTextAlignment(.center)
-                        Text("Subscribe to start games, invite players, and keep your leaderboard going.")
+                        Text(storeService.hadPremium
+                             ? "Subscribe to start games, invite players, and keep your leaderboard going."
+                             : "Try Carry Premium free for 30 days. Start games, invite players, and keep your leaderboard going.")
                             .font(.carry.bodySM)
                             .foregroundColor(Color.textTertiary)
                             .multilineTextAlignment(.center)
@@ -1525,24 +1527,16 @@ struct GroupManagerView: View {
                         // redundant. Inline gated buttons keep .manageGroup.
                         presentPaywall(.general)
                     } label: {
-                        HStack(spacing: 8) {
-                            Image("premium-crown")
-                                .resizable()
-                                .renderingMode(.template)
-                                .scaledToFit()
-                                .frame(width: 16, height: 16)
-                                .foregroundColor(Color.goldAccent)
-                            Text("Upgrade to Premium")
-                                .font(.carry.bodyLGSemibold)
-                                .foregroundColor(Color.textPrimary)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 52)
-                        .contentShape(Rectangle())
-                        .background(
-                            RoundedRectangle(cornerRadius: 14)
-                                .strokeBorder(Color.textPrimary, lineWidth: 1)
-                        )
+                        Text(storeService.hadPremium ? "Subscribe" : "Try It Free")
+                            .font(.carry.bodyLGSemibold)
+                            .foregroundColor(Color.textPrimary)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 52)
+                            .contentShape(Rectangle())
+                            .background(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .strokeBorder(Color.textPrimary, lineWidth: 1)
+                            )
                     }
                     .buttonStyle(.plain)
                     .padding(.top, 4)

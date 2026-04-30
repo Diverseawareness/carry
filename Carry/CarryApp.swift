@@ -313,10 +313,13 @@ struct CarryApp: App {
     private func handleIncomingURL(_ url: URL) {
         if let invite = GroupInviteParser.parse(url) {
             if let groupId = invite.groupId {
-                // Create invite row if user isn't already a member, then navigate into the group
+                // Tapping the invite link / scanning the QR is itself the
+                // accept — promote straight to active so the user lands inside
+                // the group with no second confirmation step (and no "You're
+                // Invited!" push fired back at the device that just scanned).
                 Task {
                     guard let userId = try? await SupabaseManager.shared.client.auth.session.user.id else { return }
-                    try? await groupService.inviteMember(groupId: groupId, playerId: userId)
+                    _ = try? await groupService.joinGroupViaInvite(groupId: groupId, playerId: userId)
                     await MainActor.run {
                         appRouter.shouldRefreshGroups = true
                         appRouter.pendingRoundGroupId = groupId
