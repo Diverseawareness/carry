@@ -156,10 +156,18 @@ struct RoundDTO: Codable, Identifiable {
 struct RoundPlayerDTO: Codable, Identifiable {
     let id: UUID
     let roundId: UUID
+    // playerId stays non-optional UUID. After a guest profile is wiped at
+    // Quick Game termination, this UUID is preserved (the FK to profiles is
+    // dropped — see migration 20260501000001) so the score↔round_players
+    // join keeps working. The render path uses guestDisplayName /
+    // guestHandicap below as fallback when the profile lookup returns
+    // nothing for a wiped guest's UUID.
     let playerId: UUID
     var groupNum: Int
     var status: String  // "accepted", "invited", "declined"
     var invitedBy: UUID?
+    var guestDisplayName: String?
+    var guestHandicap: Double?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -168,6 +176,8 @@ struct RoundPlayerDTO: Codable, Identifiable {
         case groupNum = "group_num"
         case status
         case invitedBy = "invited_by"
+        case guestDisplayName = "guest_display_name"
+        case guestHandicap = "guest_handicap"
     }
 }
 
@@ -233,12 +243,17 @@ struct InviteCourseDTO: Codable {
 struct ScoreDTO: Codable, Identifiable {
     let id: UUID
     let roundId: UUID
+    // playerId stays non-optional UUID — same reasoning as RoundPlayerDTO.
+    // The UUID is preserved across guest profile wipe; render path falls
+    // back to guestDisplayName / guestHandicap when needed.
     let playerId: UUID
     let holeNum: Int
     var score: Int
     var proposedScore: Int?
     var proposedBy: UUID?
     let createdAt: Date?
+    var guestDisplayName: String?
+    var guestHandicap: Double?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -249,6 +264,8 @@ struct ScoreDTO: Codable, Identifiable {
         case proposedScore = "proposed_score"
         case proposedBy = "proposed_by"
         case createdAt = "created_at"
+        case guestDisplayName = "guest_display_name"
+        case guestHandicap = "guest_handicap"
     }
 }
 
@@ -460,6 +477,7 @@ struct SkinsGroupInsert: Codable {
     var teeTimeInterval: Int? = nil
     var lastTeeBoxHolesJson: String? = nil
     var winningsDisplay: String = "gross"
+    var scorerIds: [Int]? = nil
 
     enum CodingKeys: String, CodingKey {
         case name
@@ -480,6 +498,7 @@ struct SkinsGroupInsert: Codable {
         case teeTimeInterval = "tee_time_interval"
         case lastTeeBoxHolesJson = "last_tee_box_holes_json"
         case winningsDisplay = "winnings_display"
+        case scorerIds = "scorer_ids"
     }
 }
 

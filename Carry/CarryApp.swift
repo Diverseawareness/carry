@@ -138,7 +138,6 @@ extension NSNotification.Name {
     static let didEndRound = NSNotification.Name("didEndRound")
     static let didCancelRound = NSNotification.Name("didCancelRound")
     static let showNewGamePicker = NSNotification.Name("showNewGamePicker")
-    static let showDebugGuestClaim = NSNotification.Name("showDebugGuestClaim")
     /// Posted when the creator's device receives a memberJoined / memberDeclined
     /// push while the app is foregrounded. Object = group UUID. GroupManagerView
     /// listens to refresh its roster immediately instead of waiting for the 30s
