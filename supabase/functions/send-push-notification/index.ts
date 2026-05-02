@@ -31,6 +31,15 @@ serve(async (req) => {
 
     const { type, old_record, self_initiated: selfInitiated = false } = payload;
 
+    // Custom-type pushes (not from row triggers — sent directly by pg_cron
+    // jobs or other server code with a fully-formed payload). These come in
+    // WITHOUT a `record` object; they specify their own user_id + body.
+    // Dispatched first so they don't fall through to the row-shape branches.
+    if (type === "handicapReminder") {
+      console.log("[branch] handicap reminder", { user_id: payload.user_id });
+      return await handleHandicapReminder(supabase, payload, jwt);
+    }
+
     // Diagnostic: log every inbound webhook so the dispatch decision is
     // visible in Logs. Without this, all early-return paths look identical
     // (HTTP 200, no log line) and we can't tell which branch matched.
@@ -730,6 +739,49 @@ async function handleAllGroupsActive(supabase: any, record: any, jwt: string) {
   await sendPush(creatorProfile.device_token, apnsPayload, jwt);
 
   return new Response(JSON.stringify({ message: "All groups active push sent to creator" }), { status: 200 });
+}
+
+// ─── Handicap Reminder Push ──────────────────────────────────────
+// Triggered by the daily pg_cron job `send_handicap_reminders()` (see
+// migration 20260502000000). Single-recipient push: looks up the user's
+// device_token, sends an APNs alert with the body string the SQL function
+// already personalized (e.g. "Almost game time — Carry has you at 6.5.
+// Still right?"). Tap currently just opens the app to wherever the user
+// left off; deep-link to the handicap editor is a future enhancement.
+
+async function handleHandicapReminder(supabase: any, payload: any, jwt: string) {
+  const { user_id, body } = payload;
+
+  if (!user_id || !body) {
+    console.log("[handicap reminder] missing user_id or body in payload");
+    return new Response(JSON.stringify({ message: "Missing user_id or body" }), { status: 200 });
+  }
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("device_token")
+    .eq("id", user_id)
+    .single();
+
+  if (!profile?.device_token) {
+    console.log("[handicap reminder] user has no device token", { user_id });
+    return new Response(JSON.stringify({ message: "User has no device token" }), { status: 200 });
+  }
+
+  const apnsPayload = {
+    aps: {
+      alert: {
+        title: "Carry",
+        body: body,
+      },
+      sound: "default",
+    },
+    type: "handicapReminder",
+  };
+
+  await sendPush(profile.device_token, apnsPayload, jwt);
+
+  return new Response(JSON.stringify({ message: "Handicap reminder sent" }), { status: 200 });
 }
 
 // ─── Send Push Helper ────────────────────────────────────────────
