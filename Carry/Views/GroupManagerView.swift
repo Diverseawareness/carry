@@ -301,6 +301,7 @@ struct GroupManagerView: View {
             selectedIDs: selectedIDs,
             nextGuestID: nextGuestID,
             supabaseGroupId: supabaseGroupId,
+            onRefresh: { await refreshGroupData() },
             onCancel: { showManageMembers = false },
             onDone: { result in
                 // Drop any players the sheet long-press-removed from local
@@ -1558,6 +1559,15 @@ struct GroupManagerView: View {
                         if isLiveRound {
                             onBack?()
                         } else if needsNextSchedule {
+                            showSettings = true
+                        } else if needsTeeTimesSet {
+                            // Quick Games don't gate `canStartRound` on tee times
+                            // being set, so the button is enabled even when the
+                            // label says "Set Tee Times to Start". Without this
+                            // branch the tap would fall through to the start path
+                            // and silently start the round. Open Game Options
+                            // (same sheet `needsNextSchedule` opens) so the user
+                            // can actually set the tee times.
                             showSettings = true
                         } else {
                             // canStartRound already gates on pendingScorerWarnings,
@@ -3194,46 +3204,27 @@ struct GroupManagerView: View {
 
             Spacer()
 
-            // Invite button for guests / Pending pill for Carry users
-            if isPendingPlayer {
-                if player.isGuest && isCreator {
-                    // Guest — show "Invite" button with link icon (Scorer pill style)
-                    Button {
-                        if let groupId = supabaseGroupId {
-                            let link = "https://carryapp.site/invite?group=\(groupId.uuidString)"
-                            inviteShareLink = "Join our skins group on Carry!\n\(link)"
-                            UIPasteboard.general.string = link
-                            showInviteShareSheet = true
-                        }
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "link")
-                                .font(.system(size: 11, weight: .semibold))
-                            Text("Invite")
-                                .font(.system(size: 14, weight: .semibold))
-                        }
-                        .foregroundColor(Color.textPrimary)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .background(Capsule().strokeBorder(Color.textPrimary, lineWidth: 1))
-                    }
-                    .buttonStyle(.plain)
-                } else if player.isPendingAccept && !(groupIndex < scorerIDs.count && scorerIDs[groupIndex] == player.id) {
-                    // Carry user who hasn't accepted yet (hidden for scorers — orange avatar + opacity is enough)
-                    Text("Pending")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(Color(hexString: "#E38049"))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(
-                            Capsule()
-                                .fill(Color(hexString: "#FFE7CA"))
-                        )
-                        .overlay(
-                            Capsule()
-                                .strokeBorder(Color(hexString: "#FFD4BE"), lineWidth: 0.88)
-                        )
-                }
+            // Pending pill for Carry users who haven't accepted their invite yet.
+            // Guests no longer have an Invite affordance — under the Carry-only
+            // rule (locked 2026-05-01), guests don't appear in Skins Group
+            // rosters at all, so any guest row reaching this view is a leak.
+            if isPendingPlayer,
+               player.isPendingAccept,
+               !(groupIndex < scorerIDs.count && scorerIDs[groupIndex] == player.id) {
+                // Carry user who hasn't accepted yet (hidden for scorers — orange avatar + opacity is enough)
+                Text("Pending")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(Color(hexString: "#E38049"))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(
+                        Capsule()
+                            .fill(Color(hexString: "#FFE7CA"))
+                    )
+                    .overlay(
+                        Capsule()
+                            .strokeBorder(Color(hexString: "#FFD4BE"), lineWidth: 0.88)
+                    )
             }
 
 
@@ -3677,7 +3668,7 @@ struct GroupManagerView: View {
                     .font(Font.system(size: 17, weight: .semibold))
                     .foregroundColor(Color.textPrimary)
                     .lineLimit(1)
-                if !isQuickGame && (player.isPendingInvite || player.isGuest) {
+                if !isQuickGame && player.isPendingInvite {
                     Text("Invited")
                         .font(Font.system(size: 12, weight: .semibold))
                         .foregroundColor(Color.debugOrange)

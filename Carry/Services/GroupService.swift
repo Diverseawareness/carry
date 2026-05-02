@@ -28,7 +28,8 @@ final class GroupService {
         memberGroupNums: [UUID: Int] = [:],
         teeTimeInterval: Int? = nil,
         scorerIdsToInvite: Set<UUID> = [],
-        lastTeeBoxHolesJson: String? = nil
+        lastTeeBoxHolesJson: String? = nil,
+        scorerIds: [Int]? = nil
     ) async throws -> SkinsGroupDTO {
         let recurrenceJSON: String? = {
             guard let recurrence else { return nil }
@@ -59,7 +60,8 @@ final class GroupService {
                     handicapPercentage: handicapPercentage,
                     isQuickGame: isQuickGame,
                     teeTimeInterval: teeTimeInterval,
-                    lastTeeBoxHolesJson: lastTeeBoxHolesJson
+                    lastTeeBoxHolesJson: lastTeeBoxHolesJson,
+                    scorerIds: scorerIds
                 ))
                 .select()
                 .single()
@@ -282,28 +284,6 @@ final class GroupService {
             "p_group_id": AnyJSON.string(groupId.uuidString),
             "p_group_name": AnyJSON.string(groupName)
         ]).execute()
-    }
-
-    /// Fetch guest members in a group (invited guests who haven't claimed their profile).
-    func fetchGuestMembers(groupId: UUID) async throws -> [ProfileDTO] {
-        let members: [GroupMemberDTO] = try await client.from("group_members")
-            .select()
-            .eq("group_id", value: groupId.uuidString)
-            .eq("status", value: "invited")
-            .execute()
-            .value
-
-        let playerIds = members.map(\.playerId)
-        guard !playerIds.isEmpty else { return [] }
-
-        let profiles: [ProfileDTO] = try await client.from("profiles")
-            .select()
-            .in("id", values: playerIds.map(\.uuidString))
-            .eq("is_guest", value: true)
-            .execute()
-            .value
-
-        return profiles
     }
 
     /// Invite a member to a group (status = "invited"). Skips if already a member.
@@ -1173,8 +1153,15 @@ final class GroupService {
                     }
                     players.append(player)
                 }
+                // Wiped guests (round_players UUIDs whose profiles no longer
+                // exist) are intentionally NOT synthesized into the group's
+                // roster — they belong to historical rounds only and are
+                // reconstructed inside `buildHomeRound` from the denormalized
+                // guest_display_name / guest_handicap fields. Synthesizing them
+                // here would resurrect deleted players in current-roster views
+                // (Tee Times, Manage Members), violating the Carry-only rule.
                 #if DEBUG
-                print("[loadSingleGroup] Backfilled \(extraProfiles.count) players from round_players (missing from group_members) for group \(group.name)")
+                print("[loadSingleGroup] Backfilled \(extraProfiles.count) profiles for group \(group.name)")
                 #endif
             }
         }
@@ -1472,8 +1459,38 @@ final class GroupService {
                     }
                     roundPlayers.append(player)
                 }
+
+                // Wiped-guest fallback: any round_players UUID that had no
+                // profile match is a guest whose profile was deleted on round
+                // termination (per the ephemeral-guest rule). Reconstruct a
+                // Player from the denormalized guest_display_name + guest_handicap
+                // fields so Round History keeps showing the guest by name.
+                let foundIds = Set(profiles.map(\.id))
+                let wipedRps = rpDTOs.filter {
+                    missingIds.contains($0.playerId) && !foundIds.contains($0.playerId)
+                }
+                for rp in wipedRps {
+                    let displayName = rp.guestDisplayName ?? "Guest"
+                    let handicap = rp.guestHandicap ?? 0.0
+                    let player = Player(
+                        id: Player.stableId(from: rp.playerId),
+                        name: displayName,
+                        initials: String(displayName.prefix(2)).uppercased(),
+                        color: "#9B9B9B",
+                        handicap: handicap,
+                        avatar: "👤",
+                        group: rp.groupNum,
+                        ghinNumber: nil,
+                        venmoUsername: nil,
+                        avatarImageName: nil,
+                        avatarUrl: nil,
+                        isGuest: true,
+                        profileId: rp.playerId
+                    )
+                    roundPlayers.append(player)
+                }
                 #if DEBUG
-                print("[buildHomeRound] Added \(profiles.count) players from round_players (were missing from group_members)")
+                print("[buildHomeRound] Added \(profiles.count) players from profiles + \(wipedRps.count) wiped-guest fallbacks for round \(roundDTO.id)")
                 #endif
             }
         }

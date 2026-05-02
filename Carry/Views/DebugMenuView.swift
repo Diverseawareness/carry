@@ -315,16 +315,6 @@ struct DebugMenuView: View {
                     }
                 }
                 divider
-                actionRow("Show Guest Claim Sheet", icon: "person.crop.circle.badge.questionmark") {
-                    dismiss()
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-                        appRouter.navigateToTab = "home"
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                            NotificationCenter.default.post(name: .showDebugGuestClaim, object: nil)
-                        }
-                    }
-                }
-                divider
                 actionRow(SyncQueue.shared.isOnline ? "Simulate Offline" : "Simulate Online", icon: "wifi.slash") {
                     SyncQueue.shared.isOnline.toggle()
                     dismiss()

@@ -7,6 +7,14 @@ struct ManageMembersSheet: View {
     let initialSelectedIDs: Set<Int>
     let initialNextGuestID: Int
     var supabaseGroupId: UUID? = nil
+    /// Async refresh hook into the parent's `refreshGroupData()`. Fires
+    /// on sheet open (`.task`) and on pull-to-refresh inside the sheet.
+    /// Without this, members who flipped to `active` after the sheet
+    /// opened (e.g., an invitee accepted while the creator was looking
+    /// at this sheet) stayed visible as Pending until force-quit —
+    /// SwiftUI doesn't reliably propagate a parent `[Player]` change into
+    /// an already-presented sheet's `let` parameter.
+    let onRefresh: (() async -> Void)?
     let onCancel: () -> Void
     let onDone: (ManageMembersResult) -> Void
 
@@ -39,6 +47,17 @@ struct ManageMembersSheet: View {
     @State private var locallyRemovedIds: Set<Int> = []
     /// Triggers the "Remove {name}" iOS-native confirmation alert.
     @State private var memberToRemove: Player? = nil
+    /// In-flight `removeMember` server DELETE Tasks. Awaited on Done so
+    /// the parent's subsequent `inviteMember` calls don't race against
+    /// pending DELETEs. Without this, removing then re-inviting a member
+    /// in the same sheet session silently no-ops the invite (server's
+    /// existing 'active' row is still there when inviteMember runs;
+    /// inviteMember correctly skips, no INSERT, no push).
+    @State private var inFlightRemovalTasks: [Task<Void, Never>] = []
+    /// Set true while Done is waiting on `inFlightRemovalTasks` to
+    /// finish so the button can show a brief progress state instead of
+    /// appearing frozen.
+    @State private var isFinalizing: Bool = false
 
     enum Field: Hashable { case memberSearch, invitePhone }
     @FocusState private var focused: Field?
@@ -53,6 +72,7 @@ struct ManageMembersSheet: View {
         selectedIDs: Set<Int>,
         nextGuestID: Int,
         supabaseGroupId: UUID? = nil,
+        onRefresh: (() async -> Void)? = nil,
         onCancel: @escaping () -> Void,
         onDone: @escaping (ManageMembersResult) -> Void
     ) {
@@ -60,6 +80,7 @@ struct ManageMembersSheet: View {
         self.initialSelectedIDs = selectedIDs
         self.initialNextGuestID = nextGuestID
         self.supabaseGroupId = supabaseGroupId
+        self.onRefresh = onRefresh
         self.onCancel = onCancel
         self.onDone = onDone
         _selectedIDs = State(initialValue: selectedIDs)
@@ -83,14 +104,39 @@ struct ManageMembersSheet: View {
 
                     Spacer()
 
-                    Button("Done") {
-                        onDone(ManageMembersResult(
-                            selectedIDs: selectedIDs,
-                            newGuests: localGuests,
-                            nextGuestID: nextGuestID,
-                            removedPlayerIds: locallyRemovedIds
-                        ))
+                    Button {
+                        // Await any in-flight removeMember DELETEs before
+                        // returning. The parent's onDone closure will issue
+                        // inviteMember calls for `newGuests`; without this
+                        // await, a removed-then-re-added member's invite
+                        // races the DELETE and silently no-ops on the
+                        // existing 'active' row.
+                        guard !isFinalizing else { return }
+                        isFinalizing = true
+                        Task {
+                            for task in inFlightRemovalTasks {
+                                _ = await task.value
+                            }
+                            await MainActor.run {
+                                inFlightRemovalTasks.removeAll()
+                                isFinalizing = false
+                                onDone(ManageMembersResult(
+                                    selectedIDs: selectedIDs,
+                                    newGuests: localGuests,
+                                    nextGuestID: nextGuestID,
+                                    removedPlayerIds: locallyRemovedIds
+                                ))
+                            }
+                        }
+                    } label: {
+                        if isFinalizing {
+                            ProgressView()
+                                .scaleEffect(0.85)
+                        } else {
+                            Text("Done")
+                        }
                     }
+                    .disabled(isFinalizing)
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(Color.deepNavy)
                 }
@@ -427,6 +473,12 @@ struct ManageMembersSheet: View {
             .onTapGesture {
                 focused = nil
             }
+            .refreshable {
+                await onRefresh?()
+            }
+            .task {
+                await onRefresh?()
+            }
 
         }
         .alert(
@@ -458,9 +510,11 @@ struct ManageMembersSheet: View {
     }
 
     /// Hard-delete the member server-side, then hide them locally so the
-    /// tile disappears without waiting for the next refresh. The Done
-    /// callback carries the removed local IDs back to the parent so its
-    /// own in-memory group state stays in sync.
+    /// tile disappears without waiting for the next refresh. The Task is
+    /// tracked in `inFlightRemovalTasks` so Done can await it before
+    /// returning — preventing a race where re-inviting the same player
+    /// in the same sheet session beats the DELETE to the server and
+    /// silently no-ops.
     private func confirmRemoval(of player: Player) {
         memberToRemove = nil
         guard let groupId = supabaseGroupId, let profileId = player.profileId else { return }
@@ -470,7 +524,7 @@ struct ManageMembersSheet: View {
             selectedIDs.remove(player.id)
         }
 
-        Task {
+        let task = Task<Void, Never> {
             do {
                 try await GroupService().removeMember(groupId: groupId, playerId: profileId)
             } catch {
@@ -484,6 +538,7 @@ struct ManageMembersSheet: View {
                 }
             }
         }
+        inFlightRemovalTasks.append(task)
     }
 
     // Invite overlay removed — SMS invite is now inline below search results

@@ -172,7 +172,21 @@ final class RoundService {
     }
 
     /// Update round status (e.g. "active" → "concluded" → "completed").
+    /// Terminal-status transitions (completed) trigger a guest-profile wipe
+    /// per the ephemeral-guest rule (see migration 20260501000001). For the
+    /// 'concluded' transition we DON'T wipe yet — that's a transient state
+    /// before the user decides Save vs Discard, and pre-final guest deletion
+    /// would defeat any "go back" affordance. Wipe is invoked at:
+    ///   - status='completed' here
+    ///   - deleteRound (cancel)
+    ///   - endGameDestructively (status='cancelled' + force_completed)
+    ///   - forceEndRoundWithResults (status='concluded' + force_completed,
+    ///     where the user has explicitly chosen to End & Save)
+    ///   - convert_quick_game_to_group RPC (server-side, see migration 20260501000002)
     func updateRoundStatus(roundId: UUID, status: String) async throws {
+        if status == "completed" {
+            _ = try? await GuestProfileService().deleteQuickGameGuests(roundId: roundId)
+        }
         try await client.from("rounds")
             .update(["status": status])
             .eq("id", value: roundId.uuidString)
@@ -189,6 +203,12 @@ final class RoundService {
 
     /// Delete a round and all associated data (scores + round_players cascade via FK).
     func deleteRound(roundId: UUID) async throws {
+        // Wipe guests BEFORE deleting the round. The wipe RPC's auth check
+        // requires the round to still exist (it reads round.created_by).
+        // Once the round is deleted, round_players cascade-clean anyway,
+        // so denormalization-into-round_players is moot here — but the
+        // profile delete still happens, satisfying the ephemeral rule.
+        _ = try? await GuestProfileService().deleteQuickGameGuests(roundId: roundId)
         try await client.from("rounds")
             .delete()
             .eq("id", value: roundId.uuidString)
@@ -201,6 +221,10 @@ final class RoundService {
     /// The UPDATE fires the push trigger which fans `gameDeleted` out to every participant.
     /// Preserves the round row for history; status = 'cancelled' is the canonical signal.
     func endGameDestructively(roundId: UUID) async throws {
+        // Wipe guests BEFORE deleteScores. The wipe denormalizes guest names
+        // onto scores rows; deleteScores then removes those rows. round_players
+        // still has the denormalized fields, which is what Round History reads.
+        _ = try? await GuestProfileService().deleteQuickGameGuests(roundId: roundId)
         // Score delete first — if this fails, the round is still active (safer rollback).
         try await deleteScores(roundId: roundId)
         try await client.from("rounds")
@@ -216,6 +240,10 @@ final class RoundService {
     /// force_completed so every participant's client knows this was a forced end and
     /// should auto-show final results. Push trigger fans `gameForceEnded` out.
     func forceEndRoundWithResults(roundId: UUID) async throws {
+        // Explicit user choice to End & Save — wipe guests now (the round
+        // is terminal from this point; status flips to 'concluded' but
+        // force_completed=true means it'll never go back to active).
+        _ = try? await GuestProfileService().deleteQuickGameGuests(roundId: roundId)
         try await client.from("rounds")
             .update([
                 "status": "concluded",
@@ -330,6 +358,9 @@ final class RoundService {
 
         let profileMap = Dictionary(uniqueKeysWithValues: profiles.map { ($0.id, $0) })
 
+        // Wiped-guest rows have a UUID that no longer matches a profile row.
+        // The invite-card path doesn't render history, so dropping them here
+        // is correct — they're not actionable invites either way.
         return roundPlayers.compactMap { rp in
             guard let profile = profileMap[rp.playerId] else { return nil }
             return (player: rp, profile: profile)

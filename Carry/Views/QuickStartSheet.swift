@@ -956,6 +956,21 @@ struct QuickGameSheet: View {
                                     debouncePlayerSearch(query: newValue, groupIndex: groupIndex, slotIndex: slotIndex)
                                 }
                             }
+
+                        // Clear affordance for guest/typing rows — wipes BOTH
+                        // the name and the HC index in one tap. Mirrors the X
+                        // shown for selected Carry users above. Hidden when
+                        // there's nothing to clear.
+                        if !isReadOnly, !slot.name.isEmpty || !slot.handicap.isEmpty {
+                            Button {
+                                clearPlayerSlot(groupIndex: groupIndex, slotIndex: slotIndex)
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 16))
+                                    .foregroundColor(Color.textDisabled)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                 }
                 .padding(.horizontal, 12)

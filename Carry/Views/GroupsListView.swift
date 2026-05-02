@@ -641,7 +641,37 @@ struct GroupsListView: View {
                     )
                 }
 
-                // 3. Build full UUID list + group number map + scorer IDs to invite
+                // 3. Compute per-group scorer IDs FIRST so we can distinguish
+                // "this Carry user is an actual scorer of a tee-time group
+                // they need to score" from "this Carry user is just a casual
+                // player added to the round." Order matters: scorerIntIds
+                // gates the `scorerIdsToInvite` set built below.
+                //
+                // Computed BEFORE the INSERT so the skins_groups row is born
+                // with scorer_ids populated. Previously this was a follow-up
+                // UPDATE — but createGroup also inserts the group_members rows
+                // that fire the invite push, so non-creator scorers could
+                // fetch the row before the UPDATE committed and see
+                // scorer_ids = NULL. Their config's scorerPlayerIds was nil
+                // → ScorecardView guard 5 silently blocked their first tap
+                // until force-quit. Single-phase write closes the race.
+                let maxGroup = updatedMembers.map(\.group).max() ?? 1
+                var scorerIntIds: [Int] = []
+                for g in 1...maxGroup {
+                    let groupPlayers = updatedMembers.filter { $0.group == g }
+                    scorerIntIds.append(groupPlayers.first?.id ?? 0)
+                }
+                let scorerIntIdSet = Set(scorerIntIds)
+
+                // 4. Build full UUID list + group number map + scorer IDs to
+                // invite. Only ACTUAL scorers for tee-time groups 2+ get the
+                // 'invited' status (they need to accept so the app opens and
+                // they can score). Other Carry users — casual players added
+                // to the round — go in as 'active' via createGroup's
+                // `allActive: true` path. This matches the 2026-05-01 design:
+                // "Carry members are auto-added as active members. No invite
+                // cards, just member cards for all" — applied at creation
+                // here, the same way conversion already does it server-side.
                 var allMemberUUIDs: [UUID] = []
                 var memberGroupNums: [UUID: Int] = [:]
                 var scorerIdsToInvite: Set<UUID> = []
@@ -649,8 +679,10 @@ struct GroupsListView: View {
                     if let profileId = player.profileId {
                         allMemberUUIDs.append(profileId)
                         memberGroupNums[profileId] = player.group
-                        // Non-creator Carry users (scorers for groups 2+) should be invited
-                        if !player.isGuest && !player.isPendingInvite && profileId != userId {
+                        if !player.isGuest,
+                           !player.isPendingInvite,
+                           profileId != userId,
+                           scorerIntIdSet.contains(player.id) {
                             scorerIdsToInvite.insert(profileId)
                         }
                     }
@@ -671,7 +703,8 @@ struct GroupsListView: View {
                     holesJson = String(data: data, encoding: .utf8)
                 }
 
-                // 4. Create group — scorers inserted as 'invited' directly (triggers push)
+                // 4. Create group — scorer_ids written with the INSERT, scorers
+                // inserted as 'invited' directly in the same call (triggers push).
                 let groupDTO = try await groupService.createGroup(
                     name: savedGroup.name,
                     createdBy: userId,
@@ -691,7 +724,8 @@ struct GroupsListView: View {
                     memberGroupNums: memberGroupNums,
                     teeTimeInterval: savedGroup.teeTimeInterval,
                     scorerIdsToInvite: scorerIdsToInvite,
-                    lastTeeBoxHolesJson: holesJson
+                    lastTeeBoxHolesJson: holesJson,
+                    scorerIds: scorerIntIds
                 )
 
                 // 5. Create Supabase invite records for SMS-invited scorers
@@ -702,18 +736,6 @@ struct GroupsListView: View {
                         )
                     }
                 }
-
-                // 6. Persist scorer IDs so other devices see them
-                let maxGroup = updatedMembers.map(\.group).max() ?? 1
-                var scorerIntIds: [Int] = []
-                for g in 1...maxGroup {
-                    let groupPlayers = updatedMembers.filter { $0.group == g }
-                    scorerIntIds.append(groupPlayers.first?.id ?? 0)
-                }
-                try? await groupService.updateGroup(
-                    groupId: groupDTO.id,
-                    update: SkinsGroupUpdate(scorerIds: scorerIntIds)
-                )
 
                 // 6. Insert group with real IDs and open detail view
                 let realGroup = SavedGroup(
