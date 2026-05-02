@@ -12,7 +12,6 @@ class AppRouter: ObservableObject {
     @Published var debugResetGroups: Bool = false
     @Published var debugClearGroups: Bool = false
     @Published var debugShowRecurringPrompt: Bool = false
-    @Published var debugShowGuestClaim: Bool = false
     @Published var debugShowCreateGroupCard: Bool = false
     @Published var debugShowInviteSheet: Bool = false
     /// Jumps to phase 2 of the convert-setup sheet (Bring Your Crew / QR +

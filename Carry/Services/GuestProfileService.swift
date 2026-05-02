@@ -29,23 +29,17 @@ class GuestProfileService {
         }
     }
 
-    /// Claim a guest profile — merges scores, round history, and group membership into the real user.
-    func claimGuestProfile(guestId: UUID, realUserId: UUID, groupId: UUID) async throws {
-        try await client.rpc("claim_guest_profile", params: [
-            "p_guest_id": AnyJSON.string(guestId.uuidString),
-            "p_real_id": AnyJSON.string(realUserId.uuidString),
-            "p_group_id": AnyJSON.string(groupId.uuidString)
-        ]).execute()
-    }
-
-    /// Fetch guest profiles created by this user (for re-use in future Quick Start games).
-    func fetchMyGuests(createdBy: UUID) async throws -> [ProfileDTO] {
-        let guests: [ProfileDTO] = try await client.from("profiles")
-            .select()
-            .eq("is_guest", value: true)
-            .eq("created_by", value: createdBy.uuidString)
-            .execute()
-            .value
-        return guests
+    /// Wipe all guest profiles tied to this Quick Game round. Called on every
+    /// Quick Game termination path (skip / save / end / force-end / convert).
+    /// Server-side denormalizes display_name + handicap onto round_players and
+    /// scores BEFORE deleting the profile, so Round History keeps rendering
+    /// the original guest names. See migration 20260501000001 for full spec.
+    @discardableResult
+    func deleteQuickGameGuests(roundId: UUID) async throws -> Int {
+        let count: Int = try await client.rpc(
+            "delete_quick_game_guests",
+            params: ["p_round_id": AnyJSON.string(roundId.uuidString)]
+        ).execute().value
+        return count
     }
 }

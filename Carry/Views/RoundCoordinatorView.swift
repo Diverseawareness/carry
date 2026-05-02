@@ -218,25 +218,34 @@ struct RoundCoordinatorView: View {
                             groupName: mutableConfig.groupName,
                             courseName: mutableConfig.course
                         )
+                        // The "Round Started" splash is a creator-only celebratory
+                        // moment — they're the one who built the roster and tapped
+                        // Start. Non-creators reach this code path only via
+                        // anomalous flows (the normal join path enters with
+                        // `initialRoundConfig != nil` and inits straight to
+                        // `.active`, see line 106). When they do land here, jump
+                        // straight to the scorecard — no splash, no wasted
+                        // staggered-reveal `@State` writes on an invisible view.
                         withAnimation(.easeInOut(duration: 0.4)) {
-                            phase = .starting
+                            phase = isCreator ? .starting : .active
                         }
-                        // Stagger the splash animations
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                            withAnimation(.spring(response: 0.6, dampingFraction: 0.7)) { showFlag = true }
-                        }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                            withAnimation(.easeOut(duration: 0.4)) { showTitle = true }
-                        }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-                            withAnimation(.easeOut(duration: 0.4)) { showDetails = true }
-                        }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-                            withAnimation(.easeOut(duration: 0.4)) { showStats = true }
-                        }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                            withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
-                                pulseFlag = true
+                        if isCreator {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                                withAnimation(.spring(response: 0.6, dampingFraction: 0.7)) { showFlag = true }
+                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                withAnimation(.easeOut(duration: 0.4)) { showTitle = true }
+                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                                withAnimation(.easeOut(duration: 0.4)) { showDetails = true }
+                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                                withAnimation(.easeOut(duration: 0.4)) { showStats = true }
+                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                                withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
+                                    pulseFlag = true
+                                }
                             }
                         }
                     }
