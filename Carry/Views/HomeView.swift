@@ -583,35 +583,10 @@ struct HomeView: View {
                     if recentRounds.isEmpty {
                         emptyCard("No Recent Games", icon: "clock")
                     } else {
-                        let visibleRounds = storeService.isPremium
-                            ? recentRounds
-                            : Array(recentRounds.prefix(1))
-                        ForEach(visibleRounds) { round in
+                        ForEach(recentRounds) { round in
                             swipeToLeaveWrapper(round: round) {
                                 recentRoundCard(round)
                             }
-                            .padding(.horizontal, 16)
-                            .padding(.bottom, 8)
-                        }
-                        if !storeService.isPremium && recentRounds.count > 1 {
-                            Button {
-                                showPaywall = true
-                            } label: {
-                                HStack(spacing: 6) {
-                                    Image("premium-crown")
-                                        .resizable()
-                                        .scaledToFit()
-                                        .frame(width: 14, height: 14)
-                                    Text("View full history")
-                                        .font(.carry.bodySMSemibold)
-                                        .foregroundColor(Color.textPrimary)
-                                }
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 40)
-                                .background(RoundedRectangle(cornerRadius: 13).fill(.white))
-                                .overlay(RoundedRectangle(cornerRadius: 13).strokeBorder(Color.dividerLight, lineWidth: 1))
-                            }
-                            .buttonStyle(.plain)
                             .padding(.horizontal, 16)
                             .padding(.bottom, 8)
                         }
