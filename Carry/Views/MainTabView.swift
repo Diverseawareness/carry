@@ -155,21 +155,75 @@ struct MainTabView: View {
                             if added.creatorId == authService.currentPlayerId { continue }
                             ToastManager.shared.success("Added to \(added.name)!")
                         }
+
+                        // Detect "a new member joined a group I created" —
+                        // companion toast on the SENDER side. Fires for each
+                        // newly-active member that wasn't in the previous
+                        // member list. Pairs with the recipient toast above:
+                        // both sides get in-app feedback when a phone-invite
+                        // auto-reconciles or a search-add lands. Only fires
+                        // for groups I created (avoids toast spam on groups
+                        // where I'm just a member).
+                        let myCreatedGroupIds = Set(
+                            groups.filter { $0.creatorId == authService.currentPlayerId }.map(\.id)
+                        )
+                        for groupId in myCreatedGroupIds {
+                            guard let prev = skinGameGroups.first(where: { $0.id == groupId }),
+                                  let fresh = groups.first(where: { $0.id == groupId }) else { continue }
+                            let prevActiveProfileIds = Set(
+                                prev.members
+                                    .filter { !$0.isPendingAccept && !$0.isPendingInvite }
+                                    .compactMap(\.profileId)
+                            )
+                            let freshActiveMembers = fresh.members.filter {
+                                !$0.isPendingAccept && !$0.isPendingInvite
+                            }
+                            for member in freshActiveMembers {
+                                guard let pid = member.profileId,
+                                      !prevActiveProfileIds.contains(pid),
+                                      pid != userId  // never toast for self
+                                else { continue }
+                                ToastManager.shared.success("\(member.shortName) joined \(fresh.name)!")
+                            }
+                        }
                     }
 
                     let missingNow = skinGameGroups.first(where: { !freshIds.contains($0.id) })
                     if let missing = missingNow {
                         if pendingKickedGroupId == missing.id {
+                            // Two distinct reasons a group can vanish from
+                            // our fetch:
+                            //   1. Creator removed us → membershipStatus
+                            //      returns "removed" / "invited" / "declined"
+                            //   2. Creator deleted the entire group → skins_groups
+                            //      row gone → membershipStatus returns nil
+                            //      (no group_members row to query). Without
+                            //      a separate existence check the polling
+                            //      logic mistakes this for a transient fetch
+                            //      error and never clears the local state.
+                            // groupExists() distinguishes them.
                             let status = await groupService.membershipStatus(groupId: missing.id, userId: userId)
-                            if status == "removed" {
+                            let exists = await groupService.groupExists(groupId: missing.id)
+
+                            // Only fire the "Removed from <group>" alert on
+                            // non-creator devices. If the current user IS the
+                            // creator and the group was deleted (exists ==
+                            // false), THEY deleted it — they don't need to
+                            // be told. Silent state cleanup only.
+                            let isCreator = missing.creatorId == authService.currentPlayerId
+                            if !isCreator && (status == "removed" || exists == false) {
                                 removedFromGroupName = missing.name
                             }
                             pendingKickedGroupId = nil
-                            // Only stomp local state when the user really is
-                            // gone. If status is still "active" or nil the
-                            // fetch misbehaved — keep the card visible and
-                            // let the next poll correct itself.
-                            if status == "removed" || status == "invited" || status == "declined" {
+                            // Stomp local state when the user really is gone:
+                            // either an explicit removal/decline status, OR
+                            // the group itself was deleted. Skip stomp on
+                            // exists == nil (fetch error) — let next poll
+                            // re-confirm.
+                            if status == "removed"
+                                || status == "invited"
+                                || status == "declined"
+                                || exists == false {
                                 skinGameGroups = groups
                             }
                         } else {

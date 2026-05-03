@@ -157,6 +157,23 @@ final class GroupService {
         return rows?.first?.status
     }
 
+    /// Returns true if the skins_groups row still exists, false if the
+    /// group has been deleted, and nil on a fetch error (caller should
+    /// treat nil as "uncertain — defer state changes"). Used by MainTabView
+    /// to distinguish creator-deleted-the-group from creator-removed-the-user
+    /// when a group goes missing from the user's fetched group list.
+    func groupExists(groupId: UUID) async -> Bool? {
+        struct IdRow: Decodable { let id: UUID }
+        let rows: [IdRow]? = try? await client.from("skins_groups")
+            .select("id")
+            .eq("id", value: groupId.uuidString)
+            .limit(1)
+            .execute()
+            .value
+        guard let rows else { return nil }
+        return !rows.isEmpty
+    }
+
     /// Fetch all active and invited members of a group.
     func fetchGroupMembers(groupId: UUID) async throws -> [GroupMemberDTO] {
         let rows: [GroupMemberDTO] = try await client.from("group_members")

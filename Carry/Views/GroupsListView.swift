@@ -2927,6 +2927,20 @@ struct CreateGroupSheet: View {
     @State private var isMemberSearching = false
     @State private var memberSearchTask: Task<Void, Never>?
     @State private var selectedMembers: [Player] = []
+    /// True while the Continue/Create button has been tapped and we're
+    /// in the middle of the optimistic-create + server-sync flow. Drives
+    /// the inline ProgressView spinner + button disable. Set to true
+    /// immediately on tap, never reset (the sheet dismisses through
+    /// onCreate → parent before reset would matter).
+    @State private var isCreating: Bool = false
+
+    /// Pre-allocated group UUID used both for SMS deep-links (sent at
+    /// phone-add time, before the group exists server-side) AND as the
+    /// id passed to GroupService.createGroup at Continue tap. Same
+    /// pattern as Quick Game's `draftQuickGameId`. Lazy-initialized at
+    /// first read so the same UUID survives across multiple phone-invite
+    /// adds within a single sheet presentation.
+    @State private var draftGroupId: UUID = UUID()
 
     // Phone invite (inline below search results)
     @State private var phoneText = ""
@@ -3256,6 +3270,8 @@ struct CreateGroupSheet: View {
 
                 // Create button
                 Button {
+                    guard !isCreating else { return }
+                    isCreating = true
                     focusedField = nil
                     UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                     let allMembers = selectedMembers + guests
@@ -3278,31 +3294,26 @@ struct CreateGroupSheet: View {
                         }
                     }()
 
-                    // Persist to Supabase if authenticated
+                    // Persist to Supabase if authenticated.
+                    //
+                    // Sequence is now: spinner ON → AWAIT createGroup
+                    // server response → THEN call onCreate (dismisses
+                    // the sheet) so the user can never tap into the
+                    // group card while the skins_groups + group_members
+                    // rows don't exist yet. Previously fire-and-forget
+                    // dismissed the sheet immediately and the
+                    // background Task did the INSERT later — tapping
+                    // Start Round in that window hit "Failed to create
+                    // round" because the rounds INSERT referenced a
+                    // groupId that wasn't yet in skins_groups (FK / RLS
+                    // failure). Pre-allocating the UUID alone wasn't
+                    // enough because the *row*, not just the id, must
+                    // exist. ~500-1000ms wait for the user; spinner
+                    // gives the visual.
                     if authService.isAuthenticated, let userId = authService.currentUser?.id {
                         let trimmedName = groupName.trimmingCharacters(in: .whitespaces)
                         let memberUUIDs = allMembers.compactMap(\.profileId)
 
-                        // Optimistic: show group immediately with temp ID
-                        let tempGroup = SavedGroup(
-                            id: UUID(),
-                            name: trimmedName,
-                            members: allMembers,
-                            lastPlayed: nil,
-                            creatorId: authService.currentPlayerId,
-                            lastCourse: selectedCourse,
-                            potSize: buyIn * Double(allMembers.count),
-                            buyInPerPlayer: buyIn,
-                            scheduledDate: scheduledDate,
-                            recurrence: recurrence
-                        )
-                        onCreate(tempGroup)
-                        if let date = scheduledDate {
-                            NotificationService.shared.scheduleTeeTimeReminder(groupId: tempGroup.id, groupName: tempGroup.name, teeTime: date)
-                        }
-                        ToastManager.shared.success("Skins game created!")
-
-                        // Sync to Supabase in background, then replace temp group with real one
                         Task {
                             do {
                                 let groupService = GroupService()
@@ -3313,7 +3324,12 @@ struct CreateGroupSheet: View {
                                    let data = try? JSONEncoder().encode(holes) {
                                     holesJson = String(data: data, encoding: .utf8)
                                 }
+                                // Use the same UUID that any phone-invite
+                                // SMS deep links sent during this sheet
+                                // already embedded — so recipients tapping
+                                // the link can resolve to this exact group.
                                 let dto = try await groupService.createGroup(
+                                    id: draftGroupId,
                                     name: trimmedName,
                                     createdBy: userId,
                                     memberIds: memberUUIDs,
@@ -3328,9 +3344,19 @@ struct CreateGroupSheet: View {
                                     teeBoxSlopeRating: selectedCourse?.teeBox?.slopeRating,
                                     teeBoxPar: selectedCourse?.teeBox?.par,
                                     handicapPercentage: handicapPct,
+                                    // Carry-user members go in as active —
+                                    // matches the 2026-05-01 design rule "Carry
+                                    // members are auto-added as active members"
+                                    // applied uniformly across Skins Group +
+                                    // Quick Game creation, post-creation Manage
+                                    // sheets, and search-add. Phone-invite rows
+                                    // (handled separately below via
+                                    // inviteMemberByPhone) stay 'invited' until
+                                    // the receiver-side trigger reconciles or
+                                    // the recipient taps the SMS link.
+                                    allActive: true,
                                     lastTeeBoxHolesJson: holesJson
                                 )
-                                // Replace temp group with real Supabase group on next refresh
                                 #if DEBUG
                                 print("[GroupService] Group synced to Supabase: \(dto.id)")
                                 #endif
@@ -3338,20 +3364,48 @@ struct CreateGroupSheet: View {
                                 let hasRec = recurrence != nil
                                 Analytics.groupCreated(name: trimmedName, memberCount: mCount, buyIn: buyIn, hasRecurrence: hasRec)
 
-                                // Create Supabase records for phone-invited guests
-                                for guest in guests where guest.isPendingInvite {
-                                    if let phone = guest.phoneNumber, !phone.isEmpty {
-                                        try? await groupService.inviteMemberByPhone(
-                                            groupId: dto.id, phone: phone, invitedBy: userId
-                                        )
+                                // Phone-invited guests (parallelized to keep
+                                // total wait close to a single round-trip).
+                                await withTaskGroup(of: Void.self) { tg in
+                                    for guest in guests where guest.isPendingInvite {
+                                        if let phone = guest.phoneNumber, !phone.isEmpty {
+                                            tg.addTask {
+                                                try? await groupService.inviteMemberByPhone(
+                                                    groupId: dto.id, phone: phone, invitedBy: userId
+                                                )
+                                            }
+                                        }
                                     }
+                                }
+
+                                // Server confirmed — now build the SavedGroup
+                                // with the SAME id and dismiss the sheet.
+                                let confirmedGroup = SavedGroup(
+                                    id: dto.id,
+                                    name: trimmedName,
+                                    members: allMembers,
+                                    lastPlayed: nil,
+                                    creatorId: authService.currentPlayerId,
+                                    lastCourse: selectedCourse,
+                                    potSize: buyIn * Double(allMembers.count),
+                                    buyInPerPlayer: buyIn,
+                                    scheduledDate: scheduledDate,
+                                    recurrence: recurrence
+                                )
+                                await MainActor.run {
+                                    onCreate(confirmedGroup)
+                                    if let date = scheduledDate {
+                                        NotificationService.shared.scheduleTeeTimeReminder(groupId: confirmedGroup.id, groupName: confirmedGroup.name, teeTime: date)
+                                    }
+                                    ToastManager.shared.success("Skins game created!")
                                 }
                             } catch {
                                 #if DEBUG
                                 print("[GroupService] Failed to sync group: \(error)")
                                 #endif
                                 await MainActor.run {
-                                    ToastManager.shared.error("Couldn't sync to server — will retry")
+                                    isCreating = false
+                                    ToastManager.shared.error("Couldn't create group. Please try again.")
                                 }
                             }
                         }
@@ -3376,17 +3430,23 @@ struct CreateGroupSheet: View {
                         ToastManager.shared.success("Skins game created!")
                     }
                 } label: {
-                    Text("Continue")
-                        .font(.carry.headlineBold)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 52)
-                        .background(
-                            RoundedRectangle(cornerRadius: 14)
-                                .fill(isFormValid ? Color.textPrimary : Color.borderSubtle)
-                        )
+                    ZStack {
+                        if isCreating {
+                            ProgressView().tint(.white)
+                        } else {
+                            Text("Continue")
+                                .font(.carry.headlineBold)
+                                .foregroundColor(.white)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 52)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill((isFormValid && !isCreating) ? Color.textPrimary : Color.borderSubtle)
+                    )
                 }
-                .disabled(!isFormValid)
+                .disabled(!isFormValid || isCreating)
                 .padding(.horizontal, 24)
                 .padding(.top, 12)
                 .padding(.bottom, 30)
@@ -3617,8 +3677,18 @@ struct CreateGroupSheet: View {
         }
         nextGuestID += 1
 
-        // Open native SMS
-        let body = "Join my skins game on Carry! Download here: https://carryapp.site"
+        // Open native SMS with a per-group Universal Link. The SMS is
+        // sent BEFORE the group exists server-side (phone-add time),
+        // but the URL embeds the pre-allocated UUID (`draftGroupId`)
+        // that we'll pass to createGroup at Continue tap. The
+        // recipient tapping the link before Continue is fine —
+        // handleScannedInvite retries 3× over 15s waiting for the
+        // group to appear server-side. After Continue, the group
+        // exists and the link resolves immediately. Without the
+        // ?group= param, iOS would open Safari at carryapp.site
+        // homepage instead of routing the link into Carry.
+        let inviteLink = "https://carryapp.site/invite?group=\(draftGroupId.uuidString)"
+        let body = "Join my skins game on Carry! \(inviteLink)"
         let encoded = body.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
         if let url = URL(string: "sms:\(digits)&body=\(encoded)") {
             UIApplication.shared.open(url)
@@ -3636,8 +3706,16 @@ struct CreateGroupSheet: View {
 
         return Button {
             guard !isAlreadyAdded else { return }
-            var player = Player(from: profile)
-            player.isPendingAccept = true
+            // Carry users go in as active immediately at group creation
+            // (per the auto-active rule applied uniformly across all
+            // member-add surfaces). The optimistic local SavedGroup
+            // renders them as full-opacity active members; server-side
+            // createGroup uses allActive: true so the persisted state
+            // matches. Marking isPendingAccept here would have caused
+            // the local card + roster to render pending until the next
+            // refresh overwrote with server data — the same bug we
+            // fixed in ManageMembersSheet earlier today.
+            let player = Player(from: profile)
             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                 selectedMembers.append(player)
             }
