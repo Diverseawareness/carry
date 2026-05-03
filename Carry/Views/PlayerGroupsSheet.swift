@@ -1190,6 +1190,9 @@ struct PlayerGroupsSheet: View {
 
         // 1. Create guest profiles on server
         if !newGuests.isEmpty {
+            #if DEBUG
+            print("[PlayerGroupsSheet] saveAndDismiss → \(newGuests.count) new guests to create: \(newGuests.map(\.name))")
+            #endif
             do {
                 let userId = try await SupabaseManager.shared.client.auth.session.user.id
                 let guestService = GuestProfileService()
@@ -1203,7 +1206,13 @@ struct PlayerGroupsSheet: View {
                     handicaps: handicaps, colors: colors,
                     creatorId: userId
                 )
+                #if DEBUG
+                print("[PlayerGroupsSheet] guest profile UUIDs returned: \(uuids)")
+                #endif
                 guard uuids.count == newGuests.count else {
+                    #if DEBUG
+                    print("[PlayerGroupsSheet] guest count mismatch! expected \(newGuests.count), got \(uuids.count)")
+                    #endif
                     ToastManager.shared.error("Failed to create guest profiles")
                     return
                 }
@@ -1239,10 +1248,16 @@ struct PlayerGroupsSheet: View {
                         groupNum: guestInfo.groupIndex + 1
                     )
                 }
+                #if DEBUG
+                print("[PlayerGroupsSheet] inserting \(memberInserts.count) guest member rows: \(memberInserts.map { ($0.playerId, $0.status) })")
+                #endif
                 try await SupabaseManager.shared.client
                     .from("group_members")
                     .insert(memberInserts)
                     .execute()
+                #if DEBUG
+                print("[PlayerGroupsSheet] guest INSERT succeeded")
+                #endif
             } catch {
                 #if DEBUG
                 print("[PlayerGroupsSheet] Failed to create guests: \(error)")
@@ -1376,6 +1391,11 @@ struct PlayerGroupsSheet: View {
 
         // 5. Return clean result to parent
         await MainActor.run {
+            #if DEBUG
+            let totalPlayers = cleanResult.groups.flatMap { $0 }.count
+            let guestCount = cleanResult.groups.flatMap { $0 }.filter(\.isGuest).count
+            print("[PlayerGroupsSheet] onSave → cleanResult has \(totalPlayers) players (\(guestCount) guests), allMembers=\(cleanResult.allMembers.count)")
+            #endif
             onSave(cleanResult)
             ToastManager.shared.success("Groups updated")
         }

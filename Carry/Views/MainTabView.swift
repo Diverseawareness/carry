@@ -55,6 +55,11 @@ struct MainTabView: View {
     /// during fresh group creation (skins_groups INSERT lands before the
     /// creator's group_members row), eventual consistency, and partial writes.
     @State private var pendingKickedGroupId: UUID? = nil
+    /// Set true after the first successful loadGroupsFromSupabase OR poll
+    /// completes. Gates the "Added to <group>!" toast so a brand-new user
+    /// doesn't get spam-toasted for every group they're already in on first
+    /// fetch — only surfaces additions that happen AFTER the initial load.
+    @State private var didCompleteInitialGroupLoad: Bool = false
 
     private let groupService = GroupService()
 
@@ -132,6 +137,26 @@ struct MainTabView: View {
                     // the currently visible group card doesn't flicker out
                     // before we've confirmed anything.
                     let freshIds = Set(groups.map(\.id))
+                    let previousIds = Set(skinGameGroups.map(\.id))
+
+                    // Detect "I was just added to a new group" — fires the
+                    // companion toast to the server-side phoneInviteReconciled
+                    // push (which only delivers as a banner; this catches the
+                    // foreground case + dev builds where APNs sandbox doesn't
+                    // deliver). Gated on didCompleteInitialGroupLoad so the
+                    // first load doesn't toast for every existing membership.
+                    if didCompleteInitialGroupLoad {
+                        let addedIds = freshIds.subtracting(previousIds)
+                        for addedId in addedIds {
+                            guard let added = groups.first(where: { $0.id == addedId }) else { continue }
+                            // Skip groups I created — those came from my own
+                            // tap, not an invite-add. Match on currentPlayerId
+                            // (Int) the same way GroupsListView does.
+                            if added.creatorId == authService.currentPlayerId { continue }
+                            ToastManager.shared.success("Added to \(added.name)!")
+                        }
+                    }
+
                     let missingNow = skinGameGroups.first(where: { !freshIds.contains($0.id) })
                     if let missing = missingNow {
                         if pendingKickedGroupId == missing.id {
@@ -369,6 +394,12 @@ struct MainTabView: View {
                 await MainActor.run {
                     skinGameGroups = groups
                     isLoadingGroups = false
+                    // Mark the initial load complete so the auto-refresh
+                    // poll can start firing the "Added to <group>!" toast
+                    // for any groups added AFTER this point. Without this
+                    // gate the first poll would toast for every existing
+                    // membership.
+                    didCompleteInitialGroupLoad = true
                 }
             } catch {
                 #if DEBUG
@@ -384,6 +415,9 @@ struct MainTabView: View {
                         // a brand-new user with zero groups is not an error.
                     }
                     isLoadingGroups = false
+                    // Even on error: mark initial load done so subsequent
+                    // polls behave normally (we don't want a permanent gate).
+                    didCompleteInitialGroupLoad = true
                 }
             }
         }

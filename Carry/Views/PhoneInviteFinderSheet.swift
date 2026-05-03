@@ -14,6 +14,8 @@ struct PhoneInviteFinderSheet: View {
     let onSkip: () -> Void
     let onClaimed: (UUID) -> Void
 
+    @EnvironmentObject var authService: AuthService
+
     @State private var phone: String = ""
     @State private var isSearching: Bool = false
     @State private var results: [PendingPhoneInvite]? = nil  // nil = haven't searched yet
@@ -30,29 +32,39 @@ struct PhoneInviteFinderSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Header
-            HStack {
+            // Header — centered title + Cancel on the right. Matches the
+            // ZStack pattern used by EditProfileSheet / PhoneEditSheet etc.
+            // for app-wide modal consistency.
+            ZStack {
                 Text("Find Your Invite")
                     .font(.carry.headline)
-                    .foregroundColor(Color.textPrimary)
-                Spacer()
-                Button("Skip") { onSkip() }
-                    .font(.carry.body)
-                    .foregroundColor(Color.textSecondary)
+                    .foregroundColor(Color.pureBlack)
+
+                HStack {
+                    Spacer()
+                    Button("Cancel") { onSkip() }
+                        .font(.system(size: 16))
+                        .foregroundColor(Color.textTertiary)
+                }
             }
-            .padding(.horizontal, 24)
-            .padding(.top, 24)
-            .padding(.bottom, 16)
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
+            .padding(.bottom, 24)
 
             if results == nil {
-                // Phone input view
+                // Phone input view — content sits below header, no centering
                 searchView
+                Spacer()
             } else if let results = results, results.isEmpty {
-                // No matches
+                // No matches — center the callout vertically between header
+                // and the pinned "Try again" button at the bottom.
+                Spacer()
                 emptyResultsView
+                Spacer()
             } else if let results = results {
-                // Match list
+                // Match list — sits below header, scroll handles overflow
                 resultsView(results)
+                Spacer()
             }
 
             if let err = errorMessage {
@@ -60,12 +72,17 @@ struct PhoneInviteFinderSheet: View {
                     .font(.carry.bodySM)
                     .foregroundColor(Color.debugOrange)
                     .padding(.horizontal, 24)
-                    .padding(.top, 12)
+                    .padding(.bottom, 12)
             }
 
-            Spacer()
+            // Bottom CTA — only on the empty-results state. Anchored above
+            // the home indicator (safe area) by .padding(.bottom, 16) inside
+            // tryAgainButton.
+            if let results = results, results.isEmpty {
+                tryAgainButton
+            }
         }
-        .background(Color.bgPrimary.ignoresSafeArea())
+        .background(Color.white.ignoresSafeArea())
         .onAppear { phoneFocused = true }
     }
 
@@ -125,17 +142,34 @@ struct PhoneInviteFinderSheet: View {
                 .font(.carry.bodySM)
                 .foregroundColor(Color.textSecondary)
                 .multilineTextAlignment(.center)
-            Button("Try a different number") {
-                results = nil
-                errorMessage = nil
-            }
-            .font(.carry.bodySemibold)
-            .foregroundColor(Color.textPrimary)
-            .padding(.top, 8)
         }
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 24)
         .padding(.top, 32)
+    }
+
+    /// Full-width primary "Try again" button anchored to the bottom of the
+    /// sheet, above the home indicator. Resets the search state so the user
+    /// can re-enter or correct their phone. Same visual style as the
+    /// "Find Invites" CTA on the search view.
+    private var tryAgainButton: some View {
+        Button {
+            results = nil
+            errorMessage = nil
+            phoneFocused = true
+        } label: {
+            Text("Try again")
+                .font(.carry.bodyLGSemibold)
+                .frame(maxWidth: .infinity)
+                .frame(height: 52)
+                .foregroundColor(.white)
+                .background(
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(Color.textPrimary)
+                )
+        }
+        .padding(.horizontal, 24)
+        .padding(.bottom, 16)
     }
 
     private func resultsView(_ invites: [PendingPhoneInvite]) -> some View {
@@ -216,6 +250,29 @@ struct PhoneInviteFinderSheet: View {
                 membershipId: invite.membershipId,
                 phone: phone
             )
+
+            // Best-effort: also persist the typed phone on the user's
+            // profile so the receiver-side reconcile trigger fires for
+            // any OTHER pending invites with the same phone (silent claim
+            // + push per group), AND so that all FUTURE phone invites
+            // from any sender auto-reconcile without the modal. If the
+            // profile already has the same phone this is a no-op (the
+            // trigger short-circuits on `OLD.phone IS NOT DISTINCT FROM
+            // NEW.phone`). Errors here don't block the manual claim that
+            // already succeeded.
+            let digits = phone.filter(\.isNumber)
+            if digits.count >= 10 {
+                Task {
+                    do {
+                        try await authService.updateProfile(ProfileUpdate(phone: digits))
+                    } catch {
+                        #if DEBUG
+                        print("[PhoneInviteFinder] profile-phone backfill failed: \(error)")
+                        #endif
+                    }
+                }
+            }
+
             onClaimed(groupId)
         } catch {
             errorMessage = "Couldn't join \(invite.groupName). Try again."

@@ -289,7 +289,12 @@ final class GroupService {
     }
 
     /// Invite a member to a group (status = "invited"). Skips if already a member.
-    func inviteMember(groupId: UUID, playerId: UUID) async throws {
+    /// Add a Carry user to a group. `status` defaults to "invited" for
+    /// legacy callers; pass "active" for the auto-active flow used when a
+    /// creator search-adds an existing Carry user (no accept step needed —
+    /// the recipient gets the polling-driven "Added to X!" toast on their
+    /// home screen and a memberJoined push).
+    func inviteMember(groupId: UUID, playerId: UUID, status: String = "invited") async throws {
         // Check for existing membership (any status).
         let existing: [GroupMemberDTO] = try await client.from("group_members")
             .select()
@@ -301,12 +306,13 @@ final class GroupService {
         if let row = existing.first {
             // Ghost `status='removed'` row from an earlier soft-delete
             // (before `removeMember` was switched to hard-DELETE) still
-            // blocks fresh re-invites. Resurrect it to 'invited' so the
-            // user can be added again without requiring manual DB
-            // cleanup. Active and invited rows are left alone — no-op.
+            // blocks fresh re-invites. Resurrect it to the requested
+            // status so the user can be added again without requiring
+            // manual DB cleanup. Active and invited rows are left alone
+            // — no-op (caller already had the user in the group).
             if row.status == "removed" {
                 try await client.from("group_members")
-                    .update(["status": "invited"] as [String: String])
+                    .update(["status": status] as [String: String])
                     .eq("id", value: row.id.uuidString)
                     .execute()
             }
@@ -318,7 +324,7 @@ final class GroupService {
                 groupId: groupId,
                 playerId: playerId,
                 role: "member",
-                status: "invited"
+                status: status
             ))
             .execute()
     }

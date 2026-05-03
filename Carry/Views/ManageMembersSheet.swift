@@ -584,8 +584,10 @@ struct ManageMembersSheet: View {
         let isAlreadyAdded = localAllAvailable.contains { $0.profileId == profile.id }
         return Button {
             guard !isAlreadyAdded else { return }
-            var player = Player(from: profile)
-            player.isPendingAccept = true
+            // Carry users go in as active immediately (no accept step).
+            // Matches the parent's onDone in GroupManagerView which now
+            // persists with status="active" via inviteMember.
+            let player = Player(from: profile)
             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                 localGuests.append(player)
             }

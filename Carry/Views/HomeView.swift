@@ -777,8 +777,10 @@ struct HomeView: View {
                     ToastManager.shared.success("You're in!")
                 }
             )
+            .environmentObject(authService)
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
+            .presentationBackground(.white)
         }
         .sheet(isPresented: $showPhoneMigrationEdit, onDismiss: {
             // Once they've engaged with the sheet, hide the banner regardless
@@ -876,6 +878,13 @@ struct HomeView: View {
             didDismissClipboardInvite = false
             clipboardInviteAckdChangeCount = -1
             checkClipboardForInvite()
+        }
+        .onChange(of: appRouter.debugShowPhoneInviteFinder) { _, shouldShow in
+            guard shouldShow else { return }
+            appRouter.debugShowPhoneInviteFinder = false
+            // Bypass the hasURLs/empty-groups gate so the modal opens for
+            // visual review even when the normal trigger conditions aren't met.
+            showPhoneInviteFinder = true
         }
         #endif
         .onDisappear {
@@ -1392,10 +1401,10 @@ struct HomeView: View {
             }
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("Add your phone")
+                Text("Add your phone for instant invites")
                     .font(.carry.bodySemibold)
                     .foregroundColor(Color.textPrimary)
-                Text("So friends can invite you to games")
+                Text("Friends can add you in one tap")
                     .font(.carry.captionLG)
                     .foregroundColor(Color.textTertiary)
                     .lineLimit(2)

@@ -1,72 +1,40 @@
 -- ============================================================================
--- Migration: Fix phone-invite functions referencing nonexistent gm.created_at
+-- Migration: Clean up orphaned phone-invite rows during reconcile
 -- Date:      2026-05-02
 -- ============================================================================
--- Both 20260502000001 (find_pending_invites_by_phone) and 20260502000002
--- (reconcile_phone_invites_for_profile) referenced `gm.created_at` on the
--- group_members table — but the actual timestamp column is `joined_at`
--- (set by default value to now() on INSERT). PostgreSQL does NOT validate
--- function bodies at CREATE FUNCTION time, only at call time, so both
--- migrations deployed cleanly but failed at first call:
+-- Closes a latent bug in reconcile_phone_invites_for_profile (from
+-- 20260502000002, fixed in 20260502000003). Symptom: a user can't save
+-- their phone to profile if there's a stale phone-invite row in the DB
+-- AND they're already a member of that group.
 --
---   PostgrestError code 42703: "column gm.created_at does not exist"
---   hint: "Perhaps you meant to reference the column 'sg.created_at'."
+-- How users get into this state:
+--   1. Sender invites recipient by phone → DB row inserts as 'invited'
+--      with invited_phone set, player_id = inviter UUID placeholder
+--   2. Recipient has Carry installed + no phone on profile, taps the
+--      SMS link → app opens → handleIncomingURL → joinGroupViaInvite
+--      → adds them as a SECOND row (status='active', real player_id,
+--      no invited_phone)
+--   3. The original phone-invite row from step 1 stays orphaned in
+--      the DB — recipient joined via a different mechanism, the trigger
+--      never had a chance to claim it because phone wasn't on profile yet
 --
--- This migration uses CREATE OR REPLACE FUNCTION to swap both bodies
--- in-place to use `gm.joined_at` instead. No schema changes; no data
--- migration. Idempotent.
+-- Failure later:
+--   4. Months later, recipient sees the migration banner / adds phone
+--      via Settings
+--   5. reconcile_phone_invites_for_profile fires
+--   6. Tries to UPDATE the orphan row to status='active', player_id=NEW.id,
+--      invited_phone=''
+--   7. Conflicts with the partial unique index group_members_unique_real_player
+--      (added in 20260426000000): the recipient already has an active row
+--      for that group, can't have a second
+--   8. UPDATE fails → entire profiles.phone update rolls back → user
+--      sees "Update Failed" with no clue why
+--
+-- Fix: BEFORE the UPDATE that claims pending invites, DELETE any orphan
+-- phone-invite rows where the matched profile already has a non-phone
+-- membership in the same group. The orphan was a side-effect of the
+-- earlier SMS-link join; cleaning it up is the right outcome.
 -- ============================================================================
-
--- ─── 1. find_pending_invites_by_phone — fix `gm.created_at` references ─────
-
-CREATE OR REPLACE FUNCTION public.find_pending_invites_by_phone(p_phone text)
-RETURNS TABLE (
-    membership_id uuid,
-    group_id uuid,
-    group_name text,
-    invited_by_id uuid,
-    invited_by_name text,
-    is_quick_game boolean,
-    invited_at timestamptz
-)
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-    _normalized_phone text;
-BEGIN
-    IF auth.uid() IS NULL THEN
-        RAISE EXCEPTION 'Authentication required to look up invites by phone';
-    END IF;
-
-    _normalized_phone := regexp_replace(coalesce(p_phone, ''), '[^0-9]', '', 'g');
-
-    IF length(_normalized_phone) < 10 THEN
-        RETURN;
-    END IF;
-
-    RETURN QUERY
-    SELECT
-        gm.id AS membership_id,
-        sg.id AS group_id,
-        sg.name AS group_name,
-        sg.created_by AS invited_by_id,
-        coalesce(p.display_name, 'A friend') AS invited_by_name,
-        sg.is_quick_game,
-        gm.joined_at AS invited_at
-    FROM public.group_members gm
-    JOIN public.skins_groups sg ON sg.id = gm.group_id
-    LEFT JOIN public.profiles p ON p.id = sg.created_by
-    WHERE gm.invited_phone = _normalized_phone
-      AND gm.status = 'invited'
-    ORDER BY gm.joined_at DESC;
-END;
-$$;
-
-GRANT EXECUTE ON FUNCTION public.find_pending_invites_by_phone(text) TO authenticated;
-
--- ─── 2. reconcile_phone_invites_for_profile — fix `gm.created_at` reference ─
 
 CREATE OR REPLACE FUNCTION public.reconcile_phone_invites_for_profile()
 RETURNS trigger
@@ -102,11 +70,12 @@ BEGIN
         _anon_key := coalesce(current_setting('supabase.anon_key', true), '');
     END IF;
 
-    -- Step 1: DELETE orphan phone-invite rows where the matched profile
-    -- already has a non-phone membership in the same group (recipient
-    -- joined earlier via SMS link, then later added phone). Prevents
-    -- partial-unique-index conflict in the UPDATE below. See
-    -- 20260502000005 for full context.
+    -- ─── Step 1: DELETE orphan phone-invite rows ──────────────────────────
+    -- Any phone-invite row matching the user's normalized phone where the
+    -- user already has a non-phone membership in the same group is an
+    -- orphan from an earlier SMS-link join. Drop it so step 2's UPDATE
+    -- doesn't conflict with the partial unique index. No push fires for
+    -- the orphan — the user was already in the group.
     DELETE FROM public.group_members gm
     WHERE gm.invited_phone = _normalized_phone
       AND gm.status = 'invited'
@@ -117,8 +86,9 @@ BEGIN
           AND (gm2.invited_phone IS NULL OR gm2.invited_phone = '')
       );
 
-    -- Step 2: 30-day staleness guard uses gm.joined_at (the actual
-    -- column on group_members; created_at does not exist on this table).
+    -- ─── Step 2: Reconcile non-conflicting phone-invite rows ──────────────
+    -- 30-day staleness guard: only auto-claim recent invites. Older rows
+    -- might be from a phone number the user no longer owns.
     FOR _reconciled IN
         UPDATE public.group_members gm
         SET player_id = NEW.id,
@@ -152,7 +122,5 @@ BEGIN
     RETURN NEW;
 END;
 $$;
-
--- Trigger DDL stays the same — only the function body changed.
 
 NOTIFY pgrst, 'reload schema';

@@ -11,6 +11,7 @@ struct ProfileView: View {
     @State private var showEditProfile = false
     @State private var showGhinEdit = false
     @State private var showPhoneEdit = false
+    @State private var showPhoneInviteFinder = false
     @State private var showNotifications = false
     @State private var showClubEdit = false
     @State private var showPhotoPicker = false
@@ -157,14 +158,14 @@ struct ProfileView: View {
                     // MARK: Account
                     capsHeader("ACCOUNT")
                     settingsGroup {
-                        plainRow("Edit Profile", trailingSymbol: "chevron.right") {
+                        plainRow("Edit Profile", trailingSymbol: "chevron.up.chevron.down") {
                             showEditProfile = true
                         }
                         groupDivider()
                         // Phone row — sets/updates phone on profile. When set,
                         // server-side trigger auto-claims any pending phone
                         // invites + fires push per claimed group.
-                        plainRow("Phone Number", value: phoneDisplay, trailingSymbol: "chevron.right") {
+                        plainRow("Phone Number", value: phoneDisplay, trailingSymbol: "chevron.up.chevron.down") {
                             showPhoneEdit = true
                         }
                         // GHIN row — hidden behind `ghinRowEnabled` until USGA GPA
@@ -196,6 +197,18 @@ struct ProfileView: View {
                     // MARK: Support
                     capsHeader("SUPPORT")
                     settingsGroup {
+                        // Manual entry to PhoneInviteFinderSheet — only shown
+                        // to users WITHOUT phone on profile. Once phone is
+                        // set, all future invites auto-reconcile via the
+                        // receiver-side trigger, so this entry would be noise.
+                        // Edge case (stale invites > 30 days) is rare enough
+                        // to ask the sender to re-invite instead.
+                        if (authService.currentUser?.phone ?? "").isEmpty {
+                            plainRow("Find an Invite", trailingSymbol: "magnifyingglass") {
+                                showPhoneInviteFinder = true
+                            }
+                            groupDivider()
+                        }
                         plainRow("Contact Support", trailingSymbol: "envelope") {
                             if let url = URL(string: "mailto:support@carryapp.site") {
                                 UIApplication.shared.open(url)
@@ -276,19 +289,22 @@ struct ProfileView: View {
                     }
                     .padding(.top, 16)
 
-                    // MARK: Version (standalone card)
-                    settingsGroup {
-                        HStack {
-                            Text("Version")
-                                .font(.system(size: 16))
-                                .foregroundColor(Color.textPrimary)
-                            Spacer()
-                            Text("\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"))")
-                                .font(.system(size: 16))
-                                .foregroundColor(Color.textSecondary)
-                        }
-                        .padding(.vertical, 14)
+                    // MARK: Version (standalone card with white background;
+                    // version + build inlined together in lighter gray —
+                    // meta info, not an actionable row)
+                    HStack {
+                        Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"))")
+                            .font(.system(size: 16))
+                            .foregroundColor(Color.textSecondary)
+                        Spacer()
                     }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 18)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(.white)
+                    )
+                    .padding(.horizontal, 20)
                     .padding(.top, 8)
 
                     // MARK: Disclaimer
@@ -391,6 +407,26 @@ struct ProfileView: View {
                 .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
                 .presentationBackground(.white)
+        }
+        .sheet(isPresented: $showPhoneInviteFinder) {
+            PhoneInviteFinderSheet(
+                onSkip: { showPhoneInviteFinder = false },
+                onClaimed: { _ in
+                    showPhoneInviteFinder = false
+                    // The PhoneInviteFinderSheet already calls
+                    // updateProfile(phone:) on successful claim, so the
+                    // receiver-side trigger will silently claim any other
+                    // pending invites + each fires its own toast via the
+                    // MainTabView polling. No additional navigation needed
+                    // — user can dismiss this profile sheet to see the
+                    // newly-joined groups in the Games tab.
+                    ToastManager.shared.success("Joined!")
+                }
+            )
+            .environmentObject(authService)
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+            .presentationBackground(.white)
         }
         .sheet(isPresented: $showNotifications) {
             NotificationsSheet()
@@ -580,6 +616,56 @@ struct ProfileView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Custom Club Add Row
+
+/// Empty-state affordance shown below the club search field when the API
+/// returned no matches and the user has typed ≥2 chars. Tap accepts the
+/// typed text as a custom club via `GolfCourseResult.custom(_:)` (id == 0
+/// sentinel — save paths must pass `homeClubId: nil` for these entries).
+/// Reused by EditProfileSheet, ClubEditSheet, and OnboardingView.
+struct CustomClubAddRow: View {
+    let text: String
+    let onTap: () -> Void
+
+    private var trimmed: String {
+        text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 10) {
+                Image(systemName: "plus.circle.fill")
+                    .font(.system(size: 18))
+                    .foregroundColor(Color.textPrimary)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Use \"\(trimmed)\" as your home course")
+                        .font(.carry.body)
+                        .foregroundColor(Color.textPrimary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                    Text("We'll save it as a custom course")
+                        .font(.system(size: 13))
+                        .foregroundColor(Color.textTertiary)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .background(RoundedRectangle(cornerRadius: 12).fill(.white))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(Color.borderLight, lineWidth: 1)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Use \(trimmed) as your home course")
     }
 }
 
@@ -901,6 +987,12 @@ struct EditProfileSheet: View {
                                     RoundedRectangle(cornerRadius: 12)
                                         .strokeBorder(Color.borderLight, lineWidth: 1)
                                 )
+                            } else if clubSearchText.trimmingCharacters(in: .whitespaces).count >= 2 && !isSearchingClub {
+                                CustomClubAddRow(text: clubSearchText) {
+                                    selectedClub = .custom(clubSearchText)
+                                    clubSearchText = ""
+                                    clubSearchResults = []
+                                }
                             }
                         }
                     }
@@ -1041,12 +1133,15 @@ struct EditProfileSheet: View {
                     return last.isEmpty ? String(firstTrimmed.prefix(2)).uppercased() : "\(first)\(last)"
                 }()
 
-                // Determine club name and ID
+                // Determine club name and ID. Custom-typed clubs have
+                // `id == 0` (sentinel from GolfCourseResult.custom) — store
+                // `homeClubId: nil` for those so we don't write a meaningless
+                // fake API id to the profile.
                 var clubName: String?
                 var clubId: Int?
                 if let club = selectedClub {
                     clubName = club.clubName ?? club.courseName
-                    clubId = club.id
+                    clubId = club.isCustom ? nil : club.id
                 } else if hasExistingClub {
                     clubName = authService.currentUser?.homeClub
                     clubId = authService.currentUser?.homeClubId
@@ -1133,11 +1228,18 @@ struct PhoneEditSheet: View {
         !(authService.currentUser?.phone ?? "").isEmpty
     }
 
+    /// Save is only enabled when the user has actually changed the value:
+    /// either typed a different 10-digit number, or cleared a previously-set
+    /// number. Opening the sheet (which pre-fills the existing phone) leaves
+    /// Save inactive until the user edits.
     private var canSave: Bool {
         let digits = phoneText.filter(\.isNumber)
-        // Allow save when 10 digits (set/update) OR when input is empty AND
-        // there's an existing value (clear).
-        return digits.count >= 10 || (digits.isEmpty && hasExistingPhone)
+        let savedDigits = (authService.currentUser?.phone ?? "").filter(\.isNumber)
+        // No change → nothing to save.
+        if digits == savedDigits { return false }
+        // Set/update needs a complete 10-digit number; clear allowed when
+        // the field is empty and there was a stored value.
+        return digits.count >= 10 || (digits.isEmpty && !savedDigits.isEmpty)
     }
 
     var body: some View {
@@ -1187,7 +1289,7 @@ struct PhoneEditSheet: View {
                             .strokeBorder(Color.borderLight, lineWidth: 1)
                     )
 
-                Text("We never share your number — it's only used to match invites your friends send.")
+                Text("We will never share your number with anyone, ever.")
                     .font(.system(size: 12))
                     .foregroundColor(Color.textTertiary)
                     .padding(.top, 4)
@@ -1503,6 +1605,12 @@ struct ClubEditSheet: View {
                                 RoundedRectangle(cornerRadius: 12)
                                     .strokeBorder(Color.borderLight, lineWidth: 1)
                             )
+                        } else if searchText.trimmingCharacters(in: .whitespaces).count >= 2 && !isSearching {
+                            CustomClubAddRow(text: searchText) {
+                                selectedClub = .custom(searchText)
+                                searchText = ""
+                                searchResults = []
+                            }
                         }
                     }
 
@@ -1578,7 +1686,9 @@ struct ClubEditSheet: View {
     private func saveClub() {
         isSaving = true
         let clubName = selectedClub?.clubName ?? selectedClub?.courseName
-        let clubId = selectedClub?.id
+        // Custom-typed clubs (id == 0 sentinel) save with homeClubId nil so
+        // we don't store a meaningless fake API id.
+        let clubId: Int? = (selectedClub?.isCustom == true) ? nil : selectedClub?.id
 
         Task {
             do {

@@ -69,7 +69,23 @@ BEGIN
         _anon_key := coalesce(current_setting('supabase.anon_key', true), '');
     END IF;
 
-    -- Reconcile + collect group info for the recipient push.
+    -- Step 1: DELETE orphan phone-invite rows where the matched profile
+    -- already has a non-phone membership in the same group (typical case:
+    -- recipient joined earlier via SMS-link tap, then later adds phone).
+    -- Without this, the UPDATE below would conflict with the partial
+    -- unique index group_members_unique_real_player and roll back the
+    -- entire phone update. See 20260502000005 for full context.
+    DELETE FROM public.group_members gm
+    WHERE gm.invited_phone = _normalized_phone
+      AND gm.status = 'invited'
+      AND EXISTS (
+        SELECT 1 FROM public.group_members gm2
+        WHERE gm2.group_id = gm.group_id
+          AND gm2.player_id = NEW.id
+          AND (gm2.invited_phone IS NULL OR gm2.invited_phone = '')
+      );
+
+    -- Step 2: Reconcile + collect group info for the recipient push.
     -- 30-day staleness guard: don't auto-claim invites older than that.
     FOR _reconciled IN
         UPDATE public.group_members gm

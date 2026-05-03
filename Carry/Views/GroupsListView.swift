@@ -663,28 +663,28 @@ struct GroupsListView: View {
                 }
                 let scorerIntIdSet = Set(scorerIntIds)
 
-                // 4. Build full UUID list + group number map + scorer IDs to
-                // invite. Only ACTUAL scorers for tee-time groups 2+ get the
-                // 'invited' status (they need to accept so the app opens and
-                // they can score). Other Carry users — casual players added
-                // to the round — go in as 'active' via createGroup's
-                // `allActive: true` path. This matches the 2026-05-01 design:
-                // "Carry members are auto-added as active members. No invite
-                // cards, just member cards for all" — applied at creation
-                // here, the same way conversion already does it server-side.
+                // 4. Build full UUID list + group number map. ALL Carry users
+                // (including scorers of tee-time groups 2+) go in as 'active'
+                // via createGroup's `allActive: true` path. The 2026-05-01
+                // design — "Carry members are auto-added as active members.
+                // No invite cards, just member cards for all" — now applies
+                // uniformly: there's no scorer-exception any more.
+                //
+                // Why dropped: previously scorers were forced to status='invited'
+                // so they'd see an explicit accept prompt + push. With
+                // phone-on-profile + the polling-driven "Added to X!" toast
+                // (MainTabView poll), scorers get the same surface as casual
+                // Carry adds. Forcing 'invited' caused them to vanish from
+                // the active-filtered detail view + render at 50% opacity on
+                // the home card, which surprised the inviter and confused the
+                // invitee.
                 var allMemberUUIDs: [UUID] = []
                 var memberGroupNums: [UUID: Int] = [:]
-                var scorerIdsToInvite: Set<UUID> = []
+                let scorerIdsToInvite: Set<UUID> = []
                 for player in updatedMembers where !player.name.isEmpty {
                     if let profileId = player.profileId {
                         allMemberUUIDs.append(profileId)
                         memberGroupNums[profileId] = player.group
-                        if !player.isGuest,
-                           !player.isPendingInvite,
-                           profileId != userId,
-                           scorerIntIdSet.contains(player.id) {
-                            scorerIdsToInvite.insert(profileId)
-                        }
                     }
                 }
 

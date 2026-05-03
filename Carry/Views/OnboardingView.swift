@@ -334,6 +334,11 @@ struct OnboardingView: View {
 
         Task {
             do {
+                // Custom-typed clubs (id == 0 sentinel from
+                // GolfCourseResult.custom) save with homeClubId nil so we
+                // don't write a meaningless fake API id to the profile.
+                let resolvedClubId: Int? = (selectedClub?.isCustom == true) ? nil : selectedClub?.id
+
                 try await authService.completeOnboarding(
                     firstName: firstName.trimmingCharacters(in: .whitespaces),
                     lastName: lastName.trimmingCharacters(in: .whitespaces),
@@ -342,7 +347,7 @@ struct OnboardingView: View {
                     handicap: parseHandicap(handicapText),
                     photo: nil,
                     homeClub: selectedClub?.clubName ?? selectedClub?.courseName,
-                    homeClubId: selectedClub?.id,
+                    homeClubId: resolvedClubId,
                     isClubMember: isClubMember,
                     phone: normalizedPhone
                 )
@@ -416,7 +421,7 @@ struct OnboardingView: View {
         ScrollViewReader { proxy in
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Your Golf Profile")
+                Text("Your Carry Profile")
                     .font(.carry.pageTitle)
                     .foregroundColor(Color.textPrimary)
 
@@ -658,17 +663,14 @@ struct OnboardingView: View {
                     .animation(.easeOut(duration: 0.15), value: obFocused)
 
                     // Search results
-                    if clubSearchResults.isEmpty && clubSearchText.count >= 2 && !isClubSearching {
-                        VStack(spacing: 4) {
-                            Text("No clubs found")
-                                .font(.carry.bodySM)
-                                .foregroundColor(Color.textDisabled)
-                            Text("Check the spelling or try a different name")
-                                .font(.carry.caption)
-                                .foregroundColor(Color.borderLight)
+                    if clubSearchResults.isEmpty && clubSearchText.trimmingCharacters(in: .whitespaces).count >= 2 && !isClubSearching {
+                        // No API match — let the user save the typed name as a
+                        // custom club. Same affordance as Settings/EditProfile.
+                        CustomClubAddRow(text: clubSearchText) {
+                            selectedClub = .custom(clubSearchText)
+                            clubSearchText = ""
+                            clubSearchResults = []
                         }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
                     } else if !clubSearchResults.isEmpty {
                         VStack(spacing: 0) {
                             ForEach(clubSearchResults.prefix(5)) { course in
@@ -777,11 +779,11 @@ struct OnboardingView: View {
     /// the fallback for users who skip and later realize they were invited.
     private var phoneStep: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Your phone number")
+            Text("Add your phone for instant invites")
                 .font(.carry.pageTitle)
                 .foregroundColor(Color.textPrimary)
 
-            Text("Friends who invite you by phone will land you straight in the game — no extra steps.")
+            Text("Optional, but it's what makes invites instant —\nboth inviting friends and being invited yourself.")
                 .font(.system(size: 15))
                 .foregroundColor(Color.textTertiary)
                 .padding(.bottom, 8)
@@ -800,7 +802,7 @@ struct OnboardingView: View {
                     .carryInput(focused: obFocused == .phone)
             }
 
-            Text("Optional. We never share your number — it's only used to match invites your friends send.")
+            Text("We will never share your number with anyone, ever.")
                 .font(.system(size: 12))
                 .foregroundColor(Color.textTertiary)
                 .padding(.top, 4)
