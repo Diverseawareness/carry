@@ -41,7 +41,7 @@ final class StoreService: ObservableObject {
     // false before archiving Build 45 for App Store.
     //
     // Scoped to !DEBUG so local dev still uses the DebugMenu isPremium toggle.
-    private static let grantPremiumInTestFlight = true
+    private static let grantPremiumInTestFlight = false
 
     private var transactionListener: Task<Void, Error>?
 
