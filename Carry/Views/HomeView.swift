@@ -388,6 +388,17 @@ struct HomeView: View {
     /// view on tab switches, which would otherwise reset session flags and
     /// re-fire the alert for the same clipboard content).
     @AppStorage("clipboardInviteAckdChangeCount") private var clipboardInviteAckdChangeCount: Int = -1
+
+    /// Phone-invite finder modal state. Auto-shows on first Home appearance
+    /// for users who likely came from a phone invite (clipboard hint +
+    /// `skinGameGroups.isEmpty`). Manually triggerable from Settings (future).
+    /// Uses `hasURLs` as the privacy-preserving signal that the user MAY
+    /// have an invite — same gate as the clipboard prompt — but asks for
+    /// the user's phone instead of reading the clipboard, so no iOS Allow
+    /// Paste prompt fires.
+    @State private var showPhoneInviteFinder = false
+    @AppStorage("hasSeenPhoneInviteFinder") private var hasSeenPhoneInviteFinder: Bool = false
+
     @State private var invitedRounds: [HomeRound] = []
     @State private var pendingInvites: [InviteDTO] = []  // raw Supabase invites
     @State private var selectedRound: HomeRound?
@@ -733,6 +744,27 @@ struct HomeView: View {
         .sheet(isPresented: $showPaywall) {
             PaywallView()
         }
+        .sheet(isPresented: $showPhoneInviteFinder) {
+            PhoneInviteFinderSheet(
+                onSkip: {
+                    hasSeenPhoneInviteFinder = true
+                    showPhoneInviteFinder = false
+                },
+                onClaimed: { groupId in
+                    hasSeenPhoneInviteFinder = true
+                    showPhoneInviteFinder = false
+                    // Refresh groups + jump into the joined group on the
+                    // Games tab. Same path as handleScannedInvite uses on
+                    // a successful join.
+                    appRouter.shouldRefreshGroups = true
+                    appRouter.pendingRoundGroupId = groupId
+                    selectedTab = .skinGames
+                    ToastManager.shared.success("You're in!")
+                }
+            )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
         .sheet(isPresented: $showCreateGroup) {
             CreateGroupSheet { newGroup in
                 skinGameGroups.insert(newGroup, at: 0)
@@ -986,8 +1018,22 @@ struct HomeView: View {
             return
         }
         let current = UIPasteboard.general.changeCount
-        clipboardInviteAvailable = UIPasteboard.general.hasURLs
+        let hasNewURL = UIPasteboard.general.hasURLs
             && current != clipboardInviteAckdChangeCount
+
+        // Prefer the phone-invite finder modal over the clipboard
+        // "Open your invite?" alert when both could fire — the modal asks
+        // for the user's phone (no Allow Paste prompt) and works for phone
+        // invites whose clipboard URL never made it (e.g., Quick Game scorer
+        // invites in older builds, or users who tapped the SMS link weeks
+        // before installing). Clipboard alert remains the fallback for
+        // share-link invites between Carry users.
+        if hasNewURL && !hasSeenPhoneInviteFinder {
+            showPhoneInviteFinder = true
+            clipboardInviteAvailable = false
+        } else {
+            clipboardInviteAvailable = hasNewURL
+        }
     }
 
     /// Records the current pasteboard `changeCount` as acknowledged so the

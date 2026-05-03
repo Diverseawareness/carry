@@ -9,6 +9,7 @@ final class GroupService {
 
     /// Create a new skins group with members.
     func createGroup(
+        id: UUID? = nil,
         name: String,
         createdBy: UUID,
         memberIds: [UUID],
@@ -45,6 +46,7 @@ final class GroupService {
         do {
             group = try await client.from("skins_groups")
                 .insert(SkinsGroupInsert(
+                    id: id,
                     name: name,
                     createdBy: createdBy,
                     buyIn: buyIn,
@@ -319,6 +321,35 @@ final class GroupService {
                 status: "invited"
             ))
             .execute()
+    }
+
+    /// Search for pending phone invites matching the given phone number.
+    /// Used by the post-onboarding `PhoneInviteFinderSheet` modal — the user
+    /// types their phone, server returns any `group_members.invited_phone`
+    /// rows that match, the user picks which to claim.
+    /// See migration 20260502000001 for the RPC body + auth gating.
+    func findPendingInvitesByPhone(phone: String) async throws -> [PendingPhoneInvite] {
+        let invites: [PendingPhoneInvite] = try await client.rpc(
+            "find_pending_invites_by_phone",
+            params: ["p_phone": AnyJSON.string(phone)]
+        ).execute().value
+        return invites
+    }
+
+    /// Reconcile a pending phone-invite row to the authenticated user.
+    /// Verifies the phone matches what's on the row server-side; updates
+    /// player_id → auth.uid(), invited_phone → '', status → 'active'.
+    /// Returns the group UUID so the caller can navigate into it.
+    /// See migration 20260502000001 for the RPC body + auth gating.
+    func claimPhoneInvite(membershipId: UUID, phone: String) async throws -> UUID {
+        let groupId: UUID = try await client.rpc(
+            "claim_phone_invite",
+            params: [
+                "p_membership_id": AnyJSON.string(membershipId.uuidString),
+                "p_phone": AnyJSON.string(phone)
+            ]
+        ).execute().value
+        return groupId
     }
 
     /// Mark an existing active member as 'invited' so they get a push notification and invite card.

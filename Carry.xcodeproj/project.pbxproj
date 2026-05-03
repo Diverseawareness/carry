@@ -11,6 +11,7 @@
 		602CE3392F735F7C0028D0AF /* ScoringInfoModal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 602CE3382F735F7C0028D0AF /* ScoringInfoModal.swift */; };
 		602CE33D2F747A2F0028D0AF /* TeeTimePickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 602CE33C2F747A2F0028D0AF /* TeeTimePickerSheet.swift */; };
 		60385FDD2F76EC5C00FBF213 /* QuickStartSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60385FDC2F76EC5C00FBF213 /* QuickStartSheet.swift */; };
+		5FCAFE1A2B3C4D5E6F7E8901 /* PhoneInviteFinderSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FCAFE1A2B3C4D5E6F7E8902 /* PhoneInviteFinderSheet.swift */; };
 		60385FDF2F76EC9B00FBF213 /* GuestProfileService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60385FDE2F76EC9B00FBF213 /* GuestProfileService.swift */; };
 		60385FE12F78D10200FBF213 /* ResultsShareCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60385FE02F78D10200FBF213 /* ResultsShareCard.swift */; };
 		60385FE32F78D12100FBF213 /* ShareCardRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60385FE22F78D12100FBF213 /* ShareCardRenderer.swift */; };
@@ -132,6 +133,7 @@
 		602CE3382F735F7C0028D0AF /* ScoringInfoModal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoringInfoModal.swift; sourceTree = "<group>"; };
 		602CE33C2F747A2F0028D0AF /* TeeTimePickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeeTimePickerSheet.swift; sourceTree = "<group>"; };
 		60385FDC2F76EC5C00FBF213 /* QuickStartSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickStartSheet.swift; sourceTree = "<group>"; };
+		5FCAFE1A2B3C4D5E6F7E8902 /* PhoneInviteFinderSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneInviteFinderSheet.swift; sourceTree = "<group>"; };
 		60385FDE2F76EC9B00FBF213 /* GuestProfileService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuestProfileService.swift; sourceTree = "<group>"; };
 		60385FE02F78D10200FBF213 /* ResultsShareCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResultsShareCard.swift; sourceTree = "<group>"; };
 		60385FE22F78D12100FBF213 /* ShareCardRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareCardRenderer.swift; sourceTree = "<group>"; };
@@ -365,6 +367,7 @@
 				60385FE42F7A167800FBF213 /* SMSInviteSheet.swift */,
 				60385FE02F78D10200FBF213 /* ResultsShareCard.swift */,
 				60385FDC2F76EC5C00FBF213 /* QuickStartSheet.swift */,
+				5FCAFE1A2B3C4D5E6F7E8902 /* PhoneInviteFinderSheet.swift */,
 				602CE3382F735F7C0028D0AF /* ScoringInfoModal.swift */,
 				B10008 /* ScorecardView.swift */,
 				B10009 /* HeaderView.swift */,
@@ -677,6 +680,7 @@
 				E30003 /* GameEvent.swift in Sources */,
 				E30004 /* GameToastView.swift in Sources */,
 				60385FDD2F76EC5C00FBF213 /* QuickStartSheet.swift in Sources */,
+				5FCAFE1A2B3C4D5E6F7E8901 /* PhoneInviteFinderSheet.swift in Sources */,
 				E30005 /* CarryToast.swift in Sources */,
 				F50001 /* TypeRamp.swift in Sources */,
 				F50099 /* CarryColors.swift in Sources */,

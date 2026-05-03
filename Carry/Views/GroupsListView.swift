@@ -706,6 +706,11 @@ struct GroupsListView: View {
                 // 4. Create group — scorer_ids written with the INSERT, scorers
                 // inserted as 'invited' directly in the same call (triggers push).
                 let groupDTO = try await groupService.createGroup(
+                    // Pass the client-pre-allocated UUID through so the
+                    // server uses the same id that's already in any
+                    // phone-invite SMS deep links sent during setup
+                    // (see QuickStartSheet.draftQuickGameId).
+                    id: savedGroup.id,
                     name: savedGroup.name,
                     createdBy: userId,
                     memberIds: allMemberUUIDs,

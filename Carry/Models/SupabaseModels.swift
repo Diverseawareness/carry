@@ -459,6 +459,12 @@ struct SkinsGroupDTO: Codable, Identifiable {
 }
 
 struct SkinsGroupInsert: Codable {
+    /// Optional client-supplied UUID. Used by Quick Game scorer phone-invite
+    /// flow to pre-allocate the group ID before `createGroup` is called, so
+    /// the SMS body can include the proper deep-link URL at slot-invite time
+    /// (rather than waiting until after the group exists). When nil, the DB
+    /// generates one via `gen_random_uuid()` default.
+    var id: UUID? = nil
     let name: String
     let createdBy: UUID
     var buyIn: Double = 0
@@ -480,6 +486,7 @@ struct SkinsGroupInsert: Codable {
     var scorerIds: [Int]? = nil
 
     enum CodingKeys: String, CodingKey {
+        case id
         case name
         case createdBy = "created_by"
         case buyIn = "buy_in"
