@@ -22,6 +22,12 @@ struct ProfileDTO: Codable, Identifiable, Equatable {
     var createdBy: UUID?
     let createdAt: Date?
     var updatedAt: Date?
+    /// Digits-only phone (e.g., "4155551234"). Set during onboarding (optional)
+    /// or via Settings. When set or updated, the server's
+    /// `reconcile_phone_invites_for_profile` trigger auto-claims any pending
+    /// `group_members.invited_phone` rows that match (within the last 30 days),
+    /// firing a `phoneInviteReconciled` push to this user per claimed group.
+    var phone: String?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -43,6 +49,7 @@ struct ProfileDTO: Codable, Identifiable, Equatable {
         case createdBy = "created_by"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
+        case phone
     }
 }
 
@@ -663,6 +670,12 @@ struct ProfileUpdate: Codable {
     var avatarUrl: String?
     var email: String?
     var isClubMember: Bool?
+    /// Set this to update the user's phone (digits-only). Triggers
+    /// `reconcile_phone_invites_for_profile` server-side which auto-claims
+    /// any pending phone invites + fires `phoneInviteReconciled` push per
+    /// claimed group. Set to empty string to clear (clears trigger fires
+    /// but matches no rows since invited_phone is non-empty).
+    var phone: String?
 
     enum CodingKeys: String, CodingKey {
         case firstName = "first_name"
@@ -676,6 +689,7 @@ struct ProfileUpdate: Codable {
         case avatarUrl = "avatar_url"
         case email
         case isClubMember = "is_club_member"
+        case phone
     }
 
     func encode(to encoder: Encoder) throws {
@@ -694,5 +708,6 @@ struct ProfileUpdate: Codable {
         if let avatarUrl { try container.encode(avatarUrl, forKey: .avatarUrl) }
         if let email { try container.encode(email, forKey: .email) }
         if let isClubMember { try container.encode(isClubMember, forKey: .isClubMember) }
+        if let phone { try container.encode(phone, forKey: .phone) }
     }
 }

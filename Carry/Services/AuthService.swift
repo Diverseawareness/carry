@@ -224,7 +224,8 @@ final class AuthService: ObservableObject {
         photo: UIImage? = nil,
         homeClub: String? = nil,
         homeClubId: Int? = nil,
-        isClubMember: Bool = true
+        isClubMember: Bool = true,
+        phone: String? = nil
     ) async throws {
         let displayName = firstName  // First name only for scorecard/pills
         let firstI = String(firstName.prefix(1)).uppercased()
@@ -256,7 +257,8 @@ final class AuthService: ObservableObject {
                 homeClub: homeClub,
                 homeClubId: homeClubId,
                 avatarUrl: avatarUrl,
-                isClubMember: isClubMember
+                isClubMember: isClubMember,
+                phone: phone
             ))
 
             // Post-save verification — re-read the just-saved profile state

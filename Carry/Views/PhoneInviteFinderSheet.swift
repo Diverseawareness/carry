@@ -117,11 +117,11 @@ struct PhoneInviteFinderSheet: View {
 
     private var emptyResultsView: some View {
         VStack(spacing: 16) {
-            Text("No invites found for that number.")
+            Text("No invites found yet.")
                 .font(.carry.body)
                 .foregroundColor(Color.textPrimary)
                 .multilineTextAlignment(.center)
-            Text("Ask whoever invited you to send a new invite.")
+            Text("If you were just invited, the host might still be setting up the game — try again in a minute.")
                 .font(.carry.bodySM)
                 .foregroundColor(Color.textSecondary)
                 .multilineTextAlignment(.center)

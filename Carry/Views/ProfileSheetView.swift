@@ -10,6 +10,7 @@ struct ProfileView: View {
     @State private var showHandicapPicker = false
     @State private var showEditProfile = false
     @State private var showGhinEdit = false
+    @State private var showPhoneEdit = false
     @State private var showNotifications = false
     @State private var showClubEdit = false
     @State private var showPhotoPicker = false
@@ -38,6 +39,18 @@ struct ProfileView: View {
     private var initials: String { authService.currentUser?.initials ?? "P" }
     private var handicap: Double { authService.currentUser?.handicap ?? 0 }
     private var ghinNumber: String? { authService.currentUser?.ghinNumber }
+    /// Display value for the Phone Number row. Returns "Add" prompt when
+    /// unset so the row is obviously actionable. Otherwise formats the
+    /// stored digits-only phone as "(XXX) XXX-XXXX".
+    private var phoneDisplay: String {
+        let raw = authService.currentUser?.phone ?? ""
+        let digits = raw.filter(\.isNumber)
+        guard digits.count == 10 else { return "Add" }
+        let area = digits.prefix(3)
+        let mid = digits.dropFirst(3).prefix(3)
+        let last = digits.suffix(4)
+        return "(\(area)) \(mid)-\(last)"
+    }
 
     private var homeClub: String? { authService.currentUser?.homeClub }
     private var avatarUrl: String? { authService.currentUser?.avatarUrl }
@@ -146,6 +159,13 @@ struct ProfileView: View {
                     settingsGroup {
                         plainRow("Edit Profile", trailingSymbol: "chevron.right") {
                             showEditProfile = true
+                        }
+                        groupDivider()
+                        // Phone row — sets/updates phone on profile. When set,
+                        // server-side trigger auto-claims any pending phone
+                        // invites + fires push per claimed group.
+                        plainRow("Phone Number", value: phoneDisplay, trailingSymbol: "chevron.right") {
+                            showPhoneEdit = true
                         }
                         // GHIN row — hidden behind `ghinRowEnabled` until USGA GPA
                         // approval. Keep the code in place.
@@ -360,6 +380,13 @@ struct ProfileView: View {
         }
         .sheet(isPresented: $showGhinEdit) {
             GhinEditSheet()
+                .environmentObject(authService)
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(.white)
+        }
+        .sheet(isPresented: $showPhoneEdit) {
+            PhoneEditSheet()
                 .environmentObject(authService)
                 .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
@@ -1086,6 +1113,132 @@ struct EditProfileSheet: View {
         }
     }
 
+}
+
+// MARK: - Phone Edit Sheet
+
+/// Sheet for setting/updating/clearing the user's phone on profile. Saving
+/// triggers `reconcile_phone_invites_for_profile` server-side, which
+/// auto-claims any pending phone invites + fires push per claimed group.
+struct PhoneEditSheet: View {
+    @EnvironmentObject var authService: AuthService
+    @Environment(\.dismiss) var dismiss
+    @State private var phoneText: String = ""
+    @State private var isSaving = false
+    @State private var errorMessage: String?
+    @State private var showError = false
+    @FocusState private var isPhoneFocused: Bool
+
+    private var hasExistingPhone: Bool {
+        !(authService.currentUser?.phone ?? "").isEmpty
+    }
+
+    private var canSave: Bool {
+        let digits = phoneText.filter(\.isNumber)
+        // Allow save when 10 digits (set/update) OR when input is empty AND
+        // there's an existing value (clear).
+        return digits.count >= 10 || (digits.isEmpty && hasExistingPhone)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                Button("Cancel") { dismiss() }
+                    .font(.system(size: 16))
+                    .foregroundColor(Color.textTertiary)
+
+                Spacer()
+
+                Text("Phone Number")
+                    .font(.carry.headline)
+                    .foregroundColor(Color.pureBlack)
+
+                Spacer()
+
+                Button("Save") { savePhone() }
+                    .font(.carry.bodyLGSemibold)
+                    .foregroundColor((isSaving || !canSave) ? Color.textDisabled : Color.textPrimary)
+                    .disabled(isSaving || !canSave)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
+            .padding(.bottom, 24)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Phone Number")
+                    .font(.carry.bodySMBold)
+                    .foregroundColor(Color.textPrimary)
+                    .padding(.leading, 4)
+
+                TextField("(415) 555-1234", text: $phoneText)
+                    .font(.system(size: 16))
+                    .keyboardType(.phonePad)
+                    .textContentType(.telephoneNumber)
+                    .focused($isPhoneFocused)
+                    .padding(.vertical, 14)
+                    .padding(.horizontal, 16)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(.white)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .strokeBorder(Color.borderLight, lineWidth: 1)
+                    )
+
+                Text("We never share your number — it's only used to match invites your friends send.")
+                    .font(.system(size: 12))
+                    .foregroundColor(Color.textTertiary)
+                    .padding(.top, 4)
+                    .padding(.horizontal, 4)
+            }
+            .padding(.horizontal, 24)
+
+            Spacer()
+        }
+        .background(.white)
+        .onAppear {
+            // Pre-fill with existing phone (formatted nicely if possible).
+            let raw = authService.currentUser?.phone ?? ""
+            let digits = raw.filter(\.isNumber)
+            if digits.count == 10 {
+                let area = digits.prefix(3)
+                let mid = digits.dropFirst(3).prefix(3)
+                let last = digits.suffix(4)
+                phoneText = "(\(area)) \(mid)-\(last)"
+            } else {
+                phoneText = raw
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                isPhoneFocused = true
+            }
+        }
+        .alert("Update Failed", isPresented: $showError) {
+            Button("OK") { }
+        } message: {
+            Text(errorMessage ?? "Something went wrong.")
+        }
+    }
+
+    private func savePhone() {
+        let digits = phoneText.filter(\.isNumber)
+        // Empty input + existing value = clear.
+        let value: String = digits.isEmpty ? "" : digits
+        isSaving = true
+        Task {
+            do {
+                try await authService.updateProfile(ProfileUpdate(phone: value))
+                isSaving = false
+                ToastManager.shared.success(value.isEmpty ? "Phone removed" : "Phone updated")
+                dismiss()
+            } catch {
+                isSaving = false
+                errorMessage = "Could not update phone number. Please try again."
+                showError = true
+            }
+        }
+    }
 }
 
 // MARK: - GHIN Edit Sheet

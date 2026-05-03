@@ -399,6 +399,14 @@ struct HomeView: View {
     @State private var showPhoneInviteFinder = false
     @AppStorage("hasSeenPhoneInviteFinder") private var hasSeenPhoneInviteFinder: Bool = false
 
+    /// One-time banner for users who installed before phone-on-profile shipped.
+    /// Tapping opens PhoneEditSheet; once they enter their phone the server
+    /// trigger auto-claims any pending invites + fires push per claimed group.
+    /// Dismissal is per-user (keyed by userId), so signing in as a new user
+    /// gets a fresh banner.
+    @State private var showPhoneMigrationEdit = false
+    @State private var phoneMigrationBannerDismissed: Bool = false
+
     @State private var invitedRounds: [HomeRound] = []
     @State private var pendingInvites: [InviteDTO] = []  // raw Supabase invites
     @State private var selectedRound: HomeRound?
@@ -519,6 +527,13 @@ struct HomeView: View {
 
             ScrollView {
                 VStack(spacing: 0) {
+                    // MARK: Phone migration banner — shown to users who installed
+                    // before phone-on-profile shipped (no phone on profile yet).
+                    // One-time per-user dismissal. Tap → PhoneEditSheet.
+                    if shouldShowPhoneMigrationBanner {
+                        phoneMigrationBanner
+                    }
+
                     // MARK: New User CTA
                     if skinGameGroups.isEmpty && !isLoadingGroups {
                         VStack(spacing: 12) {
@@ -765,6 +780,18 @@ struct HomeView: View {
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
+        .sheet(isPresented: $showPhoneMigrationEdit, onDismiss: {
+            // Once they've engaged with the sheet, hide the banner regardless
+            // of save outcome. If they entered a valid phone, the trigger
+            // already fired on the server and the migration is done.
+            dismissPhoneMigrationBanner()
+        }) {
+            PhoneEditSheet()
+                .environmentObject(authService)
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(.white)
+        }
         .sheet(isPresented: $showCreateGroup) {
             CreateGroupSheet { newGroup in
                 skinGameGroups.insert(newGroup, at: 0)
@@ -830,6 +857,13 @@ struct HomeView: View {
             // Post-install bridge: did invite.html copy a URL to the
             // clipboard that we can surface as a one-tap banner?
             checkClipboardForInvite()
+            // Refresh the per-user dismissal state for the phone migration
+            // banner (depends on currentUser.id, which may not be loaded
+            // until after the view appears).
+            loadPhoneMigrationBannerState()
+        }
+        .onChange(of: authService.currentUser?.id) { _, _ in
+            loadPhoneMigrationBannerState()
         }
         #if DEBUG
         .onChange(of: appRouter.debugSimulateClipboardInvite) { _, shouldSimulate in
@@ -1084,17 +1118,31 @@ struct HomeView: View {
         Task {
             guard let userId = try? await SupabaseManager.shared.client.auth.session.user.id else { return }
             let service = GroupService()
-            do {
-                let groupName = try await service.joinGroupViaInvite(groupId: groupId, playerId: userId)
-                await MainActor.run {
-                    ToastManager.shared.success("Joined \(groupName)")
-                    appRouter.shouldRefreshGroups = true
-                    appRouter.pendingRoundGroupId = groupId
-                    selectedTab = .skinGames
-                }
-            } catch {
-                await MainActor.run {
-                    ToastManager.shared.error("Couldn't join that group. Try again.")
+
+            // Retry up to 3 times for "group not found" — handles the race
+            // where a Quick Game scorer invitee taps the SMS link before
+            // the inviter has tapped Continue (the group only exists
+            // server-side after handleQuickGameCreate finishes). 5 second
+            // gap × 3 attempts = ~15s of patience; usually enough for the
+            // creator to land Continue.
+            for attempt in 0..<3 {
+                do {
+                    let groupName = try await service.joinGroupViaInvite(groupId: groupId, playerId: userId)
+                    await MainActor.run {
+                        ToastManager.shared.success("Joined \(groupName)")
+                        appRouter.shouldRefreshGroups = true
+                        appRouter.pendingRoundGroupId = groupId
+                        selectedTab = .skinGames
+                    }
+                    return
+                } catch {
+                    if attempt < 2 {
+                        try? await Task.sleep(nanoseconds: 5_000_000_000)
+                        continue
+                    }
+                    await MainActor.run {
+                        ToastManager.shared.error("This game might still be in setup. Try again in a minute.")
+                    }
                 }
             }
         }
@@ -1301,6 +1349,88 @@ struct HomeView: View {
             return "Hey, \(first)"
         }
         return "Hey"
+    }
+
+    // MARK: - Phone Migration Banner
+
+    private func phoneMigrationBannerKey(_ userId: UUID) -> String {
+        "hasSeenPhoneMigrationBanner_\(userId.uuidString)"
+    }
+
+    /// Show the banner only when the user is signed in, has not added a
+    /// phone yet, and hasn't dismissed the banner (per-user). Hidden once
+    /// the modal `PhoneInviteFinderSheet` is also active to avoid stacking.
+    private var shouldShowPhoneMigrationBanner: Bool {
+        guard let user = authService.currentUser else { return false }
+        let phoneEmpty = (user.phone ?? "").isEmpty
+        return phoneEmpty && !phoneMigrationBannerDismissed && !showPhoneInviteFinder
+    }
+
+    private func loadPhoneMigrationBannerState() {
+        guard let user = authService.currentUser else {
+            phoneMigrationBannerDismissed = false
+            return
+        }
+        phoneMigrationBannerDismissed = UserDefaults.standard.bool(forKey: phoneMigrationBannerKey(user.id))
+    }
+
+    private func dismissPhoneMigrationBanner() {
+        guard let user = authService.currentUser else { return }
+        UserDefaults.standard.set(true, forKey: phoneMigrationBannerKey(user.id))
+        phoneMigrationBannerDismissed = true
+    }
+
+    private var phoneMigrationBanner: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(Color.successBgLight)
+                    .frame(width: 36, height: 36)
+                Image(systemName: "phone.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(Color(hexString: "#1B7A14"))
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Add your phone")
+                    .font(.carry.bodySemibold)
+                    .foregroundColor(Color.textPrimary)
+                Text("So friends can invite you to games")
+                    .font(.carry.captionLG)
+                    .foregroundColor(Color.textTertiary)
+                    .lineLimit(2)
+            }
+
+            Spacer()
+
+            Button {
+                dismissPhoneMigrationBanner()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(Color.textTertiary)
+                    .frame(width: 28, height: 28)
+            }
+            .accessibilityLabel("Dismiss")
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(.white)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .strokeBorder(Color.borderLight, lineWidth: 1)
+        )
+        .padding(.horizontal, 16)
+        .padding(.bottom, 16)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            showPhoneMigrationEdit = true
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Tap to add your phone number")
     }
 
     // MARK: - Section Header

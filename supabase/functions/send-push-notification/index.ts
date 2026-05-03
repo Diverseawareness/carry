@@ -39,6 +39,10 @@ serve(async (req) => {
       console.log("[branch] handicap reminder", { user_id: payload.user_id });
       return await handleHandicapReminder(supabase, payload, jwt);
     }
+    if (type === "phoneInviteReconciled") {
+      console.log("[branch] phone invite reconciled", { user_id: payload.user_id, group_id: payload.group_id });
+      return await handlePhoneInviteReconciled(supabase, payload, jwt);
+    }
 
     // Diagnostic: log every inbound webhook so the dispatch decision is
     // visible in Logs. Without this, all early-return paths look identical
@@ -782,6 +786,51 @@ async function handleHandicapReminder(supabase: any, payload: any, jwt: string) 
   await sendPush(profile.device_token, apnsPayload, jwt);
 
   return new Response(JSON.stringify({ message: "Handicap reminder sent" }), { status: 200 });
+}
+
+// ─── Phone Invite Reconciled Push ────────────────────────────────
+// Triggered by the `reconcile_phone_invites_for_profile` trigger when a
+// user sets their phone (via onboarding, Settings, or migration banner)
+// and the server auto-claims their pending phone invites. One push per
+// reconciled group. Tap opens app to wherever (deep-link to the group
+// is a future polish; for now they land on whatever screen they were on
+// and the group is now visible on the Games tab).
+
+async function handlePhoneInviteReconciled(supabase: any, payload: any, jwt: string) {
+  const { user_id, group_id, group_name, body } = payload;
+
+  if (!user_id || !body) {
+    console.log("[phone reconcile] missing user_id or body");
+    return new Response(JSON.stringify({ message: "Missing user_id or body" }), { status: 200 });
+  }
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("device_token")
+    .eq("id", user_id)
+    .single();
+
+  if (!profile?.device_token) {
+    console.log("[phone reconcile] user has no device token", { user_id });
+    return new Response(JSON.stringify({ message: "User has no device token" }), { status: 200 });
+  }
+
+  const apnsPayload = {
+    aps: {
+      alert: {
+        title: "Carry",
+        body: body,
+      },
+      sound: "default",
+    },
+    type: "phoneInviteReconciled",
+    groupId: group_id,
+    groupName: group_name,
+  };
+
+  await sendPush(profile.device_token, apnsPayload, jwt);
+
+  return new Response(JSON.stringify({ message: "Phone invite reconciled push sent" }), { status: 200 });
 }
 
 // ─── Send Push Helper ────────────────────────────────────────────
