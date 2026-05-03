@@ -72,13 +72,13 @@ BEGIN
         sg.created_by AS invited_by_id,
         coalesce(p.display_name, 'A friend') AS invited_by_name,
         sg.is_quick_game,
-        gm.created_at AS invited_at
+        gm.joined_at AS invited_at
     FROM public.group_members gm
     JOIN public.skins_groups sg ON sg.id = gm.group_id
     LEFT JOIN public.profiles p ON p.id = sg.created_by
     WHERE gm.invited_phone = _normalized_phone
       AND gm.status = 'invited'
-    ORDER BY gm.created_at DESC;
+    ORDER BY gm.joined_at DESC;
 END;
 $$;
 

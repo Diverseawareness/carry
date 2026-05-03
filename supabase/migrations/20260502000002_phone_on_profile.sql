@@ -79,7 +79,7 @@ BEGIN
         FROM public.skins_groups sg
         WHERE gm.invited_phone = _normalized_phone
           AND gm.status = 'invited'
-          AND gm.created_at > now() - interval '30 days'
+          AND gm.joined_at > now() - interval '30 days'
           AND sg.id = gm.group_id
         RETURNING gm.id AS membership_id, gm.group_id, sg.name AS group_name
     LOOP

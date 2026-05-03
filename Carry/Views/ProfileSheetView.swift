@@ -1236,6 +1236,9 @@ struct PhoneEditSheet: View {
                 isSaving = false
                 errorMessage = "Could not update phone number. Please try again."
                 showError = true
+                #if DEBUG
+                print("[PhoneEditSheet] save failed: \(error)")
+                #endif
             }
         }
     }
