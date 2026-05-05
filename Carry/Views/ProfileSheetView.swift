@@ -1723,6 +1723,7 @@ struct ShareSheetView: UIViewControllerRepresentable {
 
 struct NotificationsSheet: View {
     @Environment(\.dismiss) var dismiss
+    @EnvironmentObject var authService: AuthService
     @AppStorage("notif_gameAlerts") private var gameAlerts = true
     @AppStorage("notif_liveScoring") private var liveScoring = true
     @AppStorage("notif_groupActivity") private var groupActivity = true
@@ -1802,6 +1803,27 @@ struct NotificationsSheet: View {
 
             Spacer()
         }
+        // Hydrate from server on open so a user reinstalling a device sees
+        // their cloud-saved prefs, not the @AppStorage defaults.
+        .onAppear {
+            if let p = authService.currentUser {
+                if let v = p.notifGameAlerts    { gameAlerts    = v }
+                if let v = p.notifLiveScoring   { liveScoring   = v }
+                if let v = p.notifGroupActivity { groupActivity = v }
+            }
+        }
+        // Persist to Supabase on toggle. Fire-and-forget — @AppStorage is
+        // the local source of truth; if the patch fails, server defaults
+        // (true) keep pushes flowing rather than silently dropping them.
+        .onChange(of: gameAlerts)    { _, v in pushPref(\.notifGameAlerts, value: v) }
+        .onChange(of: liveScoring)   { _, v in pushPref(\.notifLiveScoring, value: v) }
+        .onChange(of: groupActivity) { _, v in pushPref(\.notifGroupActivity, value: v) }
+    }
+
+    private func pushPref(_ keyPath: WritableKeyPath<ProfileUpdate, Bool?>, value: Bool) {
+        var update = ProfileUpdate()
+        update[keyPath: keyPath] = value
+        Task { try? await authService.updateProfile(update) }
     }
 
     private func notifToggle(title: String, subtitle: String, isOn: Binding<Bool>) -> some View {

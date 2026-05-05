@@ -29,6 +29,14 @@ struct ProfileDTO: Codable, Identifiable, Equatable {
     /// firing a `phoneInviteReconciled` push to this user per claimed group.
     var phone: String?
 
+    /// Per-category push notification preferences (server-side gating).
+    /// The send-push-notification Edge Function reads these before pushing
+    /// to skip recipients who have the relevant category turned off.
+    /// Default true server-side; clients on old code keep getting all pushes.
+    var notifGameAlerts: Bool?
+    var notifLiveScoring: Bool?
+    var notifGroupActivity: Bool?
+
     enum CodingKeys: String, CodingKey {
         case id
         case firstName = "first_name"
@@ -50,6 +58,9 @@ struct ProfileDTO: Codable, Identifiable, Equatable {
         case createdAt = "created_at"
         case updatedAt = "updated_at"
         case phone
+        case notifGameAlerts = "notif_game_alerts"
+        case notifLiveScoring = "notif_live_scoring"
+        case notifGroupActivity = "notif_group_activity"
     }
 }
 
@@ -677,6 +688,13 @@ struct ProfileUpdate: Codable {
     /// but matches no rows since invited_phone is non-empty).
     var phone: String?
 
+    /// Per-category push notification preferences. Set when the user flips
+    /// a toggle in NotificationsSheet so the send-push-notification Edge
+    /// Function can gate server-pushed notifications on the user's choice.
+    var notifGameAlerts: Bool?
+    var notifLiveScoring: Bool?
+    var notifGroupActivity: Bool?
+
     enum CodingKeys: String, CodingKey {
         case firstName = "first_name"
         case lastName = "last_name"
@@ -690,6 +708,9 @@ struct ProfileUpdate: Codable {
         case email
         case isClubMember = "is_club_member"
         case phone
+        case notifGameAlerts = "notif_game_alerts"
+        case notifLiveScoring = "notif_live_scoring"
+        case notifGroupActivity = "notif_group_activity"
     }
 
     func encode(to encoder: Encoder) throws {
@@ -709,5 +730,8 @@ struct ProfileUpdate: Codable {
         if let email { try container.encode(email, forKey: .email) }
         if let isClubMember { try container.encode(isClubMember, forKey: .isClubMember) }
         if let phone { try container.encode(phone, forKey: .phone) }
+        if let notifGameAlerts { try container.encode(notifGameAlerts, forKey: .notifGameAlerts) }
+        if let notifLiveScoring { try container.encode(notifLiveScoring, forKey: .notifLiveScoring) }
+        if let notifGroupActivity { try container.encode(notifGroupActivity, forKey: .notifGroupActivity) }
     }
 }
