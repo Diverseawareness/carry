@@ -346,6 +346,20 @@ final class GroupService {
             .execute()
     }
 
+    /// Resolve an invite token (from a deep link's `t=` param) to the minimal
+    /// payload needed to render the invitee onboarding landing screen BEFORE
+    /// authentication: group name, inviter, pre-filled name/handicap/phone,
+    /// and the next future tee time. Returns nil if the token is unknown or
+    /// the invite has already been accepted.
+    /// See migration 20260505000005 for the RPC body + grants.
+    func resolveInviteToken(_ token: UUID) async throws -> ResolvedInvite? {
+        let payload: ResolvedInvite? = try await client.rpc(
+            "resolve_invite_token",
+            params: ["_token": AnyJSON.string(token.uuidString)]
+        ).execute().value
+        return payload
+    }
+
     /// Search for pending phone invites matching the given phone number.
     /// Used by the post-onboarding `PhoneInviteFinderSheet` modal — the user
     /// types their phone, server returns any `group_members.invited_phone`
@@ -1812,5 +1826,34 @@ final class GroupService {
         round.pendingHoleLeaders = pendingLeaders
         round.isQuickGame = isQuickGame
         return round
+    }
+}
+
+// MARK: - Invite Token Resolution
+
+/// Minimal payload returned by `resolve_invite_token` RPC. Used by the
+/// pre-auth invitee onboarding landing screen to render group context +
+/// commissioner pre-fill before the user signs in.
+struct ResolvedInvite: Codable {
+    let groupId: UUID
+    let groupName: String
+    let inviterName: String?
+    let inviterAvatarUrl: String?
+    let invitedName: String?
+    let invitedHandicap: Double?
+    let invitedPhone: String?
+    let status: String
+    let nextTeeTime: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case groupId = "group_id"
+        case groupName = "group_name"
+        case inviterName = "inviter_name"
+        case inviterAvatarUrl = "inviter_avatar_url"
+        case invitedName = "invited_name"
+        case invitedHandicap = "invited_handicap"
+        case invitedPhone = "invited_phone"
+        case status
+        case nextTeeTime = "next_tee_time"
     }
 }
