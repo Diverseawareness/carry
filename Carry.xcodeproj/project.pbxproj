@@ -27,7 +27,6 @@
 		6096465E2F8F5D8D002F3BA9 /* CarryWidgetsExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 6096464C2F8F5D8B002F3BA9 /* CarryWidgetsExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		609646692F8F6140002F3BA9 /* LiveActivityService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 609646682F8F6140002F3BA9 /* LiveActivityService.swift */; };
 		70E6DD8F93DE4E9B947D2ADE /* GolfCourseService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC29B0CF11FF413AA819A069 /* GolfCourseService.swift */; };
-		7F68AD8196384B3AB96CBCFF /* GuestClaimView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEC0B2BCD1224503A328768D /* GuestClaimView.swift */; };
 		8F4CA1E527DB49E3A6D8B193 /* PlayerSearchService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3B7E2D419CF4FA8B1C60D72 /* PlayerSearchService.swift */; };
 		95379D27DEDC14C1D60D06A4 /* VenmoLogo.swift in Sources */ = {isa = PBXBuildFile; fileRef = A298F2722FC1DED0209E5BB2 /* VenmoLogo.swift */; };
 		A10001 /* CarryApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10001 /* CarryApp.swift */; };
@@ -220,7 +219,6 @@
 		F90002 /* ANDONESI.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = ANDONESI.ttf; sourceTree = "<group>"; };
 		F90004 /* ManageMembersSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManageMembersSheet.swift; sourceTree = "<group>"; };
 		FC29B0CF11FF413AA819A069 /* GolfCourseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GolfCourseService.swift; sourceTree = "<group>"; };
-		FEC0B2BCD1224503A328768D /* GuestClaimView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuestClaimView.swift; sourceTree = "<group>"; };
 		GS0002 /* GroupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupService.swift; sourceTree = "<group>"; };
 		M10001 /* MembershipRadioButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MembershipRadioButton.swift; sourceTree = "<group>"; };
 		N10001 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
@@ -373,7 +371,6 @@
 				606FCC172FA1BEE300C79B91 /* EmailAuthSheet.swift */,
 				60385FE42F7A167800FBF213 /* SMSInviteSheet.swift */,
 				60385FE02F78D10200FBF213 /* ResultsShareCard.swift */,
-				FEC0B2BCD1224503A328768D /* GuestClaimView.swift */,
 				60385FDC2F76EC5C00FBF213 /* QuickStartSheet.swift */,
 				602CE3382F735F7C0028D0AF /* ScoringInfoModal.swift */,
 				B10008 /* ScorecardView.swift */,
@@ -646,7 +643,6 @@
 				GS0001 /* GroupService.swift in Sources */,
 				A20201 /* ImageCache.swift in Sources */,
 				60385FE12F78D10200FBF213 /* ResultsShareCard.swift in Sources */,
-				7F68AD8196384B3AB96CBCFF /* GuestClaimView.swift in Sources */,
 				A10008 /* ScorecardView.swift in Sources */,
 				A10009 /* HeaderView.swift in Sources */,
 				A10010 /* CashGamesBar.swift in Sources */,
