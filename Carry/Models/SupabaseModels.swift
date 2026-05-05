@@ -22,6 +22,20 @@ struct ProfileDTO: Codable, Identifiable, Equatable {
     var createdBy: UUID?
     let createdAt: Date?
     var updatedAt: Date?
+    /// Digits-only phone (e.g., "4155551234"). Set during onboarding (optional)
+    /// or via Settings. When set or updated, the server's
+    /// `reconcile_phone_invites_for_profile` trigger auto-claims any pending
+    /// `group_members.invited_phone` rows that match (within the last 30 days),
+    /// firing a `phoneInviteReconciled` push to this user per claimed group.
+    var phone: String?
+
+    /// Per-category push notification preferences (server-side gating).
+    /// The send-push-notification Edge Function reads these before pushing
+    /// to skip recipients who have the relevant category turned off.
+    /// Default true server-side; clients on old code keep getting all pushes.
+    var notifGameAlerts: Bool?
+    var notifLiveScoring: Bool?
+    var notifGroupActivity: Bool?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -43,6 +57,10 @@ struct ProfileDTO: Codable, Identifiable, Equatable {
         case createdBy = "created_by"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
+        case phone
+        case notifGameAlerts = "notif_game_alerts"
+        case notifLiveScoring = "notif_live_scoring"
+        case notifGroupActivity = "notif_group_activity"
     }
 }
 
@@ -156,10 +174,18 @@ struct RoundDTO: Codable, Identifiable {
 struct RoundPlayerDTO: Codable, Identifiable {
     let id: UUID
     let roundId: UUID
+    // playerId stays non-optional UUID. After a guest profile is wiped at
+    // Quick Game termination, this UUID is preserved (the FK to profiles is
+    // dropped — see migration 20260501000001) so the score↔round_players
+    // join keeps working. The render path uses guestDisplayName /
+    // guestHandicap below as fallback when the profile lookup returns
+    // nothing for a wiped guest's UUID.
     let playerId: UUID
     var groupNum: Int
     var status: String  // "accepted", "invited", "declined"
     var invitedBy: UUID?
+    var guestDisplayName: String?
+    var guestHandicap: Double?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -168,6 +194,8 @@ struct RoundPlayerDTO: Codable, Identifiable {
         case groupNum = "group_num"
         case status
         case invitedBy = "invited_by"
+        case guestDisplayName = "guest_display_name"
+        case guestHandicap = "guest_handicap"
     }
 }
 
@@ -233,12 +261,17 @@ struct InviteCourseDTO: Codable {
 struct ScoreDTO: Codable, Identifiable {
     let id: UUID
     let roundId: UUID
+    // playerId stays non-optional UUID — same reasoning as RoundPlayerDTO.
+    // The UUID is preserved across guest profile wipe; render path falls
+    // back to guestDisplayName / guestHandicap when needed.
     let playerId: UUID
     let holeNum: Int
     var score: Int
     var proposedScore: Int?
     var proposedBy: UUID?
     let createdAt: Date?
+    var guestDisplayName: String?
+    var guestHandicap: Double?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -249,6 +282,8 @@ struct ScoreDTO: Codable, Identifiable {
         case proposedScore = "proposed_score"
         case proposedBy = "proposed_by"
         case createdAt = "created_at"
+        case guestDisplayName = "guest_display_name"
+        case guestHandicap = "guest_handicap"
     }
 }
 
@@ -442,6 +477,12 @@ struct SkinsGroupDTO: Codable, Identifiable {
 }
 
 struct SkinsGroupInsert: Codable {
+    /// Optional client-supplied UUID. Used by Quick Game scorer phone-invite
+    /// flow to pre-allocate the group ID before `createGroup` is called, so
+    /// the SMS body can include the proper deep-link URL at slot-invite time
+    /// (rather than waiting until after the group exists). When nil, the DB
+    /// generates one via `gen_random_uuid()` default.
+    var id: UUID? = nil
     let name: String
     let createdBy: UUID
     var buyIn: Double = 0
@@ -460,8 +501,10 @@ struct SkinsGroupInsert: Codable {
     var teeTimeInterval: Int? = nil
     var lastTeeBoxHolesJson: String? = nil
     var winningsDisplay: String = "gross"
+    var scorerIds: [Int]? = nil
 
     enum CodingKeys: String, CodingKey {
+        case id
         case name
         case createdBy = "created_by"
         case buyIn = "buy_in"
@@ -480,6 +523,7 @@ struct SkinsGroupInsert: Codable {
         case teeTimeInterval = "tee_time_interval"
         case lastTeeBoxHolesJson = "last_tee_box_holes_json"
         case winningsDisplay = "winnings_display"
+        case scorerIds = "scorer_ids"
     }
 }
 
@@ -637,6 +681,19 @@ struct ProfileUpdate: Codable {
     var avatarUrl: String?
     var email: String?
     var isClubMember: Bool?
+    /// Set this to update the user's phone (digits-only). Triggers
+    /// `reconcile_phone_invites_for_profile` server-side which auto-claims
+    /// any pending phone invites + fires `phoneInviteReconciled` push per
+    /// claimed group. Set to empty string to clear (clears trigger fires
+    /// but matches no rows since invited_phone is non-empty).
+    var phone: String?
+
+    /// Per-category push notification preferences. Set when the user flips
+    /// a toggle in NotificationsSheet so the send-push-notification Edge
+    /// Function can gate server-pushed notifications on the user's choice.
+    var notifGameAlerts: Bool?
+    var notifLiveScoring: Bool?
+    var notifGroupActivity: Bool?
 
     enum CodingKeys: String, CodingKey {
         case firstName = "first_name"
@@ -650,6 +707,10 @@ struct ProfileUpdate: Codable {
         case avatarUrl = "avatar_url"
         case email
         case isClubMember = "is_club_member"
+        case phone
+        case notifGameAlerts = "notif_game_alerts"
+        case notifLiveScoring = "notif_live_scoring"
+        case notifGroupActivity = "notif_group_activity"
     }
 
     func encode(to encoder: Encoder) throws {
@@ -668,5 +729,9 @@ struct ProfileUpdate: Codable {
         if let avatarUrl { try container.encode(avatarUrl, forKey: .avatarUrl) }
         if let email { try container.encode(email, forKey: .email) }
         if let isClubMember { try container.encode(isClubMember, forKey: .isClubMember) }
+        if let phone { try container.encode(phone, forKey: .phone) }
+        if let notifGameAlerts { try container.encode(notifGameAlerts, forKey: .notifGameAlerts) }
+        if let notifLiveScoring { try container.encode(notifLiveScoring, forKey: .notifLiveScoring) }
+        if let notifGroupActivity { try container.encode(notifGroupActivity, forKey: .notifGroupActivity) }
     }
 }

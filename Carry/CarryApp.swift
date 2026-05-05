@@ -138,7 +138,6 @@ extension NSNotification.Name {
     static let didEndRound = NSNotification.Name("didEndRound")
     static let didCancelRound = NSNotification.Name("didCancelRound")
     static let showNewGamePicker = NSNotification.Name("showNewGamePicker")
-    static let showDebugGuestClaim = NSNotification.Name("showDebugGuestClaim")
     /// Posted when the creator's device receives a memberJoined / memberDeclined
     /// push while the app is foregrounded. Object = group UUID. GroupManagerView
     /// listens to refresh its roster immediately instead of waiting for the 30s
@@ -318,11 +317,33 @@ struct CarryApp: App {
                 // the group with no second confirmation step (and no "You're
                 // Invited!" push fired back at the device that just scanned).
                 Task {
-                    guard let userId = try? await SupabaseManager.shared.client.auth.session.user.id else { return }
-                    _ = try? await groupService.joinGroupViaInvite(groupId: groupId, playerId: userId)
-                    await MainActor.run {
-                        appRouter.shouldRefreshGroups = true
-                        appRouter.pendingRoundGroupId = groupId
+                    guard let userId = try? await SupabaseManager.shared.client.auth.session.user.id else {
+                        #if DEBUG
+                        print("[handleIncomingURL] no auth session for groupId=\(groupId)")
+                        #endif
+                        return
+                    }
+                    do {
+                        let groupName = try await groupService.joinGroupViaInvite(groupId: groupId, playerId: userId)
+                        // Mirror the QR-scan / clipboard path in HomeView so a
+                        // tapped Universal Link lands the user on the Games
+                        // tab inside the joined group with a success toast.
+                        // Setting BOTH navigateToTab AND pendingRoundGroupId
+                        // is defense in depth: navigateToTab handles tab
+                        // switch, pendingRoundGroupId opens the group card.
+                        await MainActor.run {
+                            ToastManager.shared.success("Joined \(groupName)")
+                            appRouter.shouldRefreshGroups = true
+                            appRouter.navigateToTab = "skinGames"
+                            appRouter.pendingRoundGroupId = groupId
+                        }
+                    } catch {
+                        #if DEBUG
+                        print("[handleIncomingURL] joinGroupViaInvite failed for groupId=\(groupId): \(error)")
+                        #endif
+                        await MainActor.run {
+                            ToastManager.shared.error("Couldn't join group. Try again.")
+                        }
                     }
                 }
             } else {

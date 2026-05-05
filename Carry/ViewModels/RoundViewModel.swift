@@ -325,10 +325,6 @@ class RoundViewModel: ObservableObject {
         }
     }
 
-    func canScore(holeNum: Int) -> Bool {
-        return true
-    }
-
     /// True if the current user is a designated scorer of any tee-time group in
     /// the round. Only consulted in Quick Game mode (Skins Groups use everyone-scores).
     ///

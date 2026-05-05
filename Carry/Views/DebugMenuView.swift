@@ -1,5 +1,6 @@
 
 import SwiftUI
+import Supabase
 
 #if DEBUG
 struct DebugMenuView: View {
@@ -213,6 +214,53 @@ struct DebugMenuView: View {
                 actionRow("Send Test Welcome Email", icon: "envelope.badge") {
                     let name = authService.currentUser?.firstName ?? "Daniel"
                     Task { await authService.sendWelcomeEmail(firstName: name) }
+                }
+                divider
+                // Reset the per-user dismissal flag for the Home phone-migration
+                // banner so it shows again. Note: banner also requires
+                // currentUser.phone to be empty — clear it via Settings if you
+                // already saved one.
+                actionRow("Reset Phone Migration Banner", icon: "arrow.counterclockwise") {
+                    if let userId = authService.currentUser?.id {
+                        UserDefaults.standard.removeObject(forKey: "hasSeenPhoneMigrationBanner_\(userId.uuidString)")
+                        ToastManager.shared.success("Banner dismissal reset")
+                    }
+                }
+                divider
+                // Forces PhoneInviteFinderSheet to present on Home regardless
+                // of the normal hasURLs/skinGameGroups gates. Useful for
+                // visual review of the modal without staging a real invite.
+                actionRow("Show Phone Invite Finder", icon: "magnifyingglass.circle") {
+                    appRouter.debugShowPhoneInviteFinder = true
+                }
+                divider
+                // Fires a real phoneInviteReconciled push to the current
+                // user via the Edge Function. Bypasses the SQL trigger but
+                // exercises the same Edge Function handler + APNs delivery
+                // path. Useful for verifying the push surface end-to-end
+                // without needing a 2nd device + a real phone-invite row.
+                actionRow("Send Test Phone Invite Push", icon: "phone.badge.plus") {
+                    Task {
+                        guard let userId = authService.currentUser?.id else {
+                            ToastManager.shared.error("No user signed in")
+                            return
+                        }
+                        do {
+                            try await SupabaseManager.shared.client.functions.invoke(
+                                "send-push-notification",
+                                options: FunctionInvokeOptions(body: [
+                                    "type": "phoneInviteReconciled",
+                                    "user_id": userId.uuidString,
+                                    "group_id": UUID().uuidString,
+                                    "group_name": "Test Group",
+                                    "body": "You've been added to Test Group!"
+                                ])
+                            )
+                            ToastManager.shared.success("Test push sent")
+                        } catch {
+                            ToastManager.shared.error("Push failed: \(error.localizedDescription)")
+                        }
+                    }
                 }
             }
             .background(RoundedRectangle(cornerRadius: 14).fill(.white))

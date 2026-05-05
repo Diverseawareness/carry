@@ -318,7 +318,13 @@ struct GroupManagerView: View {
                 regroup()
                 showManageMembers = false
 
-                // Sync new members to Supabase as invites
+                // Sync new members to Supabase. Carry users (with profileId)
+                // go in as 'active' immediately — no accept step. Matches the
+                // 2026-05-01 design "Carry members are auto-added as active
+                // members" and lets the receiver get a polling-driven
+                // "Added to X!" toast on their home screen + memberJoined
+                // push instead of an invite card. Same pattern as the Quick
+                // Game scorer-active fix in handleQuickGameCreate.
                 if let groupId = supabaseGroupId {
                     let newMembers = result.newGuests.filter { $0.profileId != nil }
                     if !newMembers.isEmpty {
@@ -327,18 +333,18 @@ struct GroupManagerView: View {
                             for member in newMembers {
                                 guard let profileId = member.profileId else { continue }
                                 do {
-                                    try await groupService.inviteMember(groupId: groupId, playerId: profileId)
+                                    try await groupService.inviteMember(groupId: groupId, playerId: profileId, status: "active")
                                     #if DEBUG
-                                    print("[GroupManager] Invited \(member.name) to group")
+                                    print("[GroupManager] Added \(member.name) to group as active")
                                     #endif
                                 } catch {
                                     #if DEBUG
-                                    print("[GroupManager] Failed to invite \(member.name): \(error)")
+                                    print("[GroupManager] Failed to add \(member.name): \(error)")
                                     #endif
                                 }
                             }
                             await MainActor.run {
-                                ToastManager.shared.success("Invite\(newMembers.count == 1 ? "" : "s") sent!")
+                                ToastManager.shared.success("\(newMembers.count == 1 ? "Member" : "Members") added!")
                             }
                         }
                     }
@@ -2361,6 +2367,17 @@ struct GroupManagerView: View {
         config.scoringMode = scoringMode
         config.isQuickGame = isQuickGame
         config.winningsDisplay = winningsDisplay
+        // Per-group scorer player IDs — required by ScorecardView's Quick Game
+        // tap gate (`isCurrentUserScorerForOwnGroup`) so non-creator scorers of
+        // group 2+ can score. Mirrors the int-id mapping that GroupsListView
+        // does at config-build time. Without this, any flow that funnels
+        // through GroupManagerView's onStart callback hands ScorecardView a
+        // config with `scorerPlayerIds=nil`, silently blocking taps.
+        config.scorerPlayerIds = scorerIDs.compactMap { intId -> Int? in
+            guard intId > 0 else { return nil }
+            return intId
+        }
+        config.scorerPlayerId = scorerIDs.first(where: { $0 > 0 })
         // Scorer's own tee time — resolved from teeTimes[] at the group index
         // containing currentUserId. The creator (who owns this view) is the
         // scorer of exactly one group; their scorecard header should show

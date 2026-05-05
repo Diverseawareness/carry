@@ -388,6 +388,25 @@ struct HomeView: View {
     /// view on tab switches, which would otherwise reset session flags and
     /// re-fire the alert for the same clipboard content).
     @AppStorage("clipboardInviteAckdChangeCount") private var clipboardInviteAckdChangeCount: Int = -1
+
+    /// Phone-invite finder modal state. Auto-shows on first Home appearance
+    /// for users who likely came from a phone invite (clipboard hint +
+    /// `skinGameGroups.isEmpty`). Manually triggerable from Settings (future).
+    /// Uses `hasURLs` as the privacy-preserving signal that the user MAY
+    /// have an invite — same gate as the clipboard prompt — but asks for
+    /// the user's phone instead of reading the clipboard, so no iOS Allow
+    /// Paste prompt fires.
+    @State private var showPhoneInviteFinder = false
+    @AppStorage("hasSeenPhoneInviteFinder") private var hasSeenPhoneInviteFinder: Bool = false
+
+    /// One-time banner for users who installed before phone-on-profile shipped.
+    /// Tapping opens PhoneEditSheet; once they enter their phone the server
+    /// trigger auto-claims any pending invites + fires push per claimed group.
+    /// Dismissal is per-user (keyed by userId), so signing in as a new user
+    /// gets a fresh banner.
+    @State private var showPhoneMigrationEdit = false
+    @State private var phoneMigrationBannerDismissed: Bool = false
+
     @State private var invitedRounds: [HomeRound] = []
     @State private var pendingInvites: [InviteDTO] = []  // raw Supabase invites
     @State private var selectedRound: HomeRound?
@@ -508,6 +527,13 @@ struct HomeView: View {
 
             ScrollView {
                 VStack(spacing: 0) {
+                    // MARK: Phone migration banner — shown to users who installed
+                    // before phone-on-profile shipped (no phone on profile yet).
+                    // One-time per-user dismissal. Tap → PhoneEditSheet.
+                    if shouldShowPhoneMigrationBanner {
+                        phoneMigrationBanner
+                    }
+
                     // MARK: New User CTA
                     if skinGameGroups.isEmpty && !isLoadingGroups {
                         VStack(spacing: 12) {
@@ -583,35 +609,10 @@ struct HomeView: View {
                     if recentRounds.isEmpty {
                         emptyCard("No Recent Games", icon: "clock")
                     } else {
-                        let visibleRounds = storeService.isPremium
-                            ? recentRounds
-                            : Array(recentRounds.prefix(1))
-                        ForEach(visibleRounds) { round in
+                        ForEach(recentRounds) { round in
                             swipeToLeaveWrapper(round: round) {
                                 recentRoundCard(round)
                             }
-                            .padding(.horizontal, 16)
-                            .padding(.bottom, 8)
-                        }
-                        if !storeService.isPremium && recentRounds.count > 1 {
-                            Button {
-                                showPaywall = true
-                            } label: {
-                                HStack(spacing: 6) {
-                                    Image("premium-crown")
-                                        .resizable()
-                                        .scaledToFit()
-                                        .frame(width: 14, height: 14)
-                                    Text("View full history")
-                                        .font(.carry.bodySMSemibold)
-                                        .foregroundColor(Color.textPrimary)
-                                }
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 40)
-                                .background(RoundedRectangle(cornerRadius: 13).fill(.white))
-                                .overlay(RoundedRectangle(cornerRadius: 13).strokeBorder(Color.dividerLight, lineWidth: 1))
-                            }
-                            .buttonStyle(.plain)
                             .padding(.horizontal, 16)
                             .padding(.bottom, 8)
                         }
@@ -758,6 +759,41 @@ struct HomeView: View {
         .sheet(isPresented: $showPaywall) {
             PaywallView()
         }
+        .sheet(isPresented: $showPhoneInviteFinder) {
+            PhoneInviteFinderSheet(
+                onSkip: {
+                    hasSeenPhoneInviteFinder = true
+                    showPhoneInviteFinder = false
+                },
+                onClaimed: { groupId in
+                    hasSeenPhoneInviteFinder = true
+                    showPhoneInviteFinder = false
+                    // Refresh groups + jump into the joined group on the
+                    // Games tab. Same path as handleScannedInvite uses on
+                    // a successful join.
+                    appRouter.shouldRefreshGroups = true
+                    appRouter.pendingRoundGroupId = groupId
+                    selectedTab = .skinGames
+                    ToastManager.shared.success("You're in!")
+                }
+            )
+            .environmentObject(authService)
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+            .presentationBackground(.white)
+        }
+        .sheet(isPresented: $showPhoneMigrationEdit, onDismiss: {
+            // Once they've engaged with the sheet, hide the banner regardless
+            // of save outcome. If they entered a valid phone, the trigger
+            // already fired on the server and the migration is done.
+            dismissPhoneMigrationBanner()
+        }) {
+            PhoneEditSheet()
+                .environmentObject(authService)
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(.white)
+        }
         .sheet(isPresented: $showCreateGroup) {
             CreateGroupSheet { newGroup in
                 skinGameGroups.insert(newGroup, at: 0)
@@ -823,6 +859,13 @@ struct HomeView: View {
             // Post-install bridge: did invite.html copy a URL to the
             // clipboard that we can surface as a one-tap banner?
             checkClipboardForInvite()
+            // Refresh the per-user dismissal state for the phone migration
+            // banner (depends on currentUser.id, which may not be loaded
+            // until after the view appears).
+            loadPhoneMigrationBannerState()
+        }
+        .onChange(of: authService.currentUser?.id) { _, _ in
+            loadPhoneMigrationBannerState()
         }
         #if DEBUG
         .onChange(of: appRouter.debugSimulateClipboardInvite) { _, shouldSimulate in
@@ -835,6 +878,13 @@ struct HomeView: View {
             didDismissClipboardInvite = false
             clipboardInviteAckdChangeCount = -1
             checkClipboardForInvite()
+        }
+        .onChange(of: appRouter.debugShowPhoneInviteFinder) { _, shouldShow in
+            guard shouldShow else { return }
+            appRouter.debugShowPhoneInviteFinder = false
+            // Bypass the hasURLs/empty-groups gate so the modal opens for
+            // visual review even when the normal trigger conditions aren't met.
+            showPhoneInviteFinder = true
         }
         #endif
         .onDisappear {
@@ -1011,8 +1061,22 @@ struct HomeView: View {
             return
         }
         let current = UIPasteboard.general.changeCount
-        clipboardInviteAvailable = UIPasteboard.general.hasURLs
+        let hasNewURL = UIPasteboard.general.hasURLs
             && current != clipboardInviteAckdChangeCount
+
+        // Prefer the phone-invite finder modal over the clipboard
+        // "Open your invite?" alert when both could fire — the modal asks
+        // for the user's phone (no Allow Paste prompt) and works for phone
+        // invites whose clipboard URL never made it (e.g., Quick Game scorer
+        // invites in older builds, or users who tapped the SMS link weeks
+        // before installing). Clipboard alert remains the fallback for
+        // share-link invites between Carry users.
+        if hasNewURL && !hasSeenPhoneInviteFinder {
+            showPhoneInviteFinder = true
+            clipboardInviteAvailable = false
+        } else {
+            clipboardInviteAvailable = hasNewURL
+        }
     }
 
     /// Records the current pasteboard `changeCount` as acknowledged so the
@@ -1063,17 +1127,31 @@ struct HomeView: View {
         Task {
             guard let userId = try? await SupabaseManager.shared.client.auth.session.user.id else { return }
             let service = GroupService()
-            do {
-                let groupName = try await service.joinGroupViaInvite(groupId: groupId, playerId: userId)
-                await MainActor.run {
-                    ToastManager.shared.success("Joined \(groupName)")
-                    appRouter.shouldRefreshGroups = true
-                    appRouter.pendingRoundGroupId = groupId
-                    selectedTab = .skinGames
-                }
-            } catch {
-                await MainActor.run {
-                    ToastManager.shared.error("Couldn't join that group. Try again.")
+
+            // Retry up to 3 times for "group not found" — handles the race
+            // where a Quick Game scorer invitee taps the SMS link before
+            // the inviter has tapped Continue (the group only exists
+            // server-side after handleQuickGameCreate finishes). 5 second
+            // gap × 3 attempts = ~15s of patience; usually enough for the
+            // creator to land Continue.
+            for attempt in 0..<3 {
+                do {
+                    let groupName = try await service.joinGroupViaInvite(groupId: groupId, playerId: userId)
+                    await MainActor.run {
+                        ToastManager.shared.success("Joined \(groupName)")
+                        appRouter.shouldRefreshGroups = true
+                        appRouter.pendingRoundGroupId = groupId
+                        selectedTab = .skinGames
+                    }
+                    return
+                } catch {
+                    if attempt < 2 {
+                        try? await Task.sleep(nanoseconds: 5_000_000_000)
+                        continue
+                    }
+                    await MainActor.run {
+                        ToastManager.shared.error("This game might still be in setup. Try again in a minute.")
+                    }
                 }
             }
         }
@@ -1280,6 +1358,88 @@ struct HomeView: View {
             return "Hey, \(first)"
         }
         return "Hey"
+    }
+
+    // MARK: - Phone Migration Banner
+
+    private func phoneMigrationBannerKey(_ userId: UUID) -> String {
+        "hasSeenPhoneMigrationBanner_\(userId.uuidString)"
+    }
+
+    /// Show the banner only when the user is signed in, has not added a
+    /// phone yet, and hasn't dismissed the banner (per-user). Hidden once
+    /// the modal `PhoneInviteFinderSheet` is also active to avoid stacking.
+    private var shouldShowPhoneMigrationBanner: Bool {
+        guard let user = authService.currentUser else { return false }
+        let phoneEmpty = (user.phone ?? "").isEmpty
+        return phoneEmpty && !phoneMigrationBannerDismissed && !showPhoneInviteFinder
+    }
+
+    private func loadPhoneMigrationBannerState() {
+        guard let user = authService.currentUser else {
+            phoneMigrationBannerDismissed = false
+            return
+        }
+        phoneMigrationBannerDismissed = UserDefaults.standard.bool(forKey: phoneMigrationBannerKey(user.id))
+    }
+
+    private func dismissPhoneMigrationBanner() {
+        guard let user = authService.currentUser else { return }
+        UserDefaults.standard.set(true, forKey: phoneMigrationBannerKey(user.id))
+        phoneMigrationBannerDismissed = true
+    }
+
+    private var phoneMigrationBanner: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(Color.successBgLight)
+                    .frame(width: 36, height: 36)
+                Image(systemName: "phone.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(Color(hexString: "#1B7A14"))
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Add your phone number for instant invites")
+                    .font(.carry.bodySemibold)
+                    .foregroundColor(Color.textPrimary)
+                Text("Friends can add you in one tap")
+                    .font(.carry.captionLG)
+                    .foregroundColor(Color.textTertiary)
+                    .lineLimit(2)
+            }
+
+            Spacer()
+
+            Button {
+                dismissPhoneMigrationBanner()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(Color.textTertiary)
+                    .frame(width: 28, height: 28)
+            }
+            .accessibilityLabel("Dismiss")
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(.white)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .strokeBorder(Color.borderLight, lineWidth: 1)
+        )
+        .padding(.horizontal, 16)
+        .padding(.bottom, 16)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            showPhoneMigrationEdit = true
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Tap to add your phone number")
     }
 
     // MARK: - Section Header

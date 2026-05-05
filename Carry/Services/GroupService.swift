@@ -9,6 +9,7 @@ final class GroupService {
 
     /// Create a new skins group with members.
     func createGroup(
+        id: UUID? = nil,
         name: String,
         createdBy: UUID,
         memberIds: [UUID],
@@ -45,6 +46,7 @@ final class GroupService {
         do {
             group = try await client.from("skins_groups")
                 .insert(SkinsGroupInsert(
+                    id: id,
                     name: name,
                     createdBy: createdBy,
                     buyIn: buyIn,
@@ -153,6 +155,23 @@ final class GroupService {
             .execute()
             .value
         return rows?.first?.status
+    }
+
+    /// Returns true if the skins_groups row still exists, false if the
+    /// group has been deleted, and nil on a fetch error (caller should
+    /// treat nil as "uncertain — defer state changes"). Used by MainTabView
+    /// to distinguish creator-deleted-the-group from creator-removed-the-user
+    /// when a group goes missing from the user's fetched group list.
+    func groupExists(groupId: UUID) async -> Bool? {
+        struct IdRow: Decodable { let id: UUID }
+        let rows: [IdRow]? = try? await client.from("skins_groups")
+            .select("id")
+            .eq("id", value: groupId.uuidString)
+            .limit(1)
+            .execute()
+            .value
+        guard let rows else { return nil }
+        return !rows.isEmpty
     }
 
     /// Fetch all active and invited members of a group.
@@ -287,7 +306,12 @@ final class GroupService {
     }
 
     /// Invite a member to a group (status = "invited"). Skips if already a member.
-    func inviteMember(groupId: UUID, playerId: UUID) async throws {
+    /// Add a Carry user to a group. `status` defaults to "invited" for
+    /// legacy callers; pass "active" for the auto-active flow used when a
+    /// creator search-adds an existing Carry user (no accept step needed —
+    /// the recipient gets the polling-driven "Added to X!" toast on their
+    /// home screen and a memberJoined push).
+    func inviteMember(groupId: UUID, playerId: UUID, status: String = "invited") async throws {
         // Check for existing membership (any status).
         let existing: [GroupMemberDTO] = try await client.from("group_members")
             .select()
@@ -299,12 +323,13 @@ final class GroupService {
         if let row = existing.first {
             // Ghost `status='removed'` row from an earlier soft-delete
             // (before `removeMember` was switched to hard-DELETE) still
-            // blocks fresh re-invites. Resurrect it to 'invited' so the
-            // user can be added again without requiring manual DB
-            // cleanup. Active and invited rows are left alone — no-op.
+            // blocks fresh re-invites. Resurrect it to the requested
+            // status so the user can be added again without requiring
+            // manual DB cleanup. Active and invited rows are left alone
+            // — no-op (caller already had the user in the group).
             if row.status == "removed" {
                 try await client.from("group_members")
-                    .update(["status": "invited"] as [String: String])
+                    .update(["status": status] as [String: String])
                     .eq("id", value: row.id.uuidString)
                     .execute()
             }
@@ -316,9 +341,38 @@ final class GroupService {
                 groupId: groupId,
                 playerId: playerId,
                 role: "member",
-                status: "invited"
+                status: status
             ))
             .execute()
+    }
+
+    /// Search for pending phone invites matching the given phone number.
+    /// Used by the post-onboarding `PhoneInviteFinderSheet` modal — the user
+    /// types their phone, server returns any `group_members.invited_phone`
+    /// rows that match, the user picks which to claim.
+    /// See migration 20260502000001 for the RPC body + auth gating.
+    func findPendingInvitesByPhone(phone: String) async throws -> [PendingPhoneInvite] {
+        let invites: [PendingPhoneInvite] = try await client.rpc(
+            "find_pending_invites_by_phone",
+            params: ["p_phone": AnyJSON.string(phone)]
+        ).execute().value
+        return invites
+    }
+
+    /// Reconcile a pending phone-invite row to the authenticated user.
+    /// Verifies the phone matches what's on the row server-side; updates
+    /// player_id → auth.uid(), invited_phone → '', status → 'active'.
+    /// Returns the group UUID so the caller can navigate into it.
+    /// See migration 20260502000001 for the RPC body + auth gating.
+    func claimPhoneInvite(membershipId: UUID, phone: String) async throws -> UUID {
+        let groupId: UUID = try await client.rpc(
+            "claim_phone_invite",
+            params: [
+                "p_membership_id": AnyJSON.string(membershipId.uuidString),
+                "p_phone": AnyJSON.string(phone)
+            ]
+        ).execute().value
+        return groupId
     }
 
     /// Mark an existing active member as 'invited' so they get a push notification and invite card.

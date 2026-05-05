@@ -28,6 +28,10 @@ class AppRouter: ObservableObject {
     /// populates this from the user's first existing group so the tap
     /// actually completes end-to-end.
     @Published var debugSimulateClipboardInvite: Bool = false
+    /// Forces HomeView to present PhoneInviteFinderSheet regardless of
+    /// the normal hasURLs/skinGameGroups gates. Useful for visual review
+    /// of the modal without needing a clipboard hint.
+    @Published var debugShowPhoneInviteFinder: Bool = false
     #endif
 
     /// Set to true after accepting a group invite; MainTabView watches and reloads groups.
