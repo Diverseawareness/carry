@@ -114,20 +114,17 @@ struct OnboardingView: View {
 
                 Spacer()
 
-                // Bottom button bar — hidden on golf profile step (button is inline there)
-                if !isGolfProfileStep {
-                    VStack(spacing: 8) {
-                        if let saveErrorMessage {
-                            Text(saveErrorMessage)
-                                .font(.carry.bodySM)
-                                .foregroundColor(Color.systemRedColor)
-                                .multilineTextAlignment(.center)
-                                .padding(.horizontal, 24)
-                        }
-                        buttonBar
+                VStack(spacing: 8) {
+                    if let saveErrorMessage {
+                        Text(saveErrorMessage)
+                            .font(.carry.bodySM)
+                            .foregroundColor(Color.systemRedColor)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 24)
                     }
-                    .padding(.bottom, 24)
+                    buttonBar
                 }
+                .padding(.bottom, 24)
             }
 
         }
@@ -271,11 +268,7 @@ struct OnboardingView: View {
 
     // MARK: - Logic
 
-    /// Phone step is optional. Right button reads "Next" and is always enabled
-    /// — Skip on the left clears the field; entering a partial number that
-    /// isn't 10 digits still passes (saved as-is or skipped). Validation only
-    /// matters when the user explicitly types — `phoneIsValidForSubmit` gates
-    /// what we actually send to the server.
+    /// Phone step is optional via Skip; Next requires a valid 10-digit number.
     private var phoneIsValidForSubmit: Bool {
         let digits = phoneText.filter(\.isNumber)
         return digits.count >= 10
@@ -289,7 +282,7 @@ struct OnboardingView: View {
                 let hasClub = selectedClub != nil
                 let hasHandicap = !handicapText.trimmingCharacters(in: .whitespaces).isEmpty
                 return hasClub && hasHandicap
-            case 1: return true  // phone (optional)
+            case 1: return phoneIsValidForSubmit  // Skip handles empty path
             case 2: return true  // notifications
             default: return true
             }
@@ -304,7 +297,7 @@ struct OnboardingView: View {
                 let hasClub = selectedClub != nil
                 let hasHandicap = !handicapText.trimmingCharacters(in: .whitespaces).isEmpty
                 return hasClub && hasHandicap
-            case 2: return true  // phone (optional)
+            case 2: return phoneIsValidForSubmit  // Skip handles empty path
             case 3: return true  // notifications
             default: return true
             }
@@ -516,37 +509,12 @@ struct OnboardingView: View {
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("GHIN handicap auto-sync coming soon")
 
-                // Next button inline (not anchored above keyboard)
-                Button {
-                    advance()
-                } label: {
-                    Text("Next")
-                        .font(.carry.headlineBold)
-                        .foregroundColor(continueEnabled ? .white : Color.textDisabled)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 56)
-                        .background(
-                            RoundedRectangle(cornerRadius: btnRadius)
-                                .fill(continueEnabled ? Color.textPrimary : Color.borderSubtle)
-                        )
-                }
-                .disabled(!continueEnabled)
-                .padding(.top, 24)
-                .id("nextButton")
-
-                Spacer().frame(height: 40)
+                Spacer().frame(height: 24)
             }
             .padding(.horizontal, 24)
         }
         .scrollDismissesKeyboard(.interactively)
         .onTapGesture { obFocused = nil }
-        .toolbar {
-            ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button("Done") { obFocused = nil }
-                    .font(.carry.bodySemibold)
-            }
-        }
         .onChange(of: clubSearchText) {
             if !clubSearchText.isEmpty {
                 withAnimation(.easeOut(duration: 0.3)) {
@@ -779,7 +747,7 @@ struct OnboardingView: View {
     /// the fallback for users who skip and later realize they were invited.
     private var phoneStep: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Add your phone for instant invites")
+            Text("Add your phone number for instant invites")
                 .font(.carry.pageTitle)
                 .foregroundColor(Color.textPrimary)
 
@@ -800,6 +768,20 @@ struct OnboardingView: View {
                     .textContentType(.telephoneNumber)
                     .focused($obFocused, equals: .phone)
                     .carryInput(focused: obFocused == .phone)
+                    // .phonePad blocks letters on the on-screen keyboard, but
+                    // paste, autofill, and Bluetooth keyboards can sneak
+                    // non-digits in. Strip everything that isn't a digit and
+                    // drop a leading US country-code `1` so iOS contact
+                    // autofill ("+1 (415) 697-9011" / "1415...") lands as
+                    // a clean 10-digit number rather than chopping the tail.
+                    .onChange(of: phoneText) {
+                        let digits = phoneText.filter(\.isNumber)
+                        let normalized = (digits.count == 11 && digits.hasPrefix("1"))
+                            ? String(digits.dropFirst())
+                            : digits
+                        let capped = String(normalized.prefix(10))
+                        if capped != phoneText { phoneText = capped }
+                    }
             }
 
             Text("We will never share your number with anyone, ever.")

@@ -143,15 +143,6 @@ struct GroupsListView: View {
                 }
             }
             #endif
-            .onChange(of: storeService.isPremium) { _, newValue in
-                // User completed the forced paywall (trial started or subscribed).
-                // Auto-open Quick Start so they don't have to tap Quick Game a
-                // second time. Same pattern as the Join Game flow in HomeView.
-                if newValue, pendingQuickStartAfterPaywall {
-                    pendingQuickStartAfterPaywall = false
-                    showQuickStart = true
-                }
-            }
     }
 
     private var gamesContentWithAlerts: some View {
@@ -2086,7 +2077,11 @@ struct GroupsListView: View {
         .sheet(isPresented: $showPaywall) {
             PaywallView()
                 .onDisappear {
-                    if storeService.isPremium {
+                    guard storeService.isPremium else { return }
+                    if pendingQuickStartAfterPaywall {
+                        pendingQuickStartAfterPaywall = false
+                        showQuickStart = true
+                    } else {
                         showCreateGroup = true
                     }
                 }
@@ -2192,6 +2187,7 @@ struct GroupsListView: View {
                 }
             }
             .padding(.horizontal, 16)
+            .padding(.bottom, 100)
         }
         .scrollBounceBehavior(.always)
         .refreshable {

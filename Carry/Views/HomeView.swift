@@ -1401,7 +1401,7 @@ struct HomeView: View {
             }
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("Add your phone for instant invites")
+                Text("Add your phone number for instant invites")
                     .font(.carry.bodySemibold)
                     .foregroundColor(Color.textPrimary)
                 Text("Friends can add you in one tap")

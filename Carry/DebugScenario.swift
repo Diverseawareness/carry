@@ -25,8 +25,8 @@ enum DebugScenario: String, CaseIterable, Identifiable {
     case pendingResults    // Pending results — some groups still out
     case roundComplete     // All 18 done, results screen
     case onboarding        // Auth → onboarding → home flow
-    case onboarding3Step   // Onboarding with Apple name (3 steps: Profile → Notif → Disclaimer)
-    case onboarding4Step   // Onboarding without name (4 steps: Name → Profile → Notif → Disclaimer)
+    case onboarding3Step   // Onboarding with Apple name (4 steps: Profile → Phone → Notif → Disclaimer)
+    case onboarding4Step   // Onboarding without name (5 steps: Name → Profile → Phone → Notif → Disclaimer)
     case welcome           // Sign-in / auth screen
     case inviteOverlay     // Full-screen invite overlay
     case paywall           // Paywall / subscription screen
@@ -55,8 +55,8 @@ enum DebugScenario: String, CaseIterable, Identifiable {
         case .pendingResults:  return "Pending Results"
         case .roundComplete:   return "Round Complete (Final)"
         case .onboarding:      return "Onboarding Flow"
-        case .onboarding3Step: return "Onboarding (3-Step)"
-        case .onboarding4Step: return "Onboarding (4-Step)"
+        case .onboarding3Step: return "Onboarding (4-Step, Apple name)"
+        case .onboarding4Step: return "Onboarding (5-Step, no name)"
         case .welcome:         return "Welcome / Auth"
         case .inviteOverlay:   return "Invite Overlay"
         case .paywall:         return "Paywall"
@@ -85,8 +85,8 @@ enum DebugScenario: String, CaseIterable, Identifiable {
         case .pendingResults:  return "clock.badge.checkmark"
         case .roundComplete:   return "flag.checkered"
         case .onboarding:      return "person.badge.plus"
-        case .onboarding3Step: return "3.circle"
-        case .onboarding4Step: return "4.circle"
+        case .onboarding3Step: return "4.circle"
+        case .onboarding4Step: return "5.circle"
         case .welcome:         return "key"
         case .inviteOverlay:   return "envelope.open"
         case .paywall:         return "crown"

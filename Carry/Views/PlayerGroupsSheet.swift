@@ -1308,15 +1308,19 @@ struct PlayerGroupsSheet: View {
                                 .eq("player_id", value: profileId.uuidString)
                                 .execute()
                         } else {
-                            // New Carry user added by the creator — must accept
-                            // via their home screen. Inserting as "invited" (not
-                            // "active") ensures they show as pending until they
-                            // tap Accept, matching the rest of the invite flow.
+                            // New Carry user added by the creator — go straight
+                            // to "active". The 2026-05-01 design rule applies
+                            // here too (was missed in the original cleanup):
+                            // "Carry members are auto-added as active members.
+                            // No invite cards, just member cards for all."
+                            // Recipient gets the polling-driven "Added to X!"
+                            // toast (MainTabView) + a recipient push from the
+                            // edge function's INSERT-active branch.
                             let insert = GroupMemberInsert(
                                 groupId: groupId,
                                 playerId: profileId,
                                 role: "member",
-                                status: "invited",
+                                status: "active",
                                 groupNum: gi + 1
                             )
                             _ = try? await SupabaseManager.shared.client
