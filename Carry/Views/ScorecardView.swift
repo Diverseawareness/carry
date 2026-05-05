@@ -42,10 +42,7 @@ struct ScorecardView: View {
     @State private var showScorerPicker = false
     @State private var activeToast: GameEvent?
     // Share sheet removed — sharing handled in RoundCompleteView
-    @State private var showScoringInfo = false
     @State private var showPaywall = false
-
-    private static let scoringInfoKeyPrefix = "scoringInfoShownCount"
 
     /// Time-only formatter for the scorer's tee time in the header subtitle.
     /// Matches the "12:28 PM" format used elsewhere (group detail meta info).
@@ -112,16 +109,6 @@ struct ScorecardView: View {
                     .padding(.top, topPad)
             }
 
-            if showScoringInfo {
-                ScoringInfoModal(isQuickGame: isQuickGame) {
-                    withAnimation(.easeOut(duration: 0.25)) {
-                        showScoringInfo = false
-                    }
-                }
-                .transition(.opacity)
-                .zIndex(100)
-            }
-
             // Score dispute modal (Everyone Scores mode)
             if let proposal = viewModel.activeProposal {
                 scoreDisputeOverlay(proposal: proposal)
@@ -131,24 +118,6 @@ struct ScorecardView: View {
         }
         .ignoresSafeArea(.container, edges: .top)
         .ignoresSafeArea(.keyboard)
-        .onAppear {
-            // Only show scoring info when scorecard opens to hole 1 (not from final results)
-            guard viewModel.activeHole == 1 else { return }
-            // Quick Games: only the dedicated scorer sees the "Keeping Score" coachmark.
-            // Non-scorers (other Carry users in the group) can't enter scores, so the
-            // "You're the Scorer" copy doesn't apply to them.
-            if isQuickGame && !viewModel.isCurrentUserScorerForOwnGroup { return }
-            let perUserKey = "\(Self.scoringInfoKeyPrefix)_\(currentUserId)"
-            let count = UserDefaults.standard.integer(forKey: perUserKey)
-            if count < 1 {
-                UserDefaults.standard.set(count + 1, forKey: perUserKey)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    withAnimation(.easeIn(duration: 0.3)) {
-                        showScoringInfo = true
-                    }
-                }
-            }
-        }
     }
 
     @ViewBuilder

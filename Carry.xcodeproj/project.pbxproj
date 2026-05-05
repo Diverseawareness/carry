@@ -9,7 +9,6 @@
 /* Begin PBXBuildFile section */
 		552AF7443964484AA3D2F35A /* SkinConfettiBurst.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E4B1697B91D41F1A81D3762 /* SkinConfettiBurst.swift */; };
 		5FCAFE1A2B3C4D5E6F7E8901 /* PhoneInviteFinderSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FCAFE1A2B3C4D5E6F7E8902 /* PhoneInviteFinderSheet.swift */; };
-		602CE3392F735F7C0028D0AF /* ScoringInfoModal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 602CE3382F735F7C0028D0AF /* ScoringInfoModal.swift */; };
 		602CE33D2F747A2F0028D0AF /* TeeTimePickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 602CE33C2F747A2F0028D0AF /* TeeTimePickerSheet.swift */; };
 		60385FDD2F76EC5C00FBF213 /* QuickStartSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60385FDC2F76EC5C00FBF213 /* QuickStartSheet.swift */; };
 		60385FDF2F76EC9B00FBF213 /* GuestProfileService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60385FDE2F76EC9B00FBF213 /* GuestProfileService.swift */; };
@@ -131,7 +130,6 @@
 
 /* Begin PBXFileReference section */
 		5FCAFE1A2B3C4D5E6F7E8902 /* PhoneInviteFinderSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneInviteFinderSheet.swift; sourceTree = "<group>"; };
-		602CE3382F735F7C0028D0AF /* ScoringInfoModal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoringInfoModal.swift; sourceTree = "<group>"; };
 		602CE33C2F747A2F0028D0AF /* TeeTimePickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeeTimePickerSheet.swift; sourceTree = "<group>"; };
 		60385FDC2F76EC5C00FBF213 /* QuickStartSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickStartSheet.swift; sourceTree = "<group>"; };
 		60385FDE2F76EC9B00FBF213 /* GuestProfileService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuestProfileService.swift; sourceTree = "<group>"; };
@@ -368,7 +366,6 @@
 				60385FE02F78D10200FBF213 /* ResultsShareCard.swift */,
 				60385FDC2F76EC5C00FBF213 /* QuickStartSheet.swift */,
 				5FCAFE1A2B3C4D5E6F7E8902 /* PhoneInviteFinderSheet.swift */,
-				602CE3382F735F7C0028D0AF /* ScoringInfoModal.swift */,
 				B10008 /* ScorecardView.swift */,
 				B10009 /* HeaderView.swift */,
 				B10010 /* CashGamesBar.swift */,
@@ -688,7 +685,6 @@
 				F70001 /* ImageCropView.swift in Sources */,
 				F70002 /* CameraView.swift in Sources */,
 				QR0001 /* QRScannerView.swift in Sources */,
-				602CE3392F735F7C0028D0AF /* ScoringInfoModal.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
