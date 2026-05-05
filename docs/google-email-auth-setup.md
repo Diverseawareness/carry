@@ -100,6 +100,35 @@ Add to the existing pre-archive checklist:
 - [ ] Update App Store privacy questionnaire — "Email" data type is now collected via the email provider
 - [ ] Update site privacy policy if needed
 
+## Migration workflow (dev vs prod)
+
+**Check which DB you're pointed at before any `db push`:**
+```bash
+cat supabase/.temp/project-ref
+# gbhljwtbobbxervekxkg = dev branch
+# seeitehizboxjbnccnyd = prod
+```
+
+**Day-to-day on feature/auth-v2 (dev):**
+```bash
+supabase link --project-ref gbhljwtbobbxervekxkg   # already linked; re-run if switched
+supabase db push                                    # applies new migrations to dev branch
+```
+
+**Shipping to prod (only after auth-v2 is tested and quarantine lifted):**
+```bash
+supabase link --project-ref seeitehizboxjbnccnyd
+supabase db push                                    # applies the same migrations to prod
+supabase link --project-ref gbhljwtbobbxervekxkg   # switch back to dev immediately after
+```
+
+**Adding a new migration:**
+1. Create `supabase/migrations/YYYYMMDDHHMMSS_description.sql`
+2. `supabase db push` against dev, test
+3. Commit — prod gets it when auth-v2 merges
+
+**Never** run `supabase db push` without checking `project-ref` first.
+
 ## What's intentionally NOT done yet
 
 - **Account linking in Settings** ("Connected Accounts" section). Approved but separate scope — needs `linkIdentity()` calls + a Settings UI section. Build after Google + Email are shipping.
