@@ -257,7 +257,23 @@ struct RoundCoordinatorView: View {
                     .transition(.opacity)
 
             case .active:
-                if let activeConfig = roundConfig, !((activeConfig.holes ?? activeConfig.teeBox?.holes ?? []).isEmpty) {
+                if let baseConfig = roundConfig, !((baseConfig.holes ?? baseConfig.teeBox?.holes ?? []).isEmpty) {
+                // Defense in depth: if @State.roundConfig was hydrated by
+                // GroupManagerView's onStart (which historically didn't set
+                // scorerPlayerIds), fall back to the parent-supplied
+                // initialRoundConfig which is built directly from the SavedGroup.
+                // The Quick Game scorer-only tap gate hard-fails when these are
+                // nil — a non-creator scorer of group 2+ can't score at all.
+                let activeConfig: RoundConfig = {
+                    var merged = baseConfig
+                    if merged.scorerPlayerIds == nil, let fromParent = initialRoundConfig?.scorerPlayerIds {
+                        merged.scorerPlayerIds = fromParent
+                    }
+                    if merged.scorerPlayerId == nil, let fromParent = initialRoundConfig?.scorerPlayerId {
+                        merged.scorerPlayerId = fromParent
+                    }
+                    return merged
+                }()
                 ScorecardView(config: activeConfig, onBack: {
                     // Only mark as completed if the round is actually done (all groups finished)
                     // Mid-round exits keep the round as "active" so the active card stays

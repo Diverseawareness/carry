@@ -2367,6 +2367,17 @@ struct GroupManagerView: View {
         config.scoringMode = scoringMode
         config.isQuickGame = isQuickGame
         config.winningsDisplay = winningsDisplay
+        // Per-group scorer player IDs — required by ScorecardView's Quick Game
+        // tap gate (`isCurrentUserScorerForOwnGroup`) so non-creator scorers of
+        // group 2+ can score. Mirrors the int-id mapping that GroupsListView
+        // does at config-build time. Without this, any flow that funnels
+        // through GroupManagerView's onStart callback hands ScorecardView a
+        // config with `scorerPlayerIds=nil`, silently blocking taps.
+        config.scorerPlayerIds = scorerIDs.compactMap { intId -> Int? in
+            guard intId > 0 else { return nil }
+            return intId
+        }
+        config.scorerPlayerId = scorerIDs.first(where: { $0 > 0 })
         // Scorer's own tee time — resolved from teeTimes[] at the group index
         // containing currentUserId. The creator (who owns this view) is the
         // scorer of exactly one group; their scorecard header should show
