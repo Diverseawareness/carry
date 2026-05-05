@@ -2,6 +2,33 @@
 
 Code is in place for Google Sign-In and Email Sign-Up. Before the buttons work end-to-end, a handful of dashboard + Xcode steps need to happen. None of these affect the live App Store build (1.0.1) — they only kick in when the next build ships.
 
+> **Dev environment:** All auth work is done on the `feature/auth-v2` branch running the `Carry dev` Xcode scheme (Supabase dev branch `gbhljwtbobbxervekxkg`). Never merge to `main`/`release/*` until account linking is built + tested and the dev DB exists (quarantine rule).
+
+## Current Status
+
+| Step | Status |
+|------|--------|
+| Apple Sign-In | ✅ Shipping in prod |
+| Email sign-up/sign-in (code) | ✅ Done — needs dev testing |
+| Email sign-up/sign-in (Supabase dev config) | ⬜ Enable Email provider on dev branch |
+| Google Sign-In (code) | ✅ Done — needs Xcode + Cloud Console setup |
+| Google Cloud Console + OAuth client | ⬜ Todo |
+| GoogleSignIn-iOS SPM package | ⬜ Todo |
+| GIDClientID + URL scheme in Info.plist | ⬜ Todo |
+| `.onOpenURL` handler in CarryApp.swift | ⬜ Todo |
+| carryapp.site/reset page | ⬜ Todo |
+| Account linking (link/unlink Apple+Google) | ⬜ Deferred — after Google+Email ship |
+| Dev branch migration failures fixed | ⬜ 2 migrations failed on dev branch — fix before smoke testing |
+
+## Immediate next steps
+
+1. **Fix dev branch migrations** — 2 migrations failed on the Supabase dev branch. Check logs in Supabase dashboard → dev branch → Branching → View Logs.
+2. **Enable Email provider on dev branch** — Supabase dashboard → switch to dev branch → Authentication → Providers → Email → enable + Confirm email ON.
+3. **Smoke-test email sign-up on device** using `Carry dev` scheme.
+4. **Set up Google Cloud Console** (step 1 below) and wire Xcode (steps 3–5).
+5. **Smoke-test Google Sign-In on device.**
+6. **Build account linking** (link/unlink in Settings).
+
 ## 1. Google Cloud Console
 
 1. Open https://console.cloud.google.com → create or pick a project
@@ -15,7 +42,7 @@ Code is in place for Google Sign-In and Email Sign-Up. Before the buttons work e
 
 ## 2. Supabase Dashboard
 
-Project: `seeitehizboxjbnccnyd`
+Do these steps on the **dev branch** (`gbhljwtbobbxervekxkg`) first, then repeat on prod (`seeitehizboxjbnccnyd`) before release.
 
 ### Authentication → Providers
 - **Google**: enable. Paste the Web client ID and secret from step 1.6 above. Leave "Skip nonce check" off.
