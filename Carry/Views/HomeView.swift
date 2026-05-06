@@ -411,7 +411,6 @@ struct HomeView: View {
     @State private var pendingInvites: [InviteDTO] = []  // raw Supabase invites
     @State private var selectedRound: HomeRound?
     @State private var leaderboardRound: HomeRound?
-    @State private var activeCardPulse = false
     @State private var resultsRound: HomeRound?
     @State private var roundToLeave: HomeRound?
     @State private var roundToDelete: HomeRound?
@@ -583,20 +582,6 @@ struct HomeView: View {
                     } else {
                         ForEach(activeRounds) { round in
                             activeRoundCard(round)
-                                .padding(.horizontal, 16)
-                                .padding(.bottom, 8)
-                        }
-                    }
-
-                    // MARK: Pending Invites
-                    sectionHeader("Invites", count: invitedRounds.count)
-                        .padding(.top, 16)
-
-                    if invitedRounds.isEmpty {
-                        emptyCard("No pending invites", icon: "envelope")
-                    } else {
-                        ForEach(invitedRounds) { round in
-                            inviteCard(round)
                                 .padding(.horizontal, 16)
                                 .padding(.bottom, 8)
                         }
@@ -1250,7 +1235,7 @@ struct HomeView: View {
     // MARK: - Empty State
 
     private var isEmptyState: Bool {
-        activeRounds.isEmpty && invitedRounds.isEmpty && recentRounds.isEmpty
+        activeRounds.isEmpty && recentRounds.isEmpty
     }
 
     private var emptyHomeCallout: some View {
@@ -1679,14 +1664,10 @@ struct HomeView: View {
             .overlay(
                 RoundedRectangle(cornerRadius: 20)
                     .strokeBorder(
-                        showGlow
-                            ? Color.concludedGreen.opacity(activeCardPulse ? 0.8 : 0.3)
-                            : Color.bgLight,
+                        showGlow ? Color.concludedGreen.opacity(0.5) : Color.bgLight,
                         lineWidth: showGlow ? 2 : 1
                     )
-                    .animation(showGlow ? .easeInOut(duration: 1.65).repeatForever(autoreverses: true) : .default, value: activeCardPulse)
             )
-            .onAppear { if showGlow { activeCardPulse = true } }
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
