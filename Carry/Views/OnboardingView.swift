@@ -185,8 +185,10 @@ struct OnboardingView: View {
                 EmptyView()
             } else if isPhoneStep {
                 // Phone step — Skip button (optional field). Saves with empty
-                // phone, doesn't block onboarding. Modal fallback (HomeView's
-                // PhoneInviteFinderSheet) catches users who skip here.
+                // phone, doesn't block onboarding. Users who skip here can
+                // add a phone later via the Home migration banner or
+                // Profile → Edit Phone (both fire the same server reconcile
+                // trigger that auto-claims any pending phone invites).
                 Button {
                     phoneText = ""
                     obFocused = nil
@@ -743,8 +745,9 @@ struct OnboardingView: View {
     /// server's `reconcile_phone_invites_for_profile` trigger auto-claims
     /// any pending `group_members.invited_phone` rows that match (within
     /// 30 days) and fires a `phoneInviteReconciled` push per claimed group.
-    /// Skip is supported — `PhoneInviteFinderSheet` (HomeView modal) is
-    /// the fallback for users who skip and later realize they were invited.
+    /// Skip is supported — users who skip can add phone later via the
+    /// Home migration banner or Profile → Edit Phone, which fire the same
+    /// reconcile trigger.
     private var phoneStep: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Add your phone number for instant invites")

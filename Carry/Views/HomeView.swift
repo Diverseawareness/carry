@@ -389,13 +389,15 @@ struct HomeView: View {
     /// re-fire the alert for the same clipboard content).
     @AppStorage("clipboardInviteAckdChangeCount") private var clipboardInviteAckdChangeCount: Int = -1
 
-    /// Phone-invite finder modal state. No longer auto-fires on Home — the
-    /// banner + onboarding cover phone-on-profile, and the server reconcile
-    /// triggers handle invite landing in both directions (past + future).
-    /// This @State remains because the modal can still be opened from the
-    /// debug menu (via `appRouter.debugShowPhoneInviteFinder`); the user-
-    /// facing manual entry lives in ProfileSheetView under Support.
+    /// Phone-invite finder modal — debug-only on Home now. The user-facing
+    /// manual entry lives in ProfileSheetView under Support; the banner +
+    /// onboarding cover phone-on-profile, and the server reconcile triggers
+    /// handle invite landing in both directions (past + future). This @State
+    /// + the `.sheet` below exist only so the debug menu shortcut
+    /// (`appRouter.debugShowPhoneInviteFinder`) can preview the modal here.
+    #if DEBUG
     @State private var showPhoneInviteFinder = false
+    #endif
 
     /// One-time banner for users who installed before phone-on-profile shipped.
     /// Tapping opens PhoneEditSheet; once they enter their phone the server
@@ -742,6 +744,7 @@ struct HomeView: View {
         .sheet(isPresented: $showPaywall) {
             PaywallView()
         }
+        #if DEBUG
         .sheet(isPresented: $showPhoneInviteFinder) {
             PhoneInviteFinderSheet(
                 onSkip: {
@@ -763,6 +766,7 @@ struct HomeView: View {
             .presentationDragIndicator(.visible)
             .presentationBackground(.white)
         }
+        #endif
         .sheet(isPresented: $showPhoneMigrationEdit, onDismiss: {
             // Once they've engaged with the sheet, hide the banner regardless
             // of save outcome. If they entered a valid phone, the trigger
