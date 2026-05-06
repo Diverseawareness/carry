@@ -301,6 +301,7 @@ struct GroupManagerView: View {
             selectedIDs: selectedIDs,
             nextGuestID: nextGuestID,
             supabaseGroupId: supabaseGroupId,
+            onRefresh: { await refreshGroupData() },
             onCancel: { showManageMembers = false },
             onDone: { result in
                 // Drop any players the sheet long-press-removed from local
@@ -317,7 +318,13 @@ struct GroupManagerView: View {
                 regroup()
                 showManageMembers = false
 
-                // Sync new members to Supabase as invites
+                // Sync new members to Supabase. Carry users (with profileId)
+                // go in as 'active' immediately — no accept step. Matches the
+                // 2026-05-01 design "Carry members are auto-added as active
+                // members" and lets the receiver get a polling-driven
+                // "Added to X!" toast on their home screen + memberJoined
+                // push instead of an invite card. Same pattern as the Quick
+                // Game scorer-active fix in handleQuickGameCreate.
                 if let groupId = supabaseGroupId {
                     let newMembers = result.newGuests.filter { $0.profileId != nil }
                     if !newMembers.isEmpty {
@@ -326,18 +333,18 @@ struct GroupManagerView: View {
                             for member in newMembers {
                                 guard let profileId = member.profileId else { continue }
                                 do {
-                                    try await groupService.inviteMember(groupId: groupId, playerId: profileId)
+                                    try await groupService.inviteMember(groupId: groupId, playerId: profileId, status: "active")
                                     #if DEBUG
-                                    print("[GroupManager] Invited \(member.name) to group")
+                                    print("[GroupManager] Added \(member.name) to group as active")
                                     #endif
                                 } catch {
                                     #if DEBUG
-                                    print("[GroupManager] Failed to invite \(member.name): \(error)")
+                                    print("[GroupManager] Failed to add \(member.name): \(error)")
                                     #endif
                                 }
                             }
                             await MainActor.run {
-                                ToastManager.shared.success("Invite\(newMembers.count == 1 ? "" : "s") sent!")
+                                ToastManager.shared.success("\(newMembers.count == 1 ? "Member" : "Members") added!")
                             }
                         }
                     }
@@ -1559,6 +1566,15 @@ struct GroupManagerView: View {
                             onBack?()
                         } else if needsNextSchedule {
                             showSettings = true
+                        } else if needsTeeTimesSet {
+                            // Quick Games don't gate `canStartRound` on tee times
+                            // being set, so the button is enabled even when the
+                            // label says "Set Tee Times to Start". Without this
+                            // branch the tap would fall through to the start path
+                            // and silently start the round. Open Game Options
+                            // (same sheet `needsNextSchedule` opens) so the user
+                            // can actually set the tee times.
+                            showSettings = true
                         } else {
                             // canStartRound already gates on pendingScorerWarnings,
                             // so if we reached here every Group 2+ scorer has
@@ -2351,6 +2367,17 @@ struct GroupManagerView: View {
         config.scoringMode = scoringMode
         config.isQuickGame = isQuickGame
         config.winningsDisplay = winningsDisplay
+        // Per-group scorer player IDs — required by ScorecardView's Quick Game
+        // tap gate (`isCurrentUserScorerForOwnGroup`) so non-creator scorers of
+        // group 2+ can score. Mirrors the int-id mapping that GroupsListView
+        // does at config-build time. Without this, any flow that funnels
+        // through GroupManagerView's onStart callback hands ScorecardView a
+        // config with `scorerPlayerIds=nil`, silently blocking taps.
+        config.scorerPlayerIds = scorerIDs.compactMap { intId -> Int? in
+            guard intId > 0 else { return nil }
+            return intId
+        }
+        config.scorerPlayerId = scorerIDs.first(where: { $0 > 0 })
         // Scorer's own tee time — resolved from teeTimes[] at the group index
         // containing currentUserId. The creator (who owns this view) is the
         // scorer of exactly one group; their scorecard header should show
@@ -3194,46 +3221,27 @@ struct GroupManagerView: View {
 
             Spacer()
 
-            // Invite button for guests / Pending pill for Carry users
-            if isPendingPlayer {
-                if player.isGuest && isCreator {
-                    // Guest — show "Invite" button with link icon (Scorer pill style)
-                    Button {
-                        if let groupId = supabaseGroupId {
-                            let link = "https://carryapp.site/invite?group=\(groupId.uuidString)"
-                            inviteShareLink = "Join our skins group on Carry!\n\(link)"
-                            UIPasteboard.general.string = link
-                            showInviteShareSheet = true
-                        }
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "link")
-                                .font(.system(size: 11, weight: .semibold))
-                            Text("Invite")
-                                .font(.system(size: 14, weight: .semibold))
-                        }
-                        .foregroundColor(Color.textPrimary)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .background(Capsule().strokeBorder(Color.textPrimary, lineWidth: 1))
-                    }
-                    .buttonStyle(.plain)
-                } else if player.isPendingAccept && !(groupIndex < scorerIDs.count && scorerIDs[groupIndex] == player.id) {
-                    // Carry user who hasn't accepted yet (hidden for scorers — orange avatar + opacity is enough)
-                    Text("Pending")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(Color(hexString: "#E38049"))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(
-                            Capsule()
-                                .fill(Color(hexString: "#FFE7CA"))
-                        )
-                        .overlay(
-                            Capsule()
-                                .strokeBorder(Color(hexString: "#FFD4BE"), lineWidth: 0.88)
-                        )
-                }
+            // Pending pill for Carry users who haven't accepted their invite yet.
+            // Guests no longer have an Invite affordance — under the Carry-only
+            // rule (locked 2026-05-01), guests don't appear in Skins Group
+            // rosters at all, so any guest row reaching this view is a leak.
+            if isPendingPlayer,
+               player.isPendingAccept,
+               !(groupIndex < scorerIDs.count && scorerIDs[groupIndex] == player.id) {
+                // Carry user who hasn't accepted yet (hidden for scorers — orange avatar + opacity is enough)
+                Text("Pending")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(Color(hexString: "#E38049"))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(
+                        Capsule()
+                            .fill(Color(hexString: "#FFE7CA"))
+                    )
+                    .overlay(
+                        Capsule()
+                            .strokeBorder(Color(hexString: "#FFD4BE"), lineWidth: 0.88)
+                    )
             }
 
 
@@ -3677,7 +3685,7 @@ struct GroupManagerView: View {
                     .font(Font.system(size: 17, weight: .semibold))
                     .foregroundColor(Color.textPrimary)
                     .lineLimit(1)
-                if !isQuickGame && (player.isPendingInvite || player.isGuest) {
+                if !isQuickGame && player.isPendingInvite {
                     Text("Invited")
                         .font(Font.system(size: 12, weight: .semibold))
                         .foregroundColor(Color.debugOrange)

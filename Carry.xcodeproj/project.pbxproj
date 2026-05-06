@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		552AF7443964484AA3D2F35A /* SkinConfettiBurst.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E4B1697B91D41F1A81D3762 /* SkinConfettiBurst.swift */; };
+		5FCAFE1A2B3C4D5E6F7E8901 /* PhoneInviteFinderSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FCAFE1A2B3C4D5E6F7E8902 /* PhoneInviteFinderSheet.swift */; };
 		602CE3392F735F7C0028D0AF /* ScoringInfoModal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 602CE3382F735F7C0028D0AF /* ScoringInfoModal.swift */; };
 		602CE33D2F747A2F0028D0AF /* TeeTimePickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 602CE33C2F747A2F0028D0AF /* TeeTimePickerSheet.swift */; };
 		60385FDD2F76EC5C00FBF213 /* QuickStartSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60385FDC2F76EC5C00FBF213 /* QuickStartSheet.swift */; };
@@ -24,7 +25,6 @@
 		6096465E2F8F5D8D002F3BA9 /* CarryWidgetsExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 6096464C2F8F5D8B002F3BA9 /* CarryWidgetsExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		609646692F8F6140002F3BA9 /* LiveActivityService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 609646682F8F6140002F3BA9 /* LiveActivityService.swift */; };
 		70E6DD8F93DE4E9B947D2ADE /* GolfCourseService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC29B0CF11FF413AA819A069 /* GolfCourseService.swift */; };
-		7F68AD8196384B3AB96CBCFF /* GuestClaimView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEC0B2BCD1224503A328768D /* GuestClaimView.swift */; };
 		8F4CA1E527DB49E3A6D8B193 /* PlayerSearchService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3B7E2D419CF4FA8B1C60D72 /* PlayerSearchService.swift */; };
 		95379D27DEDC14C1D60D06A4 /* VenmoLogo.swift in Sources */ = {isa = PBXBuildFile; fileRef = A298F2722FC1DED0209E5BB2 /* VenmoLogo.swift */; };
 		A10001 /* CarryApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10001 /* CarryApp.swift */; };
@@ -130,6 +130,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		5FCAFE1A2B3C4D5E6F7E8902 /* PhoneInviteFinderSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneInviteFinderSheet.swift; sourceTree = "<group>"; };
 		602CE3382F735F7C0028D0AF /* ScoringInfoModal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoringInfoModal.swift; sourceTree = "<group>"; };
 		602CE33C2F747A2F0028D0AF /* TeeTimePickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeeTimePickerSheet.swift; sourceTree = "<group>"; };
 		60385FDC2F76EC5C00FBF213 /* QuickStartSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickStartSheet.swift; sourceTree = "<group>"; };
@@ -214,7 +215,6 @@
 		F90002 /* ANDONESI.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = ANDONESI.ttf; sourceTree = "<group>"; };
 		F90004 /* ManageMembersSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManageMembersSheet.swift; sourceTree = "<group>"; };
 		FC29B0CF11FF413AA819A069 /* GolfCourseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GolfCourseService.swift; sourceTree = "<group>"; };
-		FEC0B2BCD1224503A328768D /* GuestClaimView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuestClaimView.swift; sourceTree = "<group>"; };
 		GS0002 /* GroupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupService.swift; sourceTree = "<group>"; };
 		M10001 /* MembershipRadioButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MembershipRadioButton.swift; sourceTree = "<group>"; };
 		N10001 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
@@ -366,8 +366,8 @@
 			children = (
 				60385FE42F7A167800FBF213 /* SMSInviteSheet.swift */,
 				60385FE02F78D10200FBF213 /* ResultsShareCard.swift */,
-				FEC0B2BCD1224503A328768D /* GuestClaimView.swift */,
 				60385FDC2F76EC5C00FBF213 /* QuickStartSheet.swift */,
+				5FCAFE1A2B3C4D5E6F7E8902 /* PhoneInviteFinderSheet.swift */,
 				602CE3382F735F7C0028D0AF /* ScoringInfoModal.swift */,
 				B10008 /* ScorecardView.swift */,
 				B10009 /* HeaderView.swift */,
@@ -637,7 +637,6 @@
 				GS0001 /* GroupService.swift in Sources */,
 				A20201 /* ImageCache.swift in Sources */,
 				60385FE12F78D10200FBF213 /* ResultsShareCard.swift in Sources */,
-				7F68AD8196384B3AB96CBCFF /* GuestClaimView.swift in Sources */,
 				A10008 /* ScorecardView.swift in Sources */,
 				A10009 /* HeaderView.swift in Sources */,
 				A10010 /* CashGamesBar.swift in Sources */,
@@ -681,6 +680,7 @@
 				E30003 /* GameEvent.swift in Sources */,
 				E30004 /* GameToastView.swift in Sources */,
 				60385FDD2F76EC5C00FBF213 /* QuickStartSheet.swift in Sources */,
+				5FCAFE1A2B3C4D5E6F7E8901 /* PhoneInviteFinderSheet.swift in Sources */,
 				E30005 /* CarryToast.swift in Sources */,
 				F50001 /* TypeRamp.swift in Sources */,
 				F50099 /* CarryColors.swift in Sources */,
@@ -708,6 +708,165 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		60861B1B2FAA7A0C00E6433C /* Debug dev */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = SC0001 /* Secrets.xcconfig */;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_DIALECT = "c++20";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 4HC6HD76J4;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_DIALECT = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				"OTHER_SWIFT_FLAGS[arch=*]" = "-DDEV_SUPABASE";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) DEBUG";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = "Debug dev";
+		};
+		60861B1C2FAA7A0C00E6433C /* Debug dev */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Carry/Carry.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 76;
+				INFOPLIST_FILE = Carry/Info.plist;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.3;
+				PRODUCT_BUNDLE_IDENTIFIER = com.diverseawareness.carry;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = "Debug dev";
+		};
+		60861B1D2FAA7A0C00E6433C /* Debug dev */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0.3;
+				PRODUCT_BUNDLE_IDENTIFIER = com.diverseawareness.CarryTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Carry.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Carry";
+				TEST_TARGET_NAME = Carry;
+			};
+			name = "Debug dev";
+		};
+		60861B1E2FAA7A0C00E6433C /* Debug dev */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 76;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = CarryWidgets/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = CarryWidgets;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.3;
+				PRODUCT_BUNDLE_IDENTIFIER = com.diverseawareness.carry.CarryWidgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = "Debug dev";
+		};
 		608DA9222F8A35F900B69072 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -721,7 +880,7 @@
 				GCC_WARN_UNDECLARED_SELECTOR = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.0.2;
+				MARKETING_VERSION = 1.0.3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.diverseawareness.CarryTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -750,7 +909,7 @@
 				GCC_WARN_UNDECLARED_SELECTOR = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.0.2;
+				MARKETING_VERSION = 1.0.3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.diverseawareness.CarryTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -776,7 +935,7 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 60;
+				CURRENT_PROJECT_VERSION = 76;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = CarryWidgets/Info.plist;
@@ -788,7 +947,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.2;
+				MARKETING_VERSION = 1.0.3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.diverseawareness.carry.CarryWidgets;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -813,7 +972,7 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 60;
+				CURRENT_PROJECT_VERSION = 76;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = CarryWidgets/Info.plist;
@@ -825,7 +984,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.2;
+				MARKETING_VERSION = 1.0.3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.diverseawareness.carry.CarryWidgets;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -848,7 +1007,7 @@
 				CODE_SIGN_ENTITLEMENTS = Carry/Carry.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 60;
+				CURRENT_PROJECT_VERSION = 76;
 				INFOPLIST_FILE = Carry/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -857,7 +1016,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.2;
+				MARKETING_VERSION = 1.0.3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.diverseawareness.carry;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -876,7 +1035,7 @@
 				CODE_SIGN_ENTITLEMENTS = Carry/Carry.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 60;
+				CURRENT_PROJECT_VERSION = 76;
 				INFOPLIST_FILE = Carry/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -885,7 +1044,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.2;
+				MARKETING_VERSION = 1.0.3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.diverseawareness.carry;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1024,6 +1183,7 @@
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				608DA9222F8A35F900B69072 /* Debug */,
+				60861B1D2FAA7A0C00E6433C /* Debug dev */,
 				608DA9232F8A35F900B69072 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
@@ -1033,6 +1193,7 @@
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				609646602F8F5D8D002F3BA9 /* Debug */,
+				60861B1E2FAA7A0C00E6433C /* Debug dev */,
 				609646612F8F5D8D002F3BA9 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
@@ -1042,6 +1203,7 @@
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				G10001 /* Debug */,
+				60861B1C2FAA7A0C00E6433C /* Debug dev */,
 				G10002 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
@@ -1051,6 +1213,7 @@
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				G10003 /* Debug */,
+				60861B1B2FAA7A0C00E6433C /* Debug dev */,
 				G10004 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;

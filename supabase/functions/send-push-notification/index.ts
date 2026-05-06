@@ -31,6 +31,19 @@ serve(async (req) => {
 
     const { type, old_record, self_initiated: selfInitiated = false } = payload;
 
+    // Custom-type pushes (not from row triggers — sent directly by pg_cron
+    // jobs or other server code with a fully-formed payload). These come in
+    // WITHOUT a `record` object; they specify their own user_id + body.
+    // Dispatched first so they don't fall through to the row-shape branches.
+    if (type === "handicapReminder") {
+      console.log("[branch] handicap reminder", { user_id: payload.user_id });
+      return await handleHandicapReminder(supabase, payload, jwt);
+    }
+    if (type === "phoneInviteReconciled") {
+      console.log("[branch] phone invite reconciled", { user_id: payload.user_id, group_id: payload.group_id });
+      return await handlePhoneInviteReconciled(supabase, payload, jwt);
+    }
+
     // Diagnostic: log every inbound webhook so the dispatch decision is
     // visible in Logs. Without this, all early-return paths look identical
     // (HTTP 200, no log line) and we can't tell which branch matched.
@@ -94,6 +107,19 @@ serve(async (req) => {
                && type === "UPDATE" && old_record?.status !== "active") {
       console.log("[branch] member joined");
       return await handleMemberJoined(supabase, record, jwt);
+    } else if (record.status === "active" && record.role === "member" && record.player_id
+               && type === "INSERT") {
+      // Direct-active INSERT: creator search-added an existing Carry user
+      // (Player Groups sheet, Manage Members search-add, Quick Game create,
+      // Skins Group create). The 2026-05-01 design rule "Carry members are
+      // auto-added as active members" means there's no invited→active step
+      // for these — they go straight to active. Without this branch, the
+      // recipient would get no push (handleGroupInvite only fires for
+      // 'invited' inserts; handleMemberJoined only fires for the
+      // invited→active UPDATE). selfInitiated guard skips the creator's
+      // own row at group-create time + any QR/deep-link self-join paths.
+      console.log("[branch] member added (direct active insert)", { selfInitiated });
+      return await handleMemberAdded(supabase, record, jwt, selfInitiated);
     } else if (record.status === "declined" && record.role && record.player_id
                && (type === "INSERT" || old_record?.status !== "declined")) {
       console.log("[branch] member declined");
@@ -118,6 +144,29 @@ serve(async (req) => {
   }
 });
 
+// ─── Notification preferences ────────────────────────────────────
+// Each push category maps to a per-user toggle in NotificationsSheet.
+// Recipients can opt out per category by setting the matching column on
+// their profiles row to false. Default is true (column NOT NULL DEFAULT
+// true) so existing users + clients on old code keep getting all pushes.
+//
+//   notif_game_alerts     ← invites, round start/end, scorer assignment,
+//                            handicap reminder, phone invite reconciled
+//   notif_live_scoring    ← all groups active
+//   notif_group_activity  ← member joined/declined, score dispute,
+//                            game deleted/force-ended
+
+// Returns true when the recipient has muted the category and the caller
+// should skip the push. Profile must have been SELECT'd with the relevant
+// notif_* column included.
+function prefMutes(profile: any, col: string): boolean {
+  if (profile?.[col] === false) {
+    console.log(`[pref-skip] muted ${col}`);
+    return true;
+  }
+  return false;
+}
+
 // ─── Group Invite Push ───────────────────────────────────────────
 
 async function handleGroupInvite(supabase: any, record: any, jwt: string, selfInitiated: boolean) {
@@ -132,12 +181,15 @@ async function handleGroupInvite(supabase: any, record: any, jwt: string, selfIn
 
   const { data: invitedProfile } = await supabase
     .from("profiles")
-    .select("device_token, display_name")
+    .select("device_token, display_name, notif_game_alerts")
     .eq("id", record.player_id)
     .single();
 
   if (!invitedProfile?.device_token) {
     return new Response(JSON.stringify({ message: "No device token for invited user" }), { status: 200 });
+  }
+  if (prefMutes(invitedProfile, "notif_game_alerts")) {
+    return new Response(JSON.stringify({ message: "Recipient muted game alerts" }), { status: 200 });
   }
 
   const { data: group } = await supabase
@@ -193,12 +245,15 @@ async function handleMemberJoined(supabase: any, record: any, jwt: string) {
   // Get creator's device token
   const { data: creatorProfile } = await supabase
     .from("profiles")
-    .select("device_token")
+    .select("device_token, notif_group_activity")
     .eq("id", group.created_by)
     .single();
 
   if (!creatorProfile?.device_token) {
     return new Response(JSON.stringify({ message: "No device token for creator" }), { status: 200 });
+  }
+  if (prefMutes(creatorProfile, "notif_group_activity")) {
+    return new Response(JSON.stringify({ message: "Creator muted group activity" }), { status: 200 });
   }
 
   const apnsPayload = {
@@ -212,6 +267,65 @@ async function handleMemberJoined(supabase: any, record: any, jwt: string) {
 
   await sendPush(creatorProfile.device_token, apnsPayload, jwt);
   return new Response(JSON.stringify({ message: "Member joined push sent to creator" }), { status: 200 });
+}
+
+// ─── Member Added (Direct Active Insert) Push ────────────────────
+// Fires when a creator adds an existing Carry user directly to a group
+// via search-add (Player Groups sheet, Manage Members sheet, Quick Game
+// create, Skins Group create) — the row is INSERTed with status='active'
+// from the start, no 'invited' intermediate step. Recipient-side push
+// only; sender-side feedback is the polling toast in MainTabView. Pairs
+// with the iOS "Added to {group}!" toast that fires on the same poll.
+//
+// selfInitiated guard skips: (a) the creator's own row at group-create
+// time (auth.uid() == NEW.player_id), and (b) any QR-scan / deep-link
+// self-join paths that promote the user themselves.
+
+async function handleMemberAdded(supabase: any, record: any, jwt: string, selfInitiated: boolean) {
+  if (selfInitiated) {
+    return new Response(JSON.stringify({ message: "Self-initiated add, no recipient push" }), { status: 200 });
+  }
+
+  const { data: addedProfile } = await supabase
+    .from("profiles")
+    .select("device_token, display_name, notif_game_alerts")
+    .eq("id", record.player_id)
+    .single();
+
+  if (!addedProfile?.device_token) {
+    return new Response(JSON.stringify({ message: "No device token for added member" }), { status: 200 });
+  }
+  if (prefMutes(addedProfile, "notif_game_alerts")) {
+    return new Response(JSON.stringify({ message: "Recipient muted game alerts" }), { status: 200 });
+  }
+
+  const { data: group } = await supabase
+    .from("skins_groups")
+    .select("name, created_by")
+    .eq("id", record.group_id)
+    .single();
+
+  const { data: adderProfile } = await supabase
+    .from("profiles")
+    .select("display_name")
+    .eq("id", group?.created_by)
+    .single();
+
+  const adderName = adderProfile?.display_name || "Someone";
+  const groupName = group?.name || "a skins game";
+
+  const apnsPayload = {
+    aps: {
+      alert: { title: `Added to ${groupName}!`, body: `${adderName} added you to ${groupName}` },
+      sound: "default",
+      badge: 1,
+    },
+    groupId: record.group_id,
+    type: "memberAdded",
+  };
+
+  await sendPush(addedProfile.device_token, apnsPayload, jwt);
+  return new Response(JSON.stringify({ message: "Member added push sent" }), { status: 200 });
 }
 
 // ─── Member Declined Push (notify creator) ───────────────────────
@@ -238,12 +352,15 @@ async function handleMemberDeclined(supabase: any, record: any, jwt: string) {
   // Get creator's device token
   const { data: creatorProfile } = await supabase
     .from("profiles")
-    .select("device_token")
+    .select("device_token, notif_group_activity")
     .eq("id", group.created_by)
     .single();
 
   if (!creatorProfile?.device_token) {
     return new Response(JSON.stringify({ message: "No device token for creator" }), { status: 200 });
+  }
+  if (prefMutes(creatorProfile, "notif_group_activity")) {
+    return new Response(JSON.stringify({ message: "Creator muted group activity" }), { status: 200 });
   }
 
   const apnsPayload = {
@@ -268,12 +385,15 @@ async function handleScorerChanged(supabase: any, record: any, jwt: string) {
   // Get new scorer's device token
   const { data: scorerProfile } = await supabase
     .from("profiles")
-    .select("device_token, display_name")
+    .select("device_token, display_name, notif_game_alerts")
     .eq("id", newScorerId)
     .single();
 
   if (!scorerProfile?.device_token) {
     return new Response(JSON.stringify({ message: "No device token for new scorer" }), { status: 200 });
+  }
+  if (prefMutes(scorerProfile, "notif_game_alerts")) {
+    return new Response(JSON.stringify({ message: "New scorer muted game alerts" }), { status: 200 });
   }
 
   // Get group name
@@ -330,7 +450,7 @@ async function handleRoundStarted(supabase: any, record: any, jwt: string) {
   // Get device tokens for all members
   const { data: profiles } = await supabase
     .from("profiles")
-    .select("id, device_token")
+    .select("id, device_token, notif_game_alerts")
     .in("id", playerIds);
 
   const apnsPayload = {
@@ -344,10 +464,10 @@ async function handleRoundStarted(supabase: any, record: any, jwt: string) {
 
   let sent = 0;
   for (const profile of (profiles || [])) {
-    if (profile.device_token) {
-      await sendPush(profile.device_token, apnsPayload, jwt);
-      sent++;
-    }
+    if (!profile.device_token) continue;
+    if (prefMutes(profile, "notif_game_alerts")) continue;
+    await sendPush(profile.device_token, apnsPayload, jwt);
+    sent++;
   }
 
   return new Response(JSON.stringify({ message: `Round started push sent to ${sent} players` }), { status: 200 });
@@ -383,7 +503,7 @@ async function handleRoundEnded(supabase: any, record: any, jwt: string) {
 
   const { data: profiles } = await supabase
     .from("profiles")
-    .select("id, device_token")
+    .select("id, device_token, notif_game_alerts")
     .in("id", playerIds);
 
   const apnsPayload = {
@@ -397,10 +517,10 @@ async function handleRoundEnded(supabase: any, record: any, jwt: string) {
 
   let sent = 0;
   for (const profile of (profiles || [])) {
-    if (profile.device_token) {
-      await sendPush(profile.device_token, apnsPayload, jwt);
-      sent++;
-    }
+    if (!profile.device_token) continue;
+    if (prefMutes(profile, "notif_game_alerts")) continue;
+    await sendPush(profile.device_token, apnsPayload, jwt);
+    sent++;
   }
 
   return new Response(JSON.stringify({ message: `Round ended push sent to ${sent} players` }), { status: 200 });
@@ -455,7 +575,7 @@ async function handleGameDeleted(supabase: any, record: any, jwt: string) {
 
   const { data: profiles } = await supabase
     .from("profiles")
-    .select("id, device_token")
+    .select("id, device_token, notif_group_activity")
     .in("id", playerIds);
 
   const apnsPayload = {
@@ -473,10 +593,10 @@ async function handleGameDeleted(supabase: any, record: any, jwt: string) {
 
   let sent = 0;
   for (const profile of (profiles || [])) {
-    if (profile.device_token) {
-      await sendPush(profile.device_token, apnsPayload, jwt);
-      sent++;
-    }
+    if (!profile.device_token) continue;
+    if (prefMutes(profile, "notif_group_activity")) continue;
+    await sendPush(profile.device_token, apnsPayload, jwt);
+    sent++;
   }
 
   return new Response(JSON.stringify({ message: `Game deleted push sent to ${sent} players` }), { status: 200 });
@@ -528,7 +648,7 @@ async function handleGameForceEnded(supabase: any, record: any, jwt: string) {
 
   const { data: profiles } = await supabase
     .from("profiles")
-    .select("id, device_token")
+    .select("id, device_token, notif_group_activity")
     .in("id", playerIds);
 
   const apnsPayload = {
@@ -546,10 +666,10 @@ async function handleGameForceEnded(supabase: any, record: any, jwt: string) {
 
   let sent = 0;
   for (const profile of (profiles || [])) {
-    if (profile.device_token) {
-      await sendPush(profile.device_token, apnsPayload, jwt);
-      sent++;
-    }
+    if (!profile.device_token) continue;
+    if (prefMutes(profile, "notif_group_activity")) continue;
+    await sendPush(profile.device_token, apnsPayload, jwt);
+    sent++;
   }
 
   return new Response(JSON.stringify({ message: `Game force-ended push sent to ${sent} players` }), { status: 200 });
@@ -607,7 +727,7 @@ async function handleScoreDispute(supabase: any, record: any, jwt: string) {
 
   const { data: profiles } = await supabase
     .from("profiles")
-    .select("id, device_token")
+    .select("id, device_token, notif_group_activity")
     .in("id", memberIds);
 
   const apnsPayload = {
@@ -625,10 +745,10 @@ async function handleScoreDispute(supabase: any, record: any, jwt: string) {
 
   let sent = 0;
   for (const profile of (profiles || [])) {
-    if (profile.device_token) {
-      await sendPush(profile.device_token, apnsPayload, jwt);
-      sent++;
-    }
+    if (!profile.device_token) continue;
+    if (prefMutes(profile, "notif_group_activity")) continue;
+    await sendPush(profile.device_token, apnsPayload, jwt);
+    sent++;
   }
 
   return new Response(JSON.stringify({ message: `Score dispute push sent to ${sent} players` }), { status: 200 });
@@ -699,12 +819,15 @@ async function handleAllGroupsActive(supabase: any, record: any, jwt: string) {
   // Push to creator: "All groups are on the course!"
   const { data: creatorProfile } = await supabase
     .from("profiles")
-    .select("device_token, display_name")
+    .select("device_token, display_name, notif_live_scoring")
     .eq("id", round.created_by)
     .single();
 
   if (!creatorProfile?.device_token) {
     return new Response(JSON.stringify({ message: "Creator has no device token" }), { status: 200 });
+  }
+  if (prefMutes(creatorProfile, "notif_live_scoring")) {
+    return new Response(JSON.stringify({ message: "Creator muted live scoring" }), { status: 200 });
   }
 
   const { data: group } = await supabase
@@ -732,6 +855,100 @@ async function handleAllGroupsActive(supabase: any, record: any, jwt: string) {
   return new Response(JSON.stringify({ message: "All groups active push sent to creator" }), { status: 200 });
 }
 
+// ─── Handicap Reminder Push ──────────────────────────────────────
+// Triggered by the daily pg_cron job `send_handicap_reminders()` (see
+// migration 20260502000000). Single-recipient push: looks up the user's
+// device_token, sends an APNs alert with the body string the SQL function
+// already personalized (e.g. "Almost game time — Carry has you at 6.5.
+// Still right?"). Tap currently just opens the app to wherever the user
+// left off; deep-link to the handicap editor is a future enhancement.
+
+async function handleHandicapReminder(supabase: any, payload: any, jwt: string) {
+  const { user_id, body } = payload;
+
+  if (!user_id || !body) {
+    console.log("[handicap reminder] missing user_id or body in payload");
+    return new Response(JSON.stringify({ message: "Missing user_id or body" }), { status: 200 });
+  }
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("device_token, notif_game_alerts")
+    .eq("id", user_id)
+    .single();
+
+  if (!profile?.device_token) {
+    console.log("[handicap reminder] user has no device token", { user_id });
+    return new Response(JSON.stringify({ message: "User has no device token" }), { status: 200 });
+  }
+  if (prefMutes(profile, "notif_game_alerts")) {
+    return new Response(JSON.stringify({ message: "User muted game alerts" }), { status: 200 });
+  }
+
+  const apnsPayload = {
+    aps: {
+      alert: {
+        title: "Carry",
+        body: body,
+      },
+      sound: "default",
+    },
+    type: "handicapReminder",
+  };
+
+  await sendPush(profile.device_token, apnsPayload, jwt);
+
+  return new Response(JSON.stringify({ message: "Handicap reminder sent" }), { status: 200 });
+}
+
+// ─── Phone Invite Reconciled Push ────────────────────────────────
+// Triggered by the `reconcile_phone_invites_for_profile` trigger when a
+// user sets their phone (via onboarding, Settings, or migration banner)
+// and the server auto-claims their pending phone invites. One push per
+// reconciled group. Tap opens app to wherever (deep-link to the group
+// is a future polish; for now they land on whatever screen they were on
+// and the group is now visible on the Games tab).
+
+async function handlePhoneInviteReconciled(supabase: any, payload: any, jwt: string) {
+  const { user_id, group_id, group_name, body } = payload;
+
+  if (!user_id || !body) {
+    console.log("[phone reconcile] missing user_id or body");
+    return new Response(JSON.stringify({ message: "Missing user_id or body" }), { status: 200 });
+  }
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("device_token, notif_game_alerts")
+    .eq("id", user_id)
+    .single();
+
+  if (!profile?.device_token) {
+    console.log("[phone reconcile] user has no device token", { user_id });
+    return new Response(JSON.stringify({ message: "User has no device token" }), { status: 200 });
+  }
+  if (prefMutes(profile, "notif_game_alerts")) {
+    return new Response(JSON.stringify({ message: "User muted game alerts" }), { status: 200 });
+  }
+
+  const apnsPayload = {
+    aps: {
+      alert: {
+        title: "Carry",
+        body: body,
+      },
+      sound: "default",
+    },
+    type: "phoneInviteReconciled",
+    groupId: group_id,
+    groupName: group_name,
+  };
+
+  await sendPush(profile.device_token, apnsPayload, jwt);
+
+  return new Response(JSON.stringify({ message: "Phone invite reconciled push sent" }), { status: 200 });
+}
+
 // ─── Send Push Helper ────────────────────────────────────────────
 
 async function sendPush(deviceToken: string, payload: any, jwt: string) {
@@ -747,12 +964,16 @@ async function sendPush(deviceToken: string, payload: any, jwt: string) {
   });
 
   // Diagnostic: log the APNs result so we can see in Logs whether Apple
-  // accepted the push (200) or rejected (4xx/5xx) for any reason. Without
-  // this the function silently completes regardless of delivery.
+  // accepted the push (200) or rejected (4xx/5xx) for any reason. apns-id
+  // is Apple's tracking UUID — when status=200 + apns-id present but the
+  // user reports no push, it's an APNs / iOS-side delivery problem (e.g.
+  // the iOS 26 system regression), not ours. Quote it back to Apple if
+  // we ever escalate.
   console.log("[apns]", JSON.stringify({
     host: APNS_HOST,
     status: response.status,
     ok: response.ok,
+    apns_id: response.headers.get("apns-id"),
     token_prefix: deviceToken.substring(0, 12) + "...",
     type: payload?.type,
   }));

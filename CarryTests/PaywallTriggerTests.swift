@@ -13,35 +13,35 @@ final class PaywallTriggerTests: XCTestCase {
     func testStartRoundContextLine() {
         XCTAssertEqual(
             PaywallTrigger.startRound.contextLine,
-            "Starting rounds is a Premium feature"
+            "Starting rounds requires a subscription"
         )
     }
 
     func testCreateGroupContextLine() {
         XCTAssertEqual(
             PaywallTrigger.createGroup.contextLine,
-            "Recurring Skins Groups are Premium"
+            "Recurring Skins Groups require a subscription"
         )
     }
 
     func testScoreRoundContextLine() {
         XCTAssertEqual(
             PaywallTrigger.scoreRound.contextLine,
-            "Scoring rounds is a Premium feature"
+            "Scoring rounds requires a subscription"
         )
     }
 
     func testManageGroupContextLine() {
         XCTAssertEqual(
             PaywallTrigger.manageGroup.contextLine,
-            "Managing groups is a Premium feature"
+            "Managing groups requires a subscription"
         )
     }
 
     func testAllTimeLeaderboardContextLine() {
         XCTAssertEqual(
             PaywallTrigger.allTimeLeaderboard.contextLine,
-            "All-time leaderboards are a Premium feature"
+            "All-time leaderboards require a subscription"
         )
     }
 

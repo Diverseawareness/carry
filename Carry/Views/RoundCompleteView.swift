@@ -88,7 +88,6 @@ struct RoundCompleteView: View {
     @State private var shareCardImage: UIImage? = nil
     @State private var showShareSheet = false
     @State private var venmoIndex: Int = 0
-    @State private var showCreateGroupCard = false
     @State private var showPaywall = false
 
     // MARK: - Body
@@ -153,135 +152,12 @@ struct RoundCompleteView: View {
             PaywallView()
                 .environmentObject(storeService)
                 .onDisappear {
-                    // If user subscribed during paywall, proceed with group creation
+                    // If user subscribed during paywall, route into the convert
+                    // flow that the Save Round Results tap was about to open.
                     if storeService.isPremium {
-                        showCreateGroupCard = false
                         onCreateGroup?()
                     }
                 }
-        }
-        .overlay {
-            if showCreateGroupCard {
-                createGroupCardOverlay
-            }
-        }
-    }
-
-    // MARK: - Create Group Card
-
-    private var createGroupCardOverlay: some View {
-        ZStack {
-            Color.black.opacity(0.5)
-                .ignoresSafeArea()
-
-            VStack(spacing: 0) {
-                // Icon
-                Image("carry-glyph")
-                    .resizable()
-                    .renderingMode(.template)
-                    .foregroundColor(Color(hexString: "#BCF0B5"))
-                    .scaledToFit()
-                    .frame(width: 56, height: 56)
-                    .padding(.top, 36)
-                    .padding(.bottom, 16)
-
-                // Title
-                Text("Create a Group")
-                    .font(.system(size: 26, weight: .bold))
-                    .foregroundColor(Color.textPrimary)
-                    .padding(.bottom, 24)
-
-                // Benefits
-                VStack(alignment: .leading, spacing: 16) {
-                    benefitRow("Manage players & who's playing today")
-                    benefitRow("Set up recurring tee times")
-                    benefitRow("Track stats over time")
-                }
-                .padding(.horizontal, 28)
-
-                Spacer().frame(height: 40)
-
-                // Buttons
-                VStack(spacing: 12) {
-                    Button {
-                        if storeService.isPremium {
-                            showCreateGroupCard = false
-                            let roundId = viewModel.config.supabaseRoundId
-                            let groupId = viewModel.config.supabaseGroupId
-                            Task {
-                                if let roundId {
-                                    async let statusUpdate: Void = (try? await RoundService().updateRoundStatus(roundId: roundId, status: "completed")) ?? ()
-                                    async let advance: Void = { if let groupId { await GroupService().advanceScheduledDateIfRecurring(groupId: groupId) } }()
-                                    _ = await (statusUpdate, advance)
-                                }
-                                await MainActor.run {
-                                    onCreateGroup?()
-                                }
-                            }
-                        } else {
-                            showPaywall = true
-                        }
-                    } label: {
-                        Text("Create Group")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 54)
-                            .background(
-                                RoundedRectangle(cornerRadius: 16)
-                                    .fill(Color.textPrimary)
-                            )
-                    }
-                    .buttonStyle(.plain)
-
-                    Button {
-                        showCreateGroupCard = false
-                        let roundId = viewModel.config.supabaseRoundId
-                        let groupId = viewModel.config.supabaseGroupId
-                        Task {
-                            if let roundId {
-                                async let statusUpdate: Void = (try? await RoundService().updateRoundStatus(roundId: roundId, status: "completed")) ?? ()
-                                async let advance: Void = { if let groupId { await GroupService().advanceScheduledDateIfRecurring(groupId: groupId) } }()
-                                _ = await (statusUpdate, advance)
-                            }
-                            await MainActor.run {
-                                onDeclineGroup?()
-                                if let onExitRound { onExitRound() } else { onDismiss() }
-                            }
-                        }
-                    } label: {
-                        Text("Skip")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(Color.systemRedColor)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 54)
-                            .background(
-                                RoundedRectangle(cornerRadius: 16)
-                                    .fill(Color.systemRedColor.opacity(0.08))
-                            )
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(.horizontal, 24)
-                .padding(.bottom, 36)
-            }
-            .background(
-                RoundedRectangle(cornerRadius: 24)
-                    .fill(.white)
-            )
-            .padding(.horizontal, 24)
-        }
-        .transition(.opacity)
-    }
-
-    private func benefitRow(_ text: String) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: "checkmark")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundColor(Color.textPrimary)
-            Text(text)
-                .font(.system(size: 17, weight: .medium))
-                .foregroundColor(Color.textPrimary)
         }
     }
 
@@ -827,23 +703,37 @@ struct RoundCompleteView: View {
             } else {
                 // Creator — finalize the round
                 Button {
-                    // Only offer "convert this crew to a permanent group" when
-                    // the round actually played to completion. If the host
-                    // force-ended early (5 holes, rain, whatever), that's a
-                    // scratch round — not worth pushing a conversion prompt.
+                    // Save first: flip the round to 'completed' and advance the
+                    // recurring schedule. Then route based on game shape:
+                    //   * Quick Game played to natural completion → fire
+                    //     onCreateGroup which opens the convert sheet
+                    //     (.prompt phase). The convert sheet is now the ONLY
+                    //     "Create a Group?" prompt — the previous overlay modal
+                    //     was redundant and got removed (2026-05-01).
+                    //   * Quick Game force-ended OR Skins Group round → dismiss
+                    //     to recent games. No conversion prompt.
+                    let roundId = viewModel.config.supabaseRoundId
+                    let groupId = viewModel.config.supabaseGroupId
+                    if let roundId {
+                        Task {
+                            async let statusUpdate: Void = (try? await RoundService().updateRoundStatus(roundId: roundId, status: "completed")) ?? ()
+                            async let advance: Void = { if let groupId { await GroupService().advanceScheduledDateIfRecurring(groupId: groupId) } }()
+                            _ = await (statusUpdate, advance)
+                        }
+                    }
+
                     let playedFullRound = isQuickGame && !viewModel.forceCompleted
                     if playedFullRound {
-                        // Show create group card instead of exiting immediately
-                        withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
-                            showCreateGroupCard = true
+                        if storeService.isPremium {
+                            onCreateGroup?()
+                        } else {
+                            // Premium-gated: show paywall. If user subscribes,
+                            // the paywall's onDisappear handler routes into
+                            // onCreateGroup. If they back out, the round still
+                            // saved (status update above already kicked off).
+                            showPaywall = true
                         }
                     } else {
-                        // Mark round as completed so it moves from active to recent
-                        if let roundId = viewModel.config.supabaseRoundId {
-                            Task {
-                                try? await RoundService().updateRoundStatus(roundId: roundId, status: "completed")
-                            }
-                        }
                         if let onExitRound { onExitRound() } else { onDismiss() }
                     }
                 } label: {

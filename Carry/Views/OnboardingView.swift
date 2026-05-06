@@ -15,7 +15,8 @@ struct OnboardingView: View {
     @State private var showHCPicker = false
     @State private var hcPickerValue: Double = 0
     @State private var hcPickerIsPlus: Bool = false
-    enum OBField: Hashable { case firstName, lastName, clubSearch, ghinNumber, handicap }
+    @State private var phoneText = ""
+    enum OBField: Hashable { case firstName, lastName, clubSearch, ghinNumber, handicap, phone }
     @FocusState private var obFocused: OBField?
     @State private var didPreFill = false
     @State private var hasAppleName = false
@@ -34,9 +35,18 @@ struct OnboardingView: View {
     @State private var selectedClub: GolfCourseResult? = nil
     @State private var isClubMember = true   // default: Club Member selected
 
-    private var totalSteps: Int { hasAppleName ? 3 : 4 }
+    private var totalSteps: Int { hasAppleName ? 4 : 5 }
     private var isGolfProfileStep: Bool {
         hasAppleName ? step == 0 : step == 1
+    }
+    /// New optional phone step inserted between Golf Profile and Notifications.
+    /// Apple-name flow: step 1. No-Apple-name flow: step 2.
+    private var isPhoneStep: Bool {
+        hasAppleName ? step == 1 : step == 2
+    }
+    /// Notifications step shifted down by one to make room for Phone step.
+    private var isNotifStepIndex: Bool {
+        hasAppleName ? step == 2 : step == 3
     }
 
 
@@ -80,8 +90,9 @@ struct OnboardingView: View {
                         // Apple gave us the name: skip name fields
                         switch step {
                         case 0: golfProfileStep
-                        case 1: notificationStep
-                        case 2: disclaimerStep
+                        case 1: phoneStep
+                        case 2: notificationStep
+                        case 3: disclaimerStep
                         default: EmptyView()
                         }
                     } else {
@@ -89,8 +100,9 @@ struct OnboardingView: View {
                         switch step {
                         case 0: nameStep
                         case 1: golfProfileStep
-                        case 2: notificationStep
-                        case 3: disclaimerStep
+                        case 2: phoneStep
+                        case 3: notificationStep
+                        case 4: disclaimerStep
                         default: EmptyView()
                         }
                     }
@@ -102,20 +114,17 @@ struct OnboardingView: View {
 
                 Spacer()
 
-                // Bottom button bar — hidden on golf profile step (button is inline there)
-                if !isGolfProfileStep {
-                    VStack(spacing: 8) {
-                        if let saveErrorMessage {
-                            Text(saveErrorMessage)
-                                .font(.carry.bodySM)
-                                .foregroundColor(Color.systemRedColor)
-                                .multilineTextAlignment(.center)
-                                .padding(.horizontal, 24)
-                        }
-                        buttonBar
+                VStack(spacing: 8) {
+                    if let saveErrorMessage {
+                        Text(saveErrorMessage)
+                            .font(.carry.bodySM)
+                            .foregroundColor(Color.systemRedColor)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 24)
                     }
-                    .padding(.bottom, 24)
+                    buttonBar
                 }
+                .padding(.bottom, 24)
             }
 
         }
@@ -171,10 +180,26 @@ struct OnboardingView: View {
     private var buttonBar: some View {
         HStack(spacing: 12) {
             // Left button (Skip / Back)
-            let isNotifStep = hasAppleName ? step == 1 : step == 2
-            if step == 0 || step == totalSteps - 1 || isNotifStep {
+            if step == 0 || step == totalSteps - 1 || isNotifStepIndex {
                 // First step, notification step, and disclaimer step — no back, full-width button
                 EmptyView()
+            } else if isPhoneStep {
+                // Phone step — Skip button (optional field). Saves with empty
+                // phone, doesn't block onboarding. Modal fallback (HomeView's
+                // PhoneInviteFinderSheet) catches users who skip here.
+                Button {
+                    phoneText = ""
+                    obFocused = nil
+                    advance()
+                } label: {
+                    Text("Skip")
+                        .font(.carry.headline)
+                        .foregroundColor(Color.textPrimary)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 56)
+                        .background(RoundedRectangle(cornerRadius: btnRadius).fill(.white))
+                        .overlay(RoundedRectangle(cornerRadius: btnRadius).strokeBorder(Color.borderSubtle, lineWidth: 1.5))
+                }
             } else {
                 // Back button
                 Button {
@@ -192,8 +217,7 @@ struct OnboardingView: View {
 
             // Right button (Next / Enable Notifications / I Understand)
             Button {
-                let isNotifStep = hasAppleName ? step == 1 : step == 2
-                if isNotifStep && !notificationRequested {
+                if isNotifStepIndex && !notificationRequested {
                     // First tap: request permission, register for remote notifications,
                     // then change button to "Continue".
                     //
@@ -217,9 +241,8 @@ struct OnboardingView: View {
                     advance()
                 }
             } label: {
-                let isNotifStep = hasAppleName ? step == 1 : step == 2
                 let isDisclaimerStep = step == totalSteps - 1
-                let defaultLabel = isDisclaimerStep ? "I Understand" : isNotifStep ? (notificationRequested ? "Continue" : "Enable Notifications") : "Next"
+                let defaultLabel = isDisclaimerStep ? "I Understand" : isNotifStepIndex ? (notificationRequested ? "Continue" : "Enable Notifications") : "Next"
                 ZStack {
                     // Show spinner while saving on the final (disclaimer) step
                     if isSavingOnboarding {
@@ -245,19 +268,26 @@ struct OnboardingView: View {
 
     // MARK: - Logic
 
+    /// Phone step is optional via Skip; Next requires a valid 10-digit number.
+    private var phoneIsValidForSubmit: Bool {
+        let digits = phoneText.filter(\.isNumber)
+        return digits.count >= 10
+    }
+
     private var continueEnabled: Bool {
         if hasAppleName {
-            // Flow: Golf Profile → Notifications
+            // Flow: Golf Profile → Phone → Notifications → Disclaimer
             switch step {
             case 0:
                 let hasClub = selectedClub != nil
                 let hasHandicap = !handicapText.trimmingCharacters(in: .whitespaces).isEmpty
                 return hasClub && hasHandicap
-            case 1: return true  // notifications
+            case 1: return phoneIsValidForSubmit  // Skip handles empty path
+            case 2: return true  // notifications
             default: return true
             }
         } else {
-            // Flow: Name → Golf Profile → Notifications
+            // Flow: Name → Golf Profile → Phone → Notifications → Disclaimer
             switch step {
             case 0:
                 let hasFirst = !firstName.trimmingCharacters(in: .whitespaces).isEmpty
@@ -267,7 +297,8 @@ struct OnboardingView: View {
                 let hasClub = selectedClub != nil
                 let hasHandicap = !handicapText.trimmingCharacters(in: .whitespaces).isEmpty
                 return hasClub && hasHandicap
-            case 2: return true  // notifications
+            case 2: return phoneIsValidForSubmit  // Skip handles empty path
+            case 3: return true  // notifications
             default: return true
             }
         }
@@ -286,8 +317,21 @@ struct OnboardingView: View {
         isSavingOnboarding = true
         saveErrorMessage = nil
 
+        // Normalize phone to digits-only. We only persist if the user typed
+        // a complete number (10+ digits); partial entries are dropped so the
+        // server-side reconcile trigger doesn't fire on a non-match.
+        let normalizedPhone: String? = {
+            let digits = phoneText.filter(\.isNumber)
+            return digits.count >= 10 ? digits : nil
+        }()
+
         Task {
             do {
+                // Custom-typed clubs (id == 0 sentinel from
+                // GolfCourseResult.custom) save with homeClubId nil so we
+                // don't write a meaningless fake API id to the profile.
+                let resolvedClubId: Int? = (selectedClub?.isCustom == true) ? nil : selectedClub?.id
+
                 try await authService.completeOnboarding(
                     firstName: firstName.trimmingCharacters(in: .whitespaces),
                     lastName: lastName.trimmingCharacters(in: .whitespaces),
@@ -296,8 +340,9 @@ struct OnboardingView: View {
                     handicap: parseHandicap(handicapText),
                     photo: nil,
                     homeClub: selectedClub?.clubName ?? selectedClub?.courseName,
-                    homeClubId: selectedClub?.id,
-                    isClubMember: isClubMember
+                    homeClubId: resolvedClubId,
+                    isClubMember: isClubMember,
+                    phone: normalizedPhone
                 )
                 // Profile save succeeded — safe to finalize onboarding locally.
                 UserDefaults.standard.set(true, forKey: "disclaimerAccepted")
@@ -369,7 +414,7 @@ struct OnboardingView: View {
         ScrollViewReader { proxy in
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Your Golf Profile")
+                Text("Your Carry Profile")
                     .font(.carry.pageTitle)
                     .foregroundColor(Color.textPrimary)
 
@@ -464,37 +509,12 @@ struct OnboardingView: View {
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("GHIN handicap auto-sync coming soon")
 
-                // Next button inline (not anchored above keyboard)
-                Button {
-                    advance()
-                } label: {
-                    Text("Next")
-                        .font(.carry.headlineBold)
-                        .foregroundColor(continueEnabled ? .white : Color.textDisabled)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 56)
-                        .background(
-                            RoundedRectangle(cornerRadius: btnRadius)
-                                .fill(continueEnabled ? Color.textPrimary : Color.borderSubtle)
-                        )
-                }
-                .disabled(!continueEnabled)
-                .padding(.top, 24)
-                .id("nextButton")
-
-                Spacer().frame(height: 40)
+                Spacer().frame(height: 24)
             }
             .padding(.horizontal, 24)
         }
         .scrollDismissesKeyboard(.interactively)
         .onTapGesture { obFocused = nil }
-        .toolbar {
-            ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button("Done") { obFocused = nil }
-                    .font(.carry.bodySemibold)
-            }
-        }
         .onChange(of: clubSearchText) {
             if !clubSearchText.isEmpty {
                 withAnimation(.easeOut(duration: 0.3)) {
@@ -611,17 +631,14 @@ struct OnboardingView: View {
                     .animation(.easeOut(duration: 0.15), value: obFocused)
 
                     // Search results
-                    if clubSearchResults.isEmpty && clubSearchText.count >= 2 && !isClubSearching {
-                        VStack(spacing: 4) {
-                            Text("No clubs found")
-                                .font(.carry.bodySM)
-                                .foregroundColor(Color.textDisabled)
-                            Text("Check the spelling or try a different name")
-                                .font(.carry.caption)
-                                .foregroundColor(Color.borderLight)
+                    if clubSearchResults.isEmpty && clubSearchText.trimmingCharacters(in: .whitespaces).count >= 2 && !isClubSearching {
+                        // No API match — let the user save the typed name as a
+                        // custom club. Same affordance as Settings/EditProfile.
+                        CustomClubAddRow(text: clubSearchText) {
+                            selectedClub = .custom(clubSearchText)
+                            clubSearchText = ""
+                            clubSearchResults = []
                         }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
                     } else if !clubSearchResults.isEmpty {
                         VStack(spacing: 0) {
                             ForEach(clubSearchResults.prefix(5)) { course in
@@ -717,6 +734,70 @@ struct OnboardingView: View {
                 clubSearchResults = []
             }
             isClubSearching = false
+        }
+    }
+
+    // MARK: - Step: Phone (optional, server-side invite reconcile)
+
+    /// Optional onboarding step. When the user enters a phone here, the
+    /// server's `reconcile_phone_invites_for_profile` trigger auto-claims
+    /// any pending `group_members.invited_phone` rows that match (within
+    /// 30 days) and fires a `phoneInviteReconciled` push per claimed group.
+    /// Skip is supported — `PhoneInviteFinderSheet` (HomeView modal) is
+    /// the fallback for users who skip and later realize they were invited.
+    private var phoneStep: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Add your phone number for instant invites")
+                .font(.carry.pageTitle)
+                .foregroundColor(Color.textPrimary)
+
+            Text("Optional, but it's what makes invites instant —\nboth inviting friends and being invited yourself.")
+                .font(.system(size: 15))
+                .foregroundColor(Color.textTertiary)
+                .padding(.bottom, 8)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Phone Number")
+                    .font(.carry.bodySMBold)
+                    .foregroundColor(Color.textPrimary)
+                    .padding(.leading, 4)
+
+                TextField("(415) 555-1234", text: $phoneText)
+                    .font(.system(size: 16))
+                    .keyboardType(.phonePad)
+                    .textContentType(.telephoneNumber)
+                    .focused($obFocused, equals: .phone)
+                    .carryInput(focused: obFocused == .phone)
+                    // .phonePad blocks letters on the on-screen keyboard, but
+                    // paste, autofill, and Bluetooth keyboards can sneak
+                    // non-digits in. Strip everything that isn't a digit and
+                    // drop a leading US country-code `1` so iOS contact
+                    // autofill ("+1 (415) 697-9011" / "1415...") lands as
+                    // a clean 10-digit number rather than chopping the tail.
+                    .onChange(of: phoneText) {
+                        let digits = phoneText.filter(\.isNumber)
+                        let normalized = (digits.count == 11 && digits.hasPrefix("1"))
+                            ? String(digits.dropFirst())
+                            : digits
+                        let capped = String(normalized.prefix(10))
+                        if capped != phoneText { phoneText = capped }
+                    }
+            }
+
+            Text("We will never share your number with anyone, ever.")
+                .font(.system(size: 12))
+                .foregroundColor(Color.textTertiary)
+                .padding(.top, 4)
+                .padding(.horizontal, 4)
+        }
+        .padding(.horizontal, 24)
+        .onTapGesture { obFocused = nil }
+        .onAppear {
+            // Defer focus until the slide-in transition settles so the
+            // keyboard animates in cleanly behind the step.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                obFocused = .phone
+            }
         }
     }
 

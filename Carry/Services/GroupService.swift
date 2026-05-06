@@ -9,6 +9,7 @@ final class GroupService {
 
     /// Create a new skins group with members.
     func createGroup(
+        id: UUID? = nil,
         name: String,
         createdBy: UUID,
         memberIds: [UUID],
@@ -28,7 +29,8 @@ final class GroupService {
         memberGroupNums: [UUID: Int] = [:],
         teeTimeInterval: Int? = nil,
         scorerIdsToInvite: Set<UUID> = [],
-        lastTeeBoxHolesJson: String? = nil
+        lastTeeBoxHolesJson: String? = nil,
+        scorerIds: [Int]? = nil
     ) async throws -> SkinsGroupDTO {
         let recurrenceJSON: String? = {
             guard let recurrence else { return nil }
@@ -44,6 +46,7 @@ final class GroupService {
         do {
             group = try await client.from("skins_groups")
                 .insert(SkinsGroupInsert(
+                    id: id,
                     name: name,
                     createdBy: createdBy,
                     buyIn: buyIn,
@@ -59,7 +62,8 @@ final class GroupService {
                     handicapPercentage: handicapPercentage,
                     isQuickGame: isQuickGame,
                     teeTimeInterval: teeTimeInterval,
-                    lastTeeBoxHolesJson: lastTeeBoxHolesJson
+                    lastTeeBoxHolesJson: lastTeeBoxHolesJson,
+                    scorerIds: scorerIds
                 ))
                 .select()
                 .single()
@@ -153,6 +157,23 @@ final class GroupService {
         return rows?.first?.status
     }
 
+    /// Returns true if the skins_groups row still exists, false if the
+    /// group has been deleted, and nil on a fetch error (caller should
+    /// treat nil as "uncertain — defer state changes"). Used by MainTabView
+    /// to distinguish creator-deleted-the-group from creator-removed-the-user
+    /// when a group goes missing from the user's fetched group list.
+    func groupExists(groupId: UUID) async -> Bool? {
+        struct IdRow: Decodable { let id: UUID }
+        let rows: [IdRow]? = try? await client.from("skins_groups")
+            .select("id")
+            .eq("id", value: groupId.uuidString)
+            .limit(1)
+            .execute()
+            .value
+        guard let rows else { return nil }
+        return !rows.isEmpty
+    }
+
     /// Fetch all active and invited members of a group.
     func fetchGroupMembers(groupId: UUID) async throws -> [GroupMemberDTO] {
         let rows: [GroupMemberDTO] = try await client.from("group_members")
@@ -232,13 +253,21 @@ final class GroupService {
     }
 
     /// Single source of truth for reading per-hole data from a group.
-    /// Returns nil if the group has no persisted holes JSON.
+    ///
+    /// Resolution chain:
+    ///   1. `skins_groups.last_tee_box_holes_json` (the persisted column)
+    ///   2. Fallback: `tee_boxes.holes_json` from the group's most recent round
+    ///
+    /// The fallback heals groups whose JSON column was never populated, or
+    /// was populated as an empty `[]` (a regression in the Quick Game create
+    /// path that surfaced as $0 pills throughout a live round). Returns nil
+    /// only when neither source has real data.
     func fetchPersistedHoles(groupId: UUID) async -> [Hole]? {
         struct HolesOnly: Codable {
             let lastTeeBoxHolesJson: String?
             enum CodingKeys: String, CodingKey { case lastTeeBoxHolesJson = "last_tee_box_holes_json" }
         }
-        guard let rows: [HolesOnly] = try? await client.from("skins_groups")
+        if let rows: [HolesOnly] = try? await client.from("skins_groups")
             .select("last_tee_box_holes_json")
             .eq("id", value: groupId.uuidString)
             .limit(1)
@@ -247,8 +276,24 @@ final class GroupService {
             let json = rows.first?.lastTeeBoxHolesJson,
             let data = json.data(using: .utf8),
             let decoded = try? JSONDecoder().decode([Hole].self, from: data),
-            !decoded.isEmpty else { return nil }
-        return decoded
+            !decoded.isEmpty {
+            return decoded
+        }
+
+        // Fallback: pull holes from the group's most recent round's tee box.
+        if let rounds = try? await roundService.fetchRoundsForGroup(groupId: groupId),
+           let latestRound = rounds.first,
+           let teeBoxId = latestRound.teeBoxId,
+           let dto: TeeBoxDTO = try? await client.from("tee_boxes")
+               .select()
+               .eq("id", value: teeBoxId.uuidString)
+               .single()
+               .execute()
+               .value {
+            if let holes = dto.decodeHoles(), !holes.isEmpty { return holes }
+        }
+
+        return nil
     }
 
     /// Single source of truth for persisting a course selection to a group.
@@ -284,30 +329,13 @@ final class GroupService {
         ]).execute()
     }
 
-    /// Fetch guest members in a group (invited guests who haven't claimed their profile).
-    func fetchGuestMembers(groupId: UUID) async throws -> [ProfileDTO] {
-        let members: [GroupMemberDTO] = try await client.from("group_members")
-            .select()
-            .eq("group_id", value: groupId.uuidString)
-            .eq("status", value: "invited")
-            .execute()
-            .value
-
-        let playerIds = members.map(\.playerId)
-        guard !playerIds.isEmpty else { return [] }
-
-        let profiles: [ProfileDTO] = try await client.from("profiles")
-            .select()
-            .in("id", values: playerIds.map(\.uuidString))
-            .eq("is_guest", value: true)
-            .execute()
-            .value
-
-        return profiles
-    }
-
     /// Invite a member to a group (status = "invited"). Skips if already a member.
-    func inviteMember(groupId: UUID, playerId: UUID) async throws {
+    /// Add a Carry user to a group. `status` defaults to "invited" for
+    /// legacy callers; pass "active" for the auto-active flow used when a
+    /// creator search-adds an existing Carry user (no accept step needed —
+    /// the recipient gets the polling-driven "Added to X!" toast on their
+    /// home screen and a memberJoined push).
+    func inviteMember(groupId: UUID, playerId: UUID, status: String = "invited") async throws {
         // Check for existing membership (any status).
         let existing: [GroupMemberDTO] = try await client.from("group_members")
             .select()
@@ -319,12 +347,13 @@ final class GroupService {
         if let row = existing.first {
             // Ghost `status='removed'` row from an earlier soft-delete
             // (before `removeMember` was switched to hard-DELETE) still
-            // blocks fresh re-invites. Resurrect it to 'invited' so the
-            // user can be added again without requiring manual DB
-            // cleanup. Active and invited rows are left alone — no-op.
+            // blocks fresh re-invites. Resurrect it to the requested
+            // status so the user can be added again without requiring
+            // manual DB cleanup. Active and invited rows are left alone
+            // — no-op (caller already had the user in the group).
             if row.status == "removed" {
                 try await client.from("group_members")
-                    .update(["status": "invited"] as [String: String])
+                    .update(["status": status] as [String: String])
                     .eq("id", value: row.id.uuidString)
                     .execute()
             }
@@ -336,9 +365,38 @@ final class GroupService {
                 groupId: groupId,
                 playerId: playerId,
                 role: "member",
-                status: "invited"
+                status: status
             ))
             .execute()
+    }
+
+    /// Search for pending phone invites matching the given phone number.
+    /// Used by the post-onboarding `PhoneInviteFinderSheet` modal — the user
+    /// types their phone, server returns any `group_members.invited_phone`
+    /// rows that match, the user picks which to claim.
+    /// See migration 20260502000001 for the RPC body + auth gating.
+    func findPendingInvitesByPhone(phone: String) async throws -> [PendingPhoneInvite] {
+        let invites: [PendingPhoneInvite] = try await client.rpc(
+            "find_pending_invites_by_phone",
+            params: ["p_phone": AnyJSON.string(phone)]
+        ).execute().value
+        return invites
+    }
+
+    /// Reconcile a pending phone-invite row to the authenticated user.
+    /// Verifies the phone matches what's on the row server-side; updates
+    /// player_id → auth.uid(), invited_phone → '', status → 'active'.
+    /// Returns the group UUID so the caller can navigate into it.
+    /// See migration 20260502000001 for the RPC body + auth gating.
+    func claimPhoneInvite(membershipId: UUID, phone: String) async throws -> UUID {
+        let groupId: UUID = try await client.rpc(
+            "claim_phone_invite",
+            params: [
+                "p_membership_id": AnyJSON.string(membershipId.uuidString),
+                "p_phone": AnyJSON.string(phone)
+            ]
+        ).execute().value
+        return groupId
     }
 
     /// Mark an existing active member as 'invited' so they get a push notification and invite card.
@@ -1173,8 +1231,15 @@ final class GroupService {
                     }
                     players.append(player)
                 }
+                // Wiped guests (round_players UUIDs whose profiles no longer
+                // exist) are intentionally NOT synthesized into the group's
+                // roster — they belong to historical rounds only and are
+                // reconstructed inside `buildHomeRound` from the denormalized
+                // guest_display_name / guest_handicap fields. Synthesizing them
+                // here would resurrect deleted players in current-roster views
+                // (Tee Times, Manage Members), violating the Carry-only rule.
                 #if DEBUG
-                print("[loadSingleGroup] Backfilled \(extraProfiles.count) players from round_players (missing from group_members) for group \(group.name)")
+                print("[loadSingleGroup] Backfilled \(extraProfiles.count) profiles for group \(group.name)")
                 #endif
             }
         }
@@ -1472,8 +1537,38 @@ final class GroupService {
                     }
                     roundPlayers.append(player)
                 }
+
+                // Wiped-guest fallback: any round_players UUID that had no
+                // profile match is a guest whose profile was deleted on round
+                // termination (per the ephemeral-guest rule). Reconstruct a
+                // Player from the denormalized guest_display_name + guest_handicap
+                // fields so Round History keeps showing the guest by name.
+                let foundIds = Set(profiles.map(\.id))
+                let wipedRps = rpDTOs.filter {
+                    missingIds.contains($0.playerId) && !foundIds.contains($0.playerId)
+                }
+                for rp in wipedRps {
+                    let displayName = rp.guestDisplayName ?? "Guest"
+                    let handicap = rp.guestHandicap ?? 0.0
+                    let player = Player(
+                        id: Player.stableId(from: rp.playerId),
+                        name: displayName,
+                        initials: String(displayName.prefix(2)).uppercased(),
+                        color: "#9B9B9B",
+                        handicap: handicap,
+                        avatar: "👤",
+                        group: rp.groupNum,
+                        ghinNumber: nil,
+                        venmoUsername: nil,
+                        avatarImageName: nil,
+                        avatarUrl: nil,
+                        isGuest: true,
+                        profileId: rp.playerId
+                    )
+                    roundPlayers.append(player)
+                }
                 #if DEBUG
-                print("[buildHomeRound] Added \(profiles.count) players from round_players (were missing from group_members)")
+                print("[buildHomeRound] Added \(profiles.count) players from profiles + \(wipedRps.count) wiped-guest fallbacks for round \(roundDTO.id)")
                 #endif
             }
         }

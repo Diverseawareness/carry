@@ -12,7 +12,6 @@ class AppRouter: ObservableObject {
     @Published var debugResetGroups: Bool = false
     @Published var debugClearGroups: Bool = false
     @Published var debugShowRecurringPrompt: Bool = false
-    @Published var debugShowGuestClaim: Bool = false
     @Published var debugShowCreateGroupCard: Bool = false
     @Published var debugShowInviteSheet: Bool = false
     /// Jumps to phase 2 of the convert-setup sheet (Bring Your Crew / QR +
@@ -29,6 +28,10 @@ class AppRouter: ObservableObject {
     /// populates this from the user's first existing group so the tap
     /// actually completes end-to-end.
     @Published var debugSimulateClipboardInvite: Bool = false
+    /// Forces HomeView to present PhoneInviteFinderSheet regardless of
+    /// the normal hasURLs/skinGameGroups gates. Useful for visual review
+    /// of the modal without needing a clipboard hint.
+    @Published var debugShowPhoneInviteFinder: Bool = false
     #endif
 
     /// Set to true after accepting a group invite; MainTabView watches and reloads groups.

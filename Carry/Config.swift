@@ -2,8 +2,13 @@ import Foundation
 
 enum AppConfig {
     // MARK: - Supabase
+    #if DEV_SUPABASE
+    static let supabaseURL = URL(string: "https://gbhljwtbobbxervekxkg.supabase.co")!
+    static let supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdiaGxqd3Rib2JieGVydmVreGtnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwMDc4MjIsImV4cCI6MjA5MzU4MzgyMn0._p5SJCDHhwaLEBtFqI5FyxZw8yXs0auYAyN6lxMhCbQ"
+    #else
     static let supabaseURL = URL(string: "https://seeitehizboxjbnccnyd.supabase.co")!
     static let supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNlZWl0ZWhpemJveGpibmNjbnlkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIzMzk2NDUsImV4cCI6MjA4NzkxNTY0NX0.joJEka9lBwcKMPwEOU59uCYuo5te7crOaN00fVcfo_E"
+    #endif
 
     // MARK: - Golf Course API
     static let golfCourseAPIBaseURL = URL(string: "https://api.golfcourseapi.com")!

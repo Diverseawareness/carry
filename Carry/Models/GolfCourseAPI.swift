@@ -93,6 +93,24 @@ struct GolfCourseResult: Codable, Identifiable {
     /// Placeholder used when all decode attempts fail
     static let empty = GolfCourseResult(id: 0, clubName: nil, courseName: nil, location: nil, tees: nil)
 
+    /// Build a user-typed custom course entry — used when the API has no
+    /// match but the user wants to set their home course manually.
+    /// `id == 0` is the sentinel; save paths must pass `homeClubId: nil`
+    /// (not 0) to avoid storing a meaningless fake API id on the profile.
+    static func custom(_ name: String) -> GolfCourseResult {
+        GolfCourseResult(
+            id: 0,
+            clubName: name.trimmingCharacters(in: .whitespacesAndNewlines),
+            courseName: nil,
+            location: nil,
+            tees: nil
+        )
+    }
+
+    /// True when this entry was typed by the user (no API match) rather than
+    /// returned by the search endpoint.
+    var isCustom: Bool { id == 0 }
+
     init(id: Int, clubName: String?, courseName: String?, location: GolfCourseLocation?, tees: GolfCourseTees?) {
         self.id = id
         self.clubName = clubName

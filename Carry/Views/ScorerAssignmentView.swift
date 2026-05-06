@@ -29,6 +29,13 @@ struct ScorerAssignmentView: View {
     /// When true, shows confirmed state without clear button (used for creator/group 1).
     var readOnly: Bool = false
 
+    /// Optional builder that, given the phone digits, returns the SMS body
+    /// to send. When nil, falls back to a generic body (legacy behavior).
+    /// Quick Game injects a per-group deep-link body using a pre-allocated
+    /// UUID so the recipient's install bridge can deep-link them straight
+    /// into the right group (matches the Skins Group invite UX).
+    var smsBodyBuilder: ((String) -> String)? = nil
+
     // MARK: - Internal State
 
     @State private var searchText = ""
@@ -329,8 +336,13 @@ struct ScorerAssignmentView: View {
             phoneNumber: digits
         )
 
-        // Open native SMS
-        let body = "Score our skins game on Carry! Download: https://carryapp.site"
+        // Open native SMS. Body comes from the parent's builder when provided
+        // (Quick Game uses this to embed a per-group deep link via a
+        // pre-allocated UUID so the recipient lands directly in the right
+        // group). Falls back to a generic body for any other call site that
+        // doesn't supply a builder.
+        let body = smsBodyBuilder?(digits)
+            ?? "Score our skins game on Carry! Download: https://carryapp.site"
         let encoded = body.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
         if let url = URL(string: "sms:\(digits)&body=\(encoded)") {
             UIApplication.shared.open(url)

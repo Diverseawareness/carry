@@ -388,6 +388,25 @@ struct HomeView: View {
     /// view on tab switches, which would otherwise reset session flags and
     /// re-fire the alert for the same clipboard content).
     @AppStorage("clipboardInviteAckdChangeCount") private var clipboardInviteAckdChangeCount: Int = -1
+
+    /// Phone-invite finder modal state. Auto-shows on first Home appearance
+    /// for users who likely came from a phone invite (clipboard hint +
+    /// `skinGameGroups.isEmpty`). Manually triggerable from Settings (future).
+    /// Uses `hasURLs` as the privacy-preserving signal that the user MAY
+    /// have an invite — same gate as the clipboard prompt — but asks for
+    /// the user's phone instead of reading the clipboard, so no iOS Allow
+    /// Paste prompt fires.
+    @State private var showPhoneInviteFinder = false
+    @AppStorage("hasSeenPhoneInviteFinder") private var hasSeenPhoneInviteFinder: Bool = false
+
+    /// One-time banner for users who installed before phone-on-profile shipped.
+    /// Tapping opens PhoneEditSheet; once they enter their phone the server
+    /// trigger auto-claims any pending invites + fires push per claimed group.
+    /// Dismissal is per-user (keyed by userId), so signing in as a new user
+    /// gets a fresh banner.
+    @State private var showPhoneMigrationEdit = false
+    @State private var phoneMigrationBannerDismissed: Bool = false
+
     @State private var invitedRounds: [HomeRound] = []
     @State private var pendingInvites: [InviteDTO] = []  // raw Supabase invites
     @State private var selectedRound: HomeRound?
@@ -397,10 +416,6 @@ struct HomeView: View {
     @State private var roundToLeave: HomeRound?
     @State private var roundToDelete: HomeRound?
     @State private var loadingQuipIndex: Int = 0
-    @State private var showGuestClaimSheet = false
-    @State private var guestClaimProfiles: [ProfileDTO] = []
-    @State private var guestClaimId: UUID? = nil  // triggers .sheet(item:)
-    @State private var pendingClaimRound: HomeRound? = nil
     @State private var acceptingInviteId: UUID? = nil  // round ID currently being accepted
     /// Invite the user was trying to accept when the paywall forced them to
     /// subscribe first. Auto-accepted in the onChange(of: isPremium) handler
@@ -512,6 +527,13 @@ struct HomeView: View {
 
             ScrollView {
                 VStack(spacing: 0) {
+                    // MARK: Phone migration banner — shown to users who installed
+                    // before phone-on-profile shipped (no phone on profile yet).
+                    // One-time per-user dismissal. Tap → PhoneEditSheet.
+                    if shouldShowPhoneMigrationBanner {
+                        phoneMigrationBanner
+                    }
+
                     // MARK: New User CTA
                     if skinGameGroups.isEmpty && !isLoadingGroups {
                         VStack(spacing: 12) {
@@ -587,35 +609,10 @@ struct HomeView: View {
                     if recentRounds.isEmpty {
                         emptyCard("No Recent Games", icon: "clock")
                     } else {
-                        let visibleRounds = storeService.isPremium
-                            ? recentRounds
-                            : Array(recentRounds.prefix(1))
-                        ForEach(visibleRounds) { round in
+                        ForEach(recentRounds) { round in
                             swipeToLeaveWrapper(round: round) {
                                 recentRoundCard(round)
                             }
-                            .padding(.horizontal, 16)
-                            .padding(.bottom, 8)
-                        }
-                        if !storeService.isPremium && recentRounds.count > 1 {
-                            Button {
-                                showPaywall = true
-                            } label: {
-                                HStack(spacing: 6) {
-                                    Image("premium-crown")
-                                        .resizable()
-                                        .scaledToFit()
-                                        .frame(width: 14, height: 14)
-                                    Text("View full history")
-                                        .font(.carry.bodySMSemibold)
-                                        .foregroundColor(Color.textPrimary)
-                                }
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 40)
-                                .background(RoundedRectangle(cornerRadius: 13).fill(.white))
-                                .overlay(RoundedRectangle(cornerRadius: 13).strokeBorder(Color.dividerLight, lineWidth: 1))
-                            }
-                            .buttonStyle(.plain)
                             .padding(.horizontal, 16)
                             .padding(.bottom, 8)
                         }
@@ -762,26 +759,40 @@ struct HomeView: View {
         .sheet(isPresented: $showPaywall) {
             PaywallView()
         }
-        .sheet(isPresented: $showGuestClaimSheet) {
-            GuestClaimSheet(
-                profiles: guestClaimProfiles,
-                groupName: pendingClaimRound?.groupName ?? "Skins Group",
-                onClaim: { guestId in claimGuestAndJoin(guestId: guestId) },
-                onSkip: { skipClaimAndJoin() }
+        .sheet(isPresented: $showPhoneInviteFinder) {
+            PhoneInviteFinderSheet(
+                onSkip: {
+                    hasSeenPhoneInviteFinder = true
+                    showPhoneInviteFinder = false
+                },
+                onClaimed: { groupId in
+                    hasSeenPhoneInviteFinder = true
+                    showPhoneInviteFinder = false
+                    // Refresh groups + jump into the joined group on the
+                    // Games tab. Same path as handleScannedInvite uses on
+                    // a successful join.
+                    appRouter.shouldRefreshGroups = true
+                    appRouter.pendingRoundGroupId = groupId
+                    selectedTab = .skinGames
+                    ToastManager.shared.success("You're in!")
+                }
             )
+            .environmentObject(authService)
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+            .presentationBackground(.white)
         }
-        .sheet(item: $guestClaimId) { _ in
-            GuestClaimSheet(
-                profiles: [
-                    ProfileDTO(id: UUID(), firstName: "Tyson", lastName: "Briner", username: nil, displayName: "Tyson Briner", initials: "TB", color: "#E67E22", avatar: "", handicap: 0.9, ghinNumber: nil, homeClub: nil, homeClubId: nil, avatarUrl: nil, email: nil, isClubMember: nil, isGuest: true, createdBy: nil, createdAt: nil, updatedAt: nil),
-                    ProfileDTO(id: UUID(), firstName: "Garret", lastName: "Edwards", username: nil, displayName: "Garret Edwards", initials: "GE", color: "#4A90D9", avatar: "", handicap: 13.7, ghinNumber: nil, homeClub: nil, homeClubId: nil, avatarUrl: nil, email: nil, isClubMember: nil, isGuest: true, createdBy: nil, createdAt: nil, updatedAt: nil),
-                    ProfileDTO(id: UUID(), firstName: "Jon", lastName: "Jones", username: nil, displayName: "Jon Jones", initials: "JJ", color: "#2ECC71", avatar: "", handicap: 8.2, ghinNumber: nil, homeClub: nil, homeClubId: nil, avatarUrl: nil, email: nil, isClubMember: nil, isGuest: true, createdBy: nil, createdAt: nil, updatedAt: nil),
-                    ProfileDTO(id: UUID(), firstName: "Keith", lastName: "Baker", username: nil, displayName: "Keith Baker", initials: "KB", color: "#9B59B6", avatar: "", handicap: 6.2, ghinNumber: nil, homeClub: nil, homeClubId: nil, avatarUrl: nil, email: nil, isClubMember: nil, isGuest: true, createdBy: nil, createdAt: nil, updatedAt: nil),
-                ],
-                groupName: "Debug Group",
-                onClaim: { _ in guestClaimId = nil },
-                onSkip: { guestClaimId = nil }
-            )
+        .sheet(isPresented: $showPhoneMigrationEdit, onDismiss: {
+            // Once they've engaged with the sheet, hide the banner regardless
+            // of save outcome. If they entered a valid phone, the trigger
+            // already fired on the server and the migration is done.
+            dismissPhoneMigrationBanner()
+        }) {
+            PhoneEditSheet()
+                .environmentObject(authService)
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(.white)
         }
         .sheet(isPresented: $showCreateGroup) {
             CreateGroupSheet { newGroup in
@@ -848,6 +859,13 @@ struct HomeView: View {
             // Post-install bridge: did invite.html copy a URL to the
             // clipboard that we can surface as a one-tap banner?
             checkClipboardForInvite()
+            // Refresh the per-user dismissal state for the phone migration
+            // banner (depends on currentUser.id, which may not be loaded
+            // until after the view appears).
+            loadPhoneMigrationBannerState()
+        }
+        .onChange(of: authService.currentUser?.id) { _, _ in
+            loadPhoneMigrationBannerState()
         }
         #if DEBUG
         .onChange(of: appRouter.debugSimulateClipboardInvite) { _, shouldSimulate in
@@ -861,19 +879,14 @@ struct HomeView: View {
             clipboardInviteAckdChangeCount = -1
             checkClipboardForInvite()
         }
-        #endif
-        .onReceive(NotificationCenter.default.publisher(for: .showDebugGuestClaim)) { _ in
-            let mockProfiles = [
-                ProfileDTO(id: UUID(), firstName: "Tyson", lastName: "Briner", username: nil, displayName: "Tyson Briner", initials: "TB", color: "#E67E22", avatar: "", handicap: 0.9, ghinNumber: nil, homeClub: nil, homeClubId: nil, avatarUrl: nil, email: nil, isClubMember: nil, isGuest: true, createdBy: nil, createdAt: nil, updatedAt: nil),
-                ProfileDTO(id: UUID(), firstName: "Garret", lastName: "Edwards", username: nil, displayName: "Garret Edwards", initials: "GE", color: "#4A90D9", avatar: "", handicap: 13.7, ghinNumber: nil, homeClub: nil, homeClubId: nil, avatarUrl: nil, email: nil, isClubMember: nil, isGuest: true, createdBy: nil, createdAt: nil, updatedAt: nil),
-                ProfileDTO(id: UUID(), firstName: "Jon", lastName: "Jones", username: nil, displayName: "Jon Jones", initials: "JJ", color: "#2ECC71", avatar: "", handicap: 8.2, ghinNumber: nil, homeClub: nil, homeClubId: nil, avatarUrl: nil, email: nil, isClubMember: nil, isGuest: true, createdBy: nil, createdAt: nil, updatedAt: nil),
-                ProfileDTO(id: UUID(), firstName: "Keith", lastName: "Baker", username: nil, displayName: "Keith Baker", initials: "KB", color: "#9B59B6", avatar: "", handicap: 6.2, ghinNumber: nil, homeClub: nil, homeClubId: nil, avatarUrl: nil, email: nil, isClubMember: nil, isGuest: true, createdBy: nil, createdAt: nil, updatedAt: nil),
-            ]
-            guestClaimProfiles = mockProfiles
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                guestClaimId = UUID()  // triggers item-based sheet with fresh data
-            }
+        .onChange(of: appRouter.debugShowPhoneInviteFinder) { _, shouldShow in
+            guard shouldShow else { return }
+            appRouter.debugShowPhoneInviteFinder = false
+            // Bypass the hasURLs/empty-groups gate so the modal opens for
+            // visual review even when the normal trigger conditions aren't met.
+            showPhoneInviteFinder = true
         }
+        #endif
         .onDisappear {
             stopHomePoller()
         }
@@ -1034,15 +1047,36 @@ struct HomeView: View {
     /// Called on appear. Uses `hasURLs` (no consent prompt) so we can
     /// decide whether to surface the "Join Skins Game" alert without
     /// triggering the "Allow Paste" dialog. The actual paste only
-    /// happens when the user taps Join in the alert. Compares the
-    /// current pasteboard `changeCount` against the last value the user
-    /// already acknowledged so the alert doesn't re-fire for the same
-    /// clipboard content — which previously happened on tab switches
-    /// (HomeView @State resets when SwiftUI rebuilds the view).
+    /// happens when the user taps Join in the alert.
+    ///
+    /// Gated on `skinGameGroups.isEmpty` — this is a *post-install bridge*
+    /// per the doc on `clipboardInviteAvailable`. Once the user has any
+    /// group (joined or created), they're past the join-by-clipboard
+    /// phase; suppressing the prompt avoids re-firing on every cold
+    /// launch when `UIPasteboard.changeCount` has incremented (other apps
+    /// writing to the clipboard, or this app's own Share-link CTAs).
     private func checkClipboardForInvite() {
+        guard skinGameGroups.isEmpty else {
+            clipboardInviteAvailable = false
+            return
+        }
         let current = UIPasteboard.general.changeCount
-        clipboardInviteAvailable = UIPasteboard.general.hasURLs
+        let hasNewURL = UIPasteboard.general.hasURLs
             && current != clipboardInviteAckdChangeCount
+
+        // Prefer the phone-invite finder modal over the clipboard
+        // "Open your invite?" alert when both could fire — the modal asks
+        // for the user's phone (no Allow Paste prompt) and works for phone
+        // invites whose clipboard URL never made it (e.g., Quick Game scorer
+        // invites in older builds, or users who tapped the SMS link weeks
+        // before installing). Clipboard alert remains the fallback for
+        // share-link invites between Carry users.
+        if hasNewURL && !hasSeenPhoneInviteFinder {
+            showPhoneInviteFinder = true
+            clipboardInviteAvailable = false
+        } else {
+            clipboardInviteAvailable = hasNewURL
+        }
     }
 
     /// Records the current pasteboard `changeCount` as acknowledged so the
@@ -1093,17 +1127,31 @@ struct HomeView: View {
         Task {
             guard let userId = try? await SupabaseManager.shared.client.auth.session.user.id else { return }
             let service = GroupService()
-            do {
-                let groupName = try await service.joinGroupViaInvite(groupId: groupId, playerId: userId)
-                await MainActor.run {
-                    ToastManager.shared.success("Joined \(groupName)")
-                    appRouter.shouldRefreshGroups = true
-                    appRouter.pendingRoundGroupId = groupId
-                    selectedTab = .skinGames
-                }
-            } catch {
-                await MainActor.run {
-                    ToastManager.shared.error("Couldn't join that group. Try again.")
+
+            // Retry up to 3 times for "group not found" — handles the race
+            // where a Quick Game scorer invitee taps the SMS link before
+            // the inviter has tapped Continue (the group only exists
+            // server-side after handleQuickGameCreate finishes). 5 second
+            // gap × 3 attempts = ~15s of patience; usually enough for the
+            // creator to land Continue.
+            for attempt in 0..<3 {
+                do {
+                    let groupName = try await service.joinGroupViaInvite(groupId: groupId, playerId: userId)
+                    await MainActor.run {
+                        ToastManager.shared.success("Joined \(groupName)")
+                        appRouter.shouldRefreshGroups = true
+                        appRouter.pendingRoundGroupId = groupId
+                        selectedTab = .skinGames
+                    }
+                    return
+                } catch {
+                    if attempt < 2 {
+                        try? await Task.sleep(nanoseconds: 5_000_000_000)
+                        continue
+                    }
+                    await MainActor.run {
+                        ToastManager.shared.error("This game might still be in setup. Try again in a minute.")
+                    }
                 }
             }
         }
@@ -1116,37 +1164,10 @@ struct HomeView: View {
             defer { Task { @MainActor in acceptingInviteId = nil } }
             do {
                 if round.status == .groupInvite {
-                    // Auto-match: if user was phone-invited, try to find their guest profile by name
-                    if let groupId = round.supabaseGroupId,
-                       let userId = authService.currentUser?.id {
-                        let members = try? await GroupService().fetchGroupMembers(groupId: groupId)
-                        let myMembership = members?.first(where: { $0.playerId == userId })
-                        let isPhoneInvite = myMembership?.invitedPhone != nil && !(myMembership?.invitedPhone ?? "").isEmpty
-
-                        if isPhoneInvite,
-                           let guests = try? await GroupService().fetchGuestMembers(groupId: groupId),
-                           !guests.isEmpty,
-                           let userName = authService.currentUser?.displayName {
-                            // Try auto-match by first name (case-insensitive)
-                            let userFirst = userName.split(separator: " ").first.map(String.init)?.lowercased() ?? ""
-                            let matches = guests.filter { guest in
-                                let guestFirst = guest.displayName.split(separator: " ").first.map(String.init)?.lowercased() ?? ""
-                                return !userFirst.isEmpty && guestFirst == userFirst
-                            }
-                            if matches.count == 1, let match = matches.first {
-                                // Exact single match — auto-claim silently
-                                try? await GuestProfileService().claimGuestProfile(
-                                    guestId: match.id, realUserId: userId, groupId: groupId
-                                )
-                                #if DEBUG
-                                print("[AutoClaim] Matched '\(userName)' → '\(match.displayName)', claimed automatically")
-                                #endif
-                            }
-                            // Multiple matches or no match — skip claim, join without history
-                        }
-                    }
-
-                    // Accept the invite
+                    // Accept the invite. Under the ephemeral-guest rule
+                    // (locked 2026-05-01), Skins Groups are Carry-only, so
+                    // there are no guest profiles to auto-claim against —
+                    // the prior auto-match-by-first-name block was removed.
                     try await GroupService().acceptGroupInvite(membershipId: round.id)
                     // Brief delay to let Supabase propagate the status change
                     try? await Task.sleep(nanoseconds: 500_000_000)
@@ -1197,86 +1218,6 @@ struct HomeView: View {
                 #if DEBUG
                 print("❌ Failed to accept invite: \(error)")
                 #endif
-            }
-        }
-    }
-
-    private var guestClaimSheet: some View {
-        GuestClaimView(
-            guests: guestClaimProfiles,
-            groupName: pendingClaimRound?.groupName ?? "",
-            onClaim: { guestId in
-                claimGuestAndJoin(guestId: guestId)
-            },
-            onSkip: {
-                skipClaimAndJoin()
-            }
-        )
-        .presentationDetents([.medium])
-        .presentationDragIndicator(.visible)
-        .presentationBackground(Color.bgSecondary)
-    }
-
-    /// Claim a guest profile and join the group.
-    private func claimGuestAndJoin(guestId: UUID) {
-        guard let round = pendingClaimRound,
-              let userId = authService.currentUser?.id,
-              let groupId = round.supabaseGroupId else { return }
-
-        // Clear state first, then dismiss to avoid stale data flash
-        pendingClaimRound = nil
-        guestClaimProfiles = []
-        showGuestClaimSheet = false
-        Task {
-            do {
-                try await GuestProfileService().claimGuestProfile(
-                    guestId: guestId, realUserId: userId, groupId: groupId
-                )
-                let refreshed = try await GroupService().loadGroups(userId: userId)
-                await MainActor.run {
-                    skinGameGroups = refreshed
-                    withAnimation {
-                        invitedRounds.removeAll { $0.id == round.id }
-                        pendingInvites.removeAll { $0.id == round.id }
-                        selectedTab = .skinGames
-                    }
-                    ToastManager.shared.success("Welcome back! Your scores are here.")
-                }
-            } catch {
-                ToastManager.shared.error("Couldn't claim profile. Try again.")
-                #if DEBUG
-                print("[HomeView] claimGuestAndJoin failed: \(error)")
-                #endif
-            }
-        }
-    }
-
-    /// Skip guest claim and join the group as a new member.
-    private func skipClaimAndJoin() {
-        guard let round = pendingClaimRound else { return }
-
-        showGuestClaimSheet = false
-        Task {
-            do {
-                try await GroupService().acceptGroupInvite(membershipId: round.id)
-                if let userId = authService.currentUser?.id {
-                    let refreshed = try await GroupService().loadGroups(userId: userId)
-                    await MainActor.run {
-                        skinGameGroups = refreshed
-                    }
-                }
-                withAnimation {
-                    invitedRounds.removeAll { $0.id == round.id }
-                    pendingInvites.removeAll { $0.id == round.id }
-                    selectedTab = .skinGames
-                }
-                ToastManager.shared.success("You joined \(round.groupName)!")
-            } catch {
-                ToastManager.shared.error("Couldn't join group. Check your connection.")
-            }
-            await MainActor.run {
-                pendingClaimRound = nil
-                guestClaimProfiles = []
             }
         }
     }
@@ -1417,6 +1358,88 @@ struct HomeView: View {
             return "Hey, \(first)"
         }
         return "Hey"
+    }
+
+    // MARK: - Phone Migration Banner
+
+    private func phoneMigrationBannerKey(_ userId: UUID) -> String {
+        "hasSeenPhoneMigrationBanner_\(userId.uuidString)"
+    }
+
+    /// Show the banner only when the user is signed in, has not added a
+    /// phone yet, and hasn't dismissed the banner (per-user). Hidden once
+    /// the modal `PhoneInviteFinderSheet` is also active to avoid stacking.
+    private var shouldShowPhoneMigrationBanner: Bool {
+        guard let user = authService.currentUser else { return false }
+        let phoneEmpty = (user.phone ?? "").isEmpty
+        return phoneEmpty && !phoneMigrationBannerDismissed && !showPhoneInviteFinder
+    }
+
+    private func loadPhoneMigrationBannerState() {
+        guard let user = authService.currentUser else {
+            phoneMigrationBannerDismissed = false
+            return
+        }
+        phoneMigrationBannerDismissed = UserDefaults.standard.bool(forKey: phoneMigrationBannerKey(user.id))
+    }
+
+    private func dismissPhoneMigrationBanner() {
+        guard let user = authService.currentUser else { return }
+        UserDefaults.standard.set(true, forKey: phoneMigrationBannerKey(user.id))
+        phoneMigrationBannerDismissed = true
+    }
+
+    private var phoneMigrationBanner: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(Color.successBgLight)
+                    .frame(width: 36, height: 36)
+                Image(systemName: "phone.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(Color(hexString: "#1B7A14"))
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Add your phone number for instant invites")
+                    .font(.carry.bodySemibold)
+                    .foregroundColor(Color.textPrimary)
+                Text("Friends can add you in one tap")
+                    .font(.carry.captionLG)
+                    .foregroundColor(Color.textTertiary)
+                    .lineLimit(2)
+            }
+
+            Spacer()
+
+            Button {
+                dismissPhoneMigrationBanner()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(Color.textTertiary)
+                    .frame(width: 28, height: 28)
+            }
+            .accessibilityLabel("Dismiss")
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(.white)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .strokeBorder(Color.borderLight, lineWidth: 1)
+        )
+        .padding(.horizontal, 16)
+        .padding(.bottom, 16)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            showPhoneMigrationEdit = true
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Tap to add your phone number")
     }
 
     // MARK: - Section Header

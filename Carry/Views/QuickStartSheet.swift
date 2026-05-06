@@ -41,6 +41,14 @@ struct QuickGameSheet: View {
     let onCreate: (SavedGroup) -> Void
 
     @State private var selectedRecentGameId: UUID? = nil
+
+    /// Pre-allocated group UUID, lazy-initialized the first time a phone-invite
+    /// scorer is added. Used to (a) build the SMS body with a per-group deep
+    /// link at slot-invite time so the recipient lands directly in the right
+    /// group (no clipboard/Allow-Paste dance), and (b) pass through to
+    /// `createGroup` as the group's id when Continue is tapped, so the
+    /// SMS-link UUID matches the actual created group's id.
+    @State private var draftQuickGameId: UUID? = nil
     @State private var selectedCourse: SelectedCourse?
     @State private var buyInAmount: Double = 0
     @State private var handicapPct: Double = 1.0
@@ -865,7 +873,19 @@ struct QuickGameSheet: View {
                         excludeProfileIds: scorerExcludeIds(forGroup: groupIndex),
                         groupLabel: "Group \(groupIndex + 1)",
                         defaultColor: slotColors[(groupIndex * 4) % slotColors.count],
-                        readOnly: groupIndex == 0
+                        readOnly: groupIndex == 0,
+                        smsBodyBuilder: { _ in
+                            // Lazy-allocate the draft group UUID on first phone
+                            // invite, then reuse for any subsequent phone invites
+                            // in this same Quick Game session. The same UUID is
+                            // threaded through to createGroup on Continue so the
+                            // SMS-embedded deep link matches the real group id.
+                            if draftQuickGameId == nil {
+                                draftQuickGameId = UUID()
+                            }
+                            let groupId = draftQuickGameId!.uuidString
+                            return "Score our skins game on Carry! https://carryapp.site/invite?group=\(groupId)"
+                        }
                     )
                     .id("slot-\(groupIndex)-0")
                 }
@@ -956,6 +976,21 @@ struct QuickGameSheet: View {
                                     debouncePlayerSearch(query: newValue, groupIndex: groupIndex, slotIndex: slotIndex)
                                 }
                             }
+
+                        // Clear affordance for guest/typing rows — wipes BOTH
+                        // the name and the HC index in one tap. Mirrors the X
+                        // shown for selected Carry users above. Hidden when
+                        // there's nothing to clear.
+                        if !isReadOnly, !slot.name.isEmpty || !slot.handicap.isEmpty {
+                            Button {
+                                clearPlayerSlot(groupIndex: groupIndex, slotIndex: slotIndex)
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 16))
+                                    .foregroundColor(Color.textDisabled)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                 }
                 .padding(.horizontal, 12)
@@ -1359,7 +1394,12 @@ struct QuickGameSheet: View {
         let creatorIntId = Player.stableId(from: currentUser.profileId ?? UUID())
 
         let savedGroup = SavedGroup(
-            id: UUID(), // Temporary — will be replaced by Supabase ID
+            // If the user phone-invited a scorer, the same UUID is already in
+            // the wild via SMS deep links — reuse it as the actual group id.
+            // Otherwise use a fresh UUID; either way, handleQuickGameCreate
+            // passes this through to GroupService.createGroup(id:) so the
+            // server uses our ID instead of generating its own.
+            id: draftQuickGameId ?? UUID(),
             name: autoName,
             members: players,
             lastPlayed: nil,

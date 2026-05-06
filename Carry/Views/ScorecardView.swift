@@ -140,7 +140,7 @@ struct ScorecardView: View {
             if isQuickGame && !viewModel.isCurrentUserScorerForOwnGroup { return }
             let perUserKey = "\(Self.scoringInfoKeyPrefix)_\(currentUserId)"
             let count = UserDefaults.standard.integer(forKey: perUserKey)
-            if count < 5 {
+            if count < 1 {
                 UserDefaults.standard.set(count + 1, forKey: perUserKey)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                     withAnimation(.easeIn(duration: 0.3)) {
@@ -736,12 +736,6 @@ struct ScorecardView: View {
                     if showRoundComplete && !roundCompleteCollapsed {
                         #if DEBUG
                         print("[Scorecard.tap] BLOCKED showRoundComplete=true collapsed=\(roundCompleteCollapsed) hole=\(holeNum) player=\(p.id)")
-                        #endif
-                        return
-                    }
-                    if !viewModel.canScore(holeNum: holeNum) {
-                        #if DEBUG
-                        print("[Scorecard.tap] BLOCKED canScore=false hole=\(holeNum) player=\(p.id)")
                         #endif
                         return
                     }

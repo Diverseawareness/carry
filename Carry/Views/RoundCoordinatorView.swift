@@ -218,25 +218,34 @@ struct RoundCoordinatorView: View {
                             groupName: mutableConfig.groupName,
                             courseName: mutableConfig.course
                         )
+                        // The "Round Started" splash is a creator-only celebratory
+                        // moment — they're the one who built the roster and tapped
+                        // Start. Non-creators reach this code path only via
+                        // anomalous flows (the normal join path enters with
+                        // `initialRoundConfig != nil` and inits straight to
+                        // `.active`, see line 106). When they do land here, jump
+                        // straight to the scorecard — no splash, no wasted
+                        // staggered-reveal `@State` writes on an invisible view.
                         withAnimation(.easeInOut(duration: 0.4)) {
-                            phase = .starting
+                            phase = isCreator ? .starting : .active
                         }
-                        // Stagger the splash animations
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                            withAnimation(.spring(response: 0.6, dampingFraction: 0.7)) { showFlag = true }
-                        }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                            withAnimation(.easeOut(duration: 0.4)) { showTitle = true }
-                        }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-                            withAnimation(.easeOut(duration: 0.4)) { showDetails = true }
-                        }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-                            withAnimation(.easeOut(duration: 0.4)) { showStats = true }
-                        }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                            withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
-                                pulseFlag = true
+                        if isCreator {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                                withAnimation(.spring(response: 0.6, dampingFraction: 0.7)) { showFlag = true }
+                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                withAnimation(.easeOut(duration: 0.4)) { showTitle = true }
+                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                                withAnimation(.easeOut(duration: 0.4)) { showDetails = true }
+                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                                withAnimation(.easeOut(duration: 0.4)) { showStats = true }
+                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                                withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
+                                    pulseFlag = true
+                                }
                             }
                         }
                     }
@@ -248,7 +257,23 @@ struct RoundCoordinatorView: View {
                     .transition(.opacity)
 
             case .active:
-                if let activeConfig = roundConfig, !((activeConfig.holes ?? activeConfig.teeBox?.holes ?? []).isEmpty) {
+                if let baseConfig = roundConfig, !((baseConfig.holes ?? baseConfig.teeBox?.holes ?? []).isEmpty) {
+                // Defense in depth: if @State.roundConfig was hydrated by
+                // GroupManagerView's onStart (which historically didn't set
+                // scorerPlayerIds), fall back to the parent-supplied
+                // initialRoundConfig which is built directly from the SavedGroup.
+                // The Quick Game scorer-only tap gate hard-fails when these are
+                // nil — a non-creator scorer of group 2+ can't score at all.
+                let activeConfig: RoundConfig = {
+                    var merged = baseConfig
+                    if merged.scorerPlayerIds == nil, let fromParent = initialRoundConfig?.scorerPlayerIds {
+                        merged.scorerPlayerIds = fromParent
+                    }
+                    if merged.scorerPlayerId == nil, let fromParent = initialRoundConfig?.scorerPlayerId {
+                        merged.scorerPlayerId = fromParent
+                    }
+                    return merged
+                }()
                 ScorecardView(config: activeConfig, onBack: {
                     // Only mark as completed if the round is actually done (all groups finished)
                     // Mid-round exits keep the round as "active" so the active card stays
