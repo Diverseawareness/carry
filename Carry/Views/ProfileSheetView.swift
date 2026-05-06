@@ -1288,6 +1288,20 @@ struct PhoneEditSheet: View {
                         RoundedRectangle(cornerRadius: 12)
                             .strokeBorder(Color.borderLight, lineWidth: 1)
                     )
+                    // .phonePad blocks letters on the on-screen keyboard, but
+                    // paste, autofill, and Bluetooth keyboards can sneak
+                    // non-digits in. Strip everything that isn't a digit and
+                    // drop a leading US country-code `1` so iOS contact
+                    // autofill ("+1 (415) 697-9011" / "1415...") lands as
+                    // a clean 10-digit number rather than chopping the tail.
+                    .onChange(of: phoneText) {
+                        let digits = phoneText.filter(\.isNumber)
+                        let normalized = (digits.count == 11 && digits.hasPrefix("1"))
+                            ? String(digits.dropFirst())
+                            : digits
+                        let capped = String(normalized.prefix(10))
+                        if capped != phoneText { phoneText = capped }
+                    }
 
                 Text("We will never share your number with anyone, ever.")
                     .font(.system(size: 12))
@@ -1301,17 +1315,11 @@ struct PhoneEditSheet: View {
         }
         .background(.white)
         .onAppear {
-            // Pre-fill with existing phone (formatted nicely if possible).
+            // Pre-fill with raw digits — the .onChange sanitizer would strip
+            // any (XXX) XXX-XXXX formatting on first edit anyway, causing a
+            // visible flash. Match onboarding's digits-only field.
             let raw = authService.currentUser?.phone ?? ""
-            let digits = raw.filter(\.isNumber)
-            if digits.count == 10 {
-                let area = digits.prefix(3)
-                let mid = digits.dropFirst(3).prefix(3)
-                let last = digits.suffix(4)
-                phoneText = "(\(area)) \(mid)-\(last)"
-            } else {
-                phoneText = raw
-            }
+            phoneText = raw.filter(\.isNumber)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                 isPhoneFocused = true
             }
