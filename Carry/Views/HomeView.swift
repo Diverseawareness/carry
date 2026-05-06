@@ -1049,6 +1049,13 @@ struct HomeView: View {
         let hasNewURL = UIPasteboard.general.hasURLs
             && current != clipboardInviteAckdChangeCount
 
+        // If the profile already has a phone, the server-side reconcile
+        // triggers (reconcile_phone_invites_for_profile fires at profile
+        // phone insert/update; reconcile_phone_invite_at_insert fires at
+        // group_members insert) handle phone-invite landing in both
+        // directions automatically. The finder modal would be redundant.
+        let profileHasPhone = !(authService.currentUser?.phone ?? "").isEmpty
+
         // Prefer the phone-invite finder modal over the clipboard
         // "Open your invite?" alert when both could fire — the modal asks
         // for the user's phone (no Allow Paste prompt) and works for phone
@@ -1056,7 +1063,7 @@ struct HomeView: View {
         // invites in older builds, or users who tapped the SMS link weeks
         // before installing). Clipboard alert remains the fallback for
         // share-link invites between Carry users.
-        if hasNewURL && !hasSeenPhoneInviteFinder {
+        if hasNewURL && !hasSeenPhoneInviteFinder && !profileHasPhone {
             showPhoneInviteFinder = true
             clipboardInviteAvailable = false
         } else {
