@@ -687,9 +687,14 @@ struct GroupsListView: View {
                 let courseClubName = savedGroup.lastCourse?.clubName
                 let teeBox = savedGroup.lastCourse?.teeBox
 
-                // Encode holes JSON so it persists from creation
+                // Encode holes JSON so it persists from creation. Guard against
+                // empty `[]` — storing an empty array makes fetchPersistedHoles
+                // bail at its `!decoded.isEmpty` check, which then surfaces as
+                // $0 pills throughout the live round (buildHomeRound's holes
+                // safety net returns an empty round).
                 var holesJson: String? = nil
                 if let holes = teeBox?.holes,
+                   !holes.isEmpty,
                    let data = try? JSONEncoder().encode(holes) {
                     holesJson = String(data: data, encoding: .utf8)
                 }
@@ -1369,11 +1374,11 @@ struct GroupsListView: View {
                 .buttonStyle(.plain)
 
                 Button {
-                    convertPromptDeleteGame()
+                    convertPromptDecline()
                 } label: {
-                    Text("No Delete This Game")
+                    Text("No, thanks")
                         .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(Color(red: 0.851, green: 0.176, blue: 0.125))  // #D92D20
+                        .foregroundColor(Color.textSecondary)
                         .frame(maxWidth: .infinity)
                         .frame(height: 56)
                         .contentShape(Rectangle())
@@ -1396,24 +1401,32 @@ struct GroupsListView: View {
         }
     }
 
-    /// "No Delete This Game" — hard-deletes the Quick Game group (FK cascade
-    /// removes the completed round + scores). Placeholder — wired up after
-    /// user confirms the visual match.
-    private func convertPromptDeleteGame() {
+    /// "No, thanks" — keep the round, skip conversion. The round was already
+    /// flipped to status='completed' server-side by Save Round Results, which
+    /// also auto-wiped Quick Game guests via the ephemeral-guest rule. Here
+    /// we just dismiss the sheet and move the round into history locally so
+    /// the Quick Game disappears from the Games tab (`isConcludedQuickGame`
+    /// returns true) and shows up in Home → Recent Games immediately. The
+    /// next 30s poll will reconcile any remaining server state.
+    private func convertPromptDecline() {
         guard let groupId = completedGroupId else {
             showConvertSetupSheet = false
             return
         }
-        Task {
-            try? await GroupService().deleteGroup(groupId: groupId)
-            await MainActor.run {
-                groups.removeAll { $0.id == groupId }
-                completedGroupId = nil
-                showConvertSetupSheet = false
-                convertSheetPhase = .setup
-                ToastManager.shared.success("Game deleted")
+        if let idx = groups.firstIndex(where: { $0.id == groupId }) {
+            if groups[idx].concludedRound != nil {
+                groups[idx].archiveConcludedRound()
+            } else if let active = groups[idx].activeRound {
+                // Save Round Results may have already cleared concludedRound;
+                // fall back to migrating activeRound directly.
+                groups[idx].roundHistory.insert(active, at: 0)
+                groups[idx].activeRound = nil
             }
         }
+        completedGroupId = nil
+        showConvertSetupSheet = false
+        convertSheetPhase = .setup
+        ToastManager.shared.success("Saved to Recent Games")
     }
 
     private var convertSetupPhaseView: some View {

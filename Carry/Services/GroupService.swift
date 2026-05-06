@@ -253,13 +253,21 @@ final class GroupService {
     }
 
     /// Single source of truth for reading per-hole data from a group.
-    /// Returns nil if the group has no persisted holes JSON.
+    ///
+    /// Resolution chain:
+    ///   1. `skins_groups.last_tee_box_holes_json` (the persisted column)
+    ///   2. Fallback: `tee_boxes.holes_json` from the group's most recent round
+    ///
+    /// The fallback heals groups whose JSON column was never populated, or
+    /// was populated as an empty `[]` (a regression in the Quick Game create
+    /// path that surfaced as $0 pills throughout a live round). Returns nil
+    /// only when neither source has real data.
     func fetchPersistedHoles(groupId: UUID) async -> [Hole]? {
         struct HolesOnly: Codable {
             let lastTeeBoxHolesJson: String?
             enum CodingKeys: String, CodingKey { case lastTeeBoxHolesJson = "last_tee_box_holes_json" }
         }
-        guard let rows: [HolesOnly] = try? await client.from("skins_groups")
+        if let rows: [HolesOnly] = try? await client.from("skins_groups")
             .select("last_tee_box_holes_json")
             .eq("id", value: groupId.uuidString)
             .limit(1)
@@ -268,8 +276,24 @@ final class GroupService {
             let json = rows.first?.lastTeeBoxHolesJson,
             let data = json.data(using: .utf8),
             let decoded = try? JSONDecoder().decode([Hole].self, from: data),
-            !decoded.isEmpty else { return nil }
-        return decoded
+            !decoded.isEmpty {
+            return decoded
+        }
+
+        // Fallback: pull holes from the group's most recent round's tee box.
+        if let rounds = try? await roundService.fetchRoundsForGroup(groupId: groupId),
+           let latestRound = rounds.first,
+           let teeBoxId = latestRound.teeBoxId,
+           let dto: TeeBoxDTO = try? await client.from("tee_boxes")
+               .select()
+               .eq("id", value: teeBoxId.uuidString)
+               .single()
+               .execute()
+               .value {
+            if let holes = dto.decodeHoles(), !holes.isEmpty { return holes }
+        }
+
+        return nil
     }
 
     /// Single source of truth for persisting a course selection to a group.
