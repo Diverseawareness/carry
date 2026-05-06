@@ -389,15 +389,13 @@ struct HomeView: View {
     /// re-fire the alert for the same clipboard content).
     @AppStorage("clipboardInviteAckdChangeCount") private var clipboardInviteAckdChangeCount: Int = -1
 
-    /// Phone-invite finder modal state. Auto-shows on first Home appearance
-    /// for users who likely came from a phone invite (clipboard hint +
-    /// `skinGameGroups.isEmpty`). Manually triggerable from Settings (future).
-    /// Uses `hasURLs` as the privacy-preserving signal that the user MAY
-    /// have an invite — same gate as the clipboard prompt — but asks for
-    /// the user's phone instead of reading the clipboard, so no iOS Allow
-    /// Paste prompt fires.
+    /// Phone-invite finder modal state. No longer auto-fires on Home — the
+    /// banner + onboarding cover phone-on-profile, and the server reconcile
+    /// triggers handle invite landing in both directions (past + future).
+    /// This @State remains because the modal can still be opened from the
+    /// debug menu (via `appRouter.debugShowPhoneInviteFinder`); the user-
+    /// facing manual entry lives in ProfileSheetView under Support.
     @State private var showPhoneInviteFinder = false
-    @AppStorage("hasSeenPhoneInviteFinder") private var hasSeenPhoneInviteFinder: Bool = false
 
     /// One-time banner for users who installed before phone-on-profile shipped.
     /// Tapping opens PhoneEditSheet; once they enter their phone the server
@@ -747,11 +745,9 @@ struct HomeView: View {
         .sheet(isPresented: $showPhoneInviteFinder) {
             PhoneInviteFinderSheet(
                 onSkip: {
-                    hasSeenPhoneInviteFinder = true
                     showPhoneInviteFinder = false
                 },
                 onClaimed: { groupId in
-                    hasSeenPhoneInviteFinder = true
                     showPhoneInviteFinder = false
                     // Refresh groups + jump into the joined group on the
                     // Games tab. Same path as handleScannedInvite uses on
@@ -1048,27 +1044,7 @@ struct HomeView: View {
         let current = UIPasteboard.general.changeCount
         let hasNewURL = UIPasteboard.general.hasURLs
             && current != clipboardInviteAckdChangeCount
-
-        // If the profile already has a phone, the server-side reconcile
-        // triggers (reconcile_phone_invites_for_profile fires at profile
-        // phone insert/update; reconcile_phone_invite_at_insert fires at
-        // group_members insert) handle phone-invite landing in both
-        // directions automatically. The finder modal would be redundant.
-        let profileHasPhone = !(authService.currentUser?.phone ?? "").isEmpty
-
-        // Prefer the phone-invite finder modal over the clipboard
-        // "Open your invite?" alert when both could fire — the modal asks
-        // for the user's phone (no Allow Paste prompt) and works for phone
-        // invites whose clipboard URL never made it (e.g., Quick Game scorer
-        // invites in older builds, or users who tapped the SMS link weeks
-        // before installing). Clipboard alert remains the fallback for
-        // share-link invites between Carry users.
-        if hasNewURL && !hasSeenPhoneInviteFinder && !profileHasPhone {
-            showPhoneInviteFinder = true
-            clipboardInviteAvailable = false
-        } else {
-            clipboardInviteAvailable = hasNewURL
-        }
+        clipboardInviteAvailable = hasNewURL
     }
 
     /// Records the current pasteboard `changeCount` as acknowledged so the
@@ -1359,12 +1335,11 @@ struct HomeView: View {
     }
 
     /// Show the banner only when the user is signed in, has not added a
-    /// phone yet, and hasn't dismissed the banner (per-user). Hidden once
-    /// the modal `PhoneInviteFinderSheet` is also active to avoid stacking.
+    /// phone yet, and hasn't dismissed the banner (per-user).
     private var shouldShowPhoneMigrationBanner: Bool {
         guard let user = authService.currentUser else { return false }
         let phoneEmpty = (user.phone ?? "").isEmpty
-        return phoneEmpty && !phoneMigrationBannerDismissed && !showPhoneInviteFinder
+        return phoneEmpty && !phoneMigrationBannerDismissed
     }
 
     private func loadPhoneMigrationBannerState() {
