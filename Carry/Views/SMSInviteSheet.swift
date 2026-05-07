@@ -175,7 +175,17 @@ struct SMSInviteSheet: View {
     private func phoneBinding(at index: Int) -> Binding<String> {
         Binding<String>(
             get: { phoneNumbers[index] },
-            set: { newValue in phoneNumbers[index] = newValue }
+            // Match the onboarding/profile guard: strip non-digits, drop a
+            // leading US country-code "1" so iOS contact autofill ("+1
+            // (415) 697-9011" / "1415...") lands as a clean 10-digit
+            // number rather than chopping the tail.
+            set: { newValue in
+                let digits = newValue.filter(\.isNumber)
+                let normalized = (digits.count == 11 && digits.hasPrefix("1"))
+                    ? String(digits.dropFirst())
+                    : digits
+                phoneNumbers[index] = String(normalized.prefix(10))
+            }
         )
     }
 }

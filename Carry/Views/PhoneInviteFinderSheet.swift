@@ -107,6 +107,18 @@ struct PhoneInviteFinderSheet: View {
                         .strokeBorder(phoneFocused ? Color.textPrimary : Color.borderLight, lineWidth: phoneFocused ? 1.5 : 1)
                 )
                 .focused($phoneFocused)
+                // Match the onboarding/profile guard: strip non-digits, drop a
+                // leading US country-code "1" so iOS contact autofill ("+1
+                // (415) 697-9011" / "1415...") lands as a clean 10-digit
+                // number rather than chopping the tail.
+                .onChange(of: phone) {
+                    let digits = phone.filter(\.isNumber)
+                    let normalized = (digits.count == 11 && digits.hasPrefix("1"))
+                        ? String(digits.dropFirst())
+                        : digits
+                    let capped = String(normalized.prefix(10))
+                    if capped != phone { phone = capped }
+                }
                 .padding(.horizontal, 24)
 
             Button {

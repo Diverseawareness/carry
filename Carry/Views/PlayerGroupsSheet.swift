@@ -709,11 +709,17 @@ struct PlayerGroupsSheet: View {
                     .font(.carry.bodyLG)
                     .foregroundColor(Color.textPrimary)
                     .keyboardType(.phonePad)
-                    .onChange(of: phoneText) { _, newValue in
-                        let digits = newValue.filter { $0.isNumber }
-                        if digits.count > 10 {
-                            phoneText = String(digits.prefix(10))
-                        }
+                    // Match the onboarding/profile guard: strip non-digits,
+                    // drop a leading US country-code "1" so iOS contact
+                    // autofill ("+1 (415) 697-9011" / "1415...") lands as
+                    // a clean 10-digit number rather than chopping the tail.
+                    .onChange(of: phoneText) {
+                        let digits = phoneText.filter(\.isNumber)
+                        let normalized = (digits.count == 11 && digits.hasPrefix("1"))
+                            ? String(digits.dropFirst())
+                            : digits
+                        let capped = String(normalized.prefix(10))
+                        if capped != phoneText { phoneText = capped }
                     }
                     .onAppear {
                         phoneName = name
