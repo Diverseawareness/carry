@@ -115,6 +115,12 @@ struct QuickGameSheet: View {
             let hasPlayers = slots[g].contains { !$0.isEmpty }
             if hasPlayers && slots[g][0].existingProfileId == nil && !slots[g][0].isPendingInvite { return false }
         }
+        // No slot may have a handicap without a name (the inverse case —
+        // user tapped HC + entered a number but never typed a name).
+        // Validation downstream silently skips nameless slots, so the
+        // HC data would be discarded; we'd rather block save and prompt
+        // the user to add the name.
+        guard firstGroupWithHCNoName == nil else { return false }
         // Every player with a name must have a handicap
         guard !hasPlayersWithoutHandicap else { return false }
         return true
@@ -1228,8 +1234,21 @@ struct QuickGameSheet: View {
         if selectedCourse == nil { return "Select a course to continue" }
         if filledPlayerCount < 2 { return "Add at least 2 players" }
         if let group = firstGroupMissingScorer { return "Assign a scorer for Group \(group)" }
+        if let group = firstGroupWithHCNoName { return "Missing name for HC in Group \(group)" }
         if let name = firstPlayerMissingHandicap { return "Missing HC index for \(name)" }
         return ""
+    }
+
+    private var firstGroupWithHCNoName: Int? {
+        for g in 0..<groupCount {
+            for slot in slots[g] {
+                let nameEmpty = slot.name.trimmingCharacters(in: .whitespaces).isEmpty
+                if nameEmpty && !slot.handicap.isEmpty {
+                    return g + 1
+                }
+            }
+        }
+        return nil
     }
 
     private var firstGroupMissingScorer: Int? {
