@@ -90,6 +90,14 @@ struct GroupManagerView: View {
     /// just-made assignment before the server's own write has propagated
     /// back (classic write-then-read race).
     @State private var scorerIdsLastSavedAt: Date? = nil
+    /// Wall-clock of the most recent local mutation to `teeTimes`. Mirrors
+    /// `scorerIdsLastSavedAt` for the same write-then-read race: refreshes
+    /// recompute `teeTimes` from `scheduledDate + interval` when
+    /// `tee_times_json` is empty server-side; if a refresh lands during
+    /// the .onChange debounce window (or before server replication), the
+    /// recompute would stomp the user's edit. This stamp lets refresh
+    /// skip the recompute branch for a short window after any local edit.
+    @State private var teeTimesLastSavedAt: Date? = nil
     @State private var countdownText = ""  // updated every second by timer
     @State private var refreshTimer: Timer? = nil  // 30s auto-refresh polling
     @State private var isJoiningRound = false  // loading state for "Join Round" button
@@ -503,6 +511,7 @@ struct GroupManagerView: View {
             teeTimes[i] = baseTime.addingTimeInterval(offset)
         }
     }
+
 
     /// 0-indexed tee-time slot for the current user. For creators this is the
     /// slot that Game Options / the inline date picker should write into (not
@@ -1057,12 +1066,23 @@ struct GroupManagerView: View {
                     }
                 } else if let date = freshGroup.scheduledDate {
                     roundDate = date
-                    if let interval = freshGroup.teeTimeInterval, interval > 0, groupCount > 1 {
-                        teeTimes = (0..<groupCount).map { i in
-                            date.addingTimeInterval(Double(i) * Double(interval) * 60)
+                    // Skip the recompute branch when the user has recently
+                    // mutated teeTimes locally — the .onChange debounce may
+                    // not have written yet, or the server may not have
+                    // replicated the write back. Mirrors scorerIdsLastSavedAt
+                    // protection at line ~999.
+                    let teeTimesRecentlySaved: Bool = {
+                        guard let at = teeTimesLastSavedAt else { return false }
+                        return Date().timeIntervalSince(at) < 8
+                    }()
+                    if !teeTimesRecentlySaved {
+                        if let interval = freshGroup.teeTimeInterval, interval > 0, groupCount > 1 {
+                            teeTimes = (0..<groupCount).map { i in
+                                date.addingTimeInterval(Double(i) * Double(interval) * 60)
+                            }
+                        } else if teeTimes.count != groupCount {
+                            teeTimes = [date] + Array(repeating: nil, count: max(groupCount - 1, 0))
                         }
-                    } else if teeTimes.count != groupCount {
-                        teeTimes = [date] + Array(repeating: nil, count: max(groupCount - 1, 0))
                     }
                 }
 
@@ -1260,10 +1280,30 @@ struct GroupManagerView: View {
                 .padding(.bottom, 20)
                 .background(Color.bgPrimary)
 
-                // Row 2: Unified header — group name (or compact date for quick games)
-                if isQuickGame {
-                    // Quick Game: show compact date as title (not editable)
-                    Text(Self.headerDateOnlyFormatter.string(from: roundDate))
+                // Row 2: Unified header — group name (Quick Game uses
+                // group.name now too, which is auto-set to the formatted
+                // creation date and auto-renamed when the date changes if
+                // it still matches the auto-format. Creators of either
+                // type can tap to manually rename.
+                if isQuickGame && isCreator {
+                    Button {
+                        editingName = groupName
+                        showNameEditor = true
+                    } label: {
+                        Text(groupName)
+                            .font(.carry.sheetTitle)
+                            .foregroundColor(Color.deepNavy)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Game name: \(groupName)")
+                    .accessibilityHint("Double tap to edit the game name")
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 6)
+                    .background(Color.bgPrimary)
+                } else if isQuickGame {
+                    // Non-creator viewing a Quick Game — read-only.
+                    Text(groupName)
                         .font(.carry.sheetTitle)
                         .foregroundColor(Color.deepNavy)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1299,8 +1339,9 @@ struct GroupManagerView: View {
                 // Meta info rows (both roles) — always visible
                 Group {
                     VStack(alignment: .leading, spacing: 0) {
-                        // Date + tee time row (hidden for quick games — date is the title)
-                        if !isQuickGame {
+                        // Date + tee time row — shown for both Quick Games
+                        // and Skins Groups now that Quick Games default to
+                        // "Quick Game" as the title (date no longer in title).
                         HStack(spacing: 16) {
                             HStack(spacing: 10) {
                                 Image(systemName: "calendar")
@@ -1337,7 +1378,6 @@ struct GroupManagerView: View {
                         }
                         .lineLimit(1)
                         .frame(minHeight: 32, alignment: .leading)
-                        }
 
                         // Course row — always shown (mandatory field)
                         HStack(spacing: 10) {
@@ -1817,18 +1857,11 @@ struct GroupManagerView: View {
                     }
                     if let t = result.teeTime {
                         roundDate = t
-                        if teeTimes.isEmpty { syncTeeTimes() }
-                        if !teeTimes.isEmpty {
-                            let slot = currentUserSlotIndex
-                            teeTimes[slot] = t
-                            autoFillTeeTimes(from: slot)
-                        }
+                        // Tee times are sovereign — only the per-group
+                        // tee-time picker should mutate them. Game Options
+                        // changes the scheduled date alone; tee_times_json
+                        // is untouched here.
                         onTeeTimeChanged?(t)
-                        // Persist to `tee_times_json` server-side so other
-                        // devices (and a subsequent group refresh on this
-                        // device) see the updated times — otherwise the next
-                        // reload reverts the edit to stale Quick Game values.
-                        syncTeeTimesToSupabase()
                     }
                     if let course = result.changedCourse {
                         currentCourse = course
@@ -2097,15 +2130,11 @@ struct GroupManagerView: View {
                 ),
                 selectedDayPill: $selectedDayPill,
                 onSet: {
-                    if teeTimes.isEmpty { syncTeeTimes() }
-                    if !teeTimes.isEmpty {
-                        let slot = currentUserSlotIndex
-                        teeTimes[slot] = roundDate
-                        autoFillTeeTimes(from: slot)
-                    }
-                    onTeeTimeChanged?(teeTimes.first.flatMap { $0 })
+                    // Tee times are sovereign — the date picker only sets
+                    // the round's scheduled date. Tee times are edited
+                    // exclusively via the per-group tee-time picker.
+                    onTeeTimeChanged?(roundDate)
                     onRecurrenceChanged?(buildRecurrence())
-                    syncTeeTimesToSupabase()
                     showDatePicker = false
                     ToastManager.shared.success(scheduleMode == 1 ? "Schedule updated" : "Tee time updated")
                 },
@@ -2245,6 +2274,11 @@ struct GroupManagerView: View {
             }
         }
         .onChange(of: teeTimes) { _, _ in
+            // Stamp immediately so the next refresh (e.g. 30s poll firing
+            // mid-edit) skips its recompute fallback. Without this, the
+            // refresh would race the 0.8s debounce below and stomp the
+            // user's edit before it can persist. See teeTimesLastSavedAt.
+            teeTimesLastSavedAt = Date()
             // Debounce: persist the full per-group tee times array so
             // independent (non-consecutive) schedules survive across
             // devices. Members read this via SavedGroup.teeTimes.
@@ -2695,14 +2729,47 @@ struct GroupManagerView: View {
 
             // Done button
             Button {
-                teeTimes[teeTimePickerGroupIndex] = teeTimePickerDate
+                // Resolve duplicate-time conflicts when consecutive is OFF —
+                // if the user just picked a time that matches another slot's
+                // exact time-of-day, auto-bump this slot forward by 8 min
+                // (and keep bumping until no conflict). Two foursomes can't
+                // tee off at the same minute. With consecutive ON, the
+                // staggered intervals already prevent collisions by design.
+                var resolvedPickerDate = teeTimePickerDate
+                if consecutiveInterval == 0 {
+                    let calendar = Calendar.current
+                    // Compare time-of-day only (hour + minute). Tee times can
+                    // be on different calendar days post-"sovereign" edits,
+                    // but a round happens on one day — conflict is whether
+                    // two slots share the same hour:minute, regardless of
+                    // each slot's stored day component.
+                    func timeOfDay(_ d: Date) -> (Int, Int) {
+                        let c = calendar.dateComponents([.hour, .minute], from: d)
+                        return (c.hour ?? 0, c.minute ?? 0)
+                    }
+                    var hasConflict = true
+                    while hasConflict {
+                        hasConflict = false
+                        let candidate = timeOfDay(resolvedPickerDate)
+                        for i in 0..<teeTimes.count {
+                            if i == teeTimePickerGroupIndex { continue }
+                            guard let other = teeTimes[i] else { continue }
+                            if timeOfDay(other) == candidate {
+                                resolvedPickerDate = resolvedPickerDate.addingTimeInterval(8 * 60)
+                                hasConflict = true
+                                break
+                            }
+                        }
+                    }
+                }
+                teeTimes[teeTimePickerGroupIndex] = resolvedPickerDate
                 // Apply consecutive intervals if enabled
                 if consecutiveInterval > 0 {
                     let interval = Double(consecutiveInterval) * 60
                     for i in 0..<teeTimes.count {
                         if i != teeTimePickerGroupIndex {
                             let offset = Double(i - teeTimePickerGroupIndex) * interval
-                            teeTimes[i] = teeTimePickerDate.addingTimeInterval(offset)
+                            teeTimes[i] = resolvedPickerDate.addingTimeInterval(offset)
                         }
                     }
                     teeTimesLinked = true
@@ -2980,7 +3047,10 @@ struct GroupManagerView: View {
                 // hard-deletes from group_members). In Skins Groups swipe
                 // just deselects from today's tee sheet — fully reversible
                 // via the member pool, so creator self-removal is safe.
-                SwipeToDeleteRow(enabled: isCreator && !isLiveRound && !roundStarted && !(isQuickGame && player.id == currentUserId)) {
+                SwipeToDeleteRow(
+                    enabled: isCreator && !isLiveRound && !roundStarted && !(isQuickGame && player.id == currentUserId),
+                    isDestructive: isQuickGame
+                ) {
                     if isQuickGame {
                         // Quick Game swipe hard-deletes — confirm first.
                         pendingQuickGameRemoval = (player, index)
@@ -5128,9 +5198,14 @@ struct GroupDropDelegate: DropDelegate {
 
 // MARK: - Swipe-to-Delete Row Wrapper
 
-/// Custom swipe-to-reveal-delete row. Works alongside drag-and-drop (no List required).
+/// Custom swipe-to-reveal-action row. Works alongside drag-and-drop (no List required).
+/// `isDestructive: true` shows a red trash (Quick Games — hard delete from group_members).
+/// `isDestructive: false` shows a neutral person.slash (Skins Groups — non-destructive
+/// deselect from today's tee sheet, fully reversible via the member pool). Same gesture,
+/// different visual semantics so users don't fear they're deleting someone permanently.
 private struct SwipeToDeleteRow<Content: View>: View {
     let enabled: Bool
+    var isDestructive: Bool = true
     let onDelete: () -> Void
     @ViewBuilder let content: () -> Content
 
@@ -5167,13 +5242,13 @@ private struct SwipeToDeleteRow<Content: View>: View {
                         }
                         onDelete()
                     } label: {
-                        Image(systemName: "trash.fill")
+                        Image(systemName: isDestructive ? "trash.fill" : "person.slash.fill")
                             .font(.system(size: 18, weight: .semibold))
-                            .foregroundColor(.white)
+                            .foregroundColor(isDestructive ? .white : Color.textPrimary)
                             .frame(width: 52, height: 52)
                             .background(
                                 RoundedRectangle(cornerRadius: 12)
-                                    .fill(Color(hexString: "#D94444"))
+                                    .fill(isDestructive ? Color(hexString: "#D94444") : Color.bgSecondary)
                             )
                     }
                     .frame(width: deleteWidth)

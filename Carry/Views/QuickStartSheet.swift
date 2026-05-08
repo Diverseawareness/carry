@@ -1406,9 +1406,10 @@ struct QuickGameSheet: View {
             }
         }
 
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "EEE, MMM d"
-        let autoName = dateFormatter.string(from: hasTeeTime ? teeTimeDate : Date())
+        // Default name for new Quick Games. The card shows the scheduled
+        // date+time below the title, so the title doesn't need to repeat
+        // the date. Users can rename via the title-tap → Edit Name flow.
+        let autoName = "Quick Game"
 
         let creatorIntId = Player.stableId(from: currentUser.profileId ?? UUID())
 

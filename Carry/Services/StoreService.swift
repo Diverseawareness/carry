@@ -147,8 +147,13 @@ final class StoreService: ObservableObject {
         isPremium = foundEntitlement
     }
 
-    /// True only in Release builds with the override flag on.
-    /// In DEBUG this always returns false so local dev behaves normally.
+    /// True for any build that should bypass the paywall:
+    ///  - DEBUG (Xcode dev builds) — always on. StoreKit purchases are
+    ///    flaky on dev devices without a sandbox tester / Configuration
+    ///    file in the scheme; forcing premium lets us test gated flows
+    ///    without setting that up. Never ships (DEBUG strips at release).
+    ///  - Release + `grantPremiumInTestFlight = true` — TestFlight
+    ///    override flag, must be flipped off before App Store archive.
     ///
     /// We intentionally DO NOT check `appStoreReceiptURL` here — that URL can be nil
     /// on fresh TestFlight installs until a receipt has been issued, which caused
@@ -156,7 +161,7 @@ final class StoreService: ObservableObject {
     /// false before App Store archive is the only safeguard needed.
     private var shouldForceTestFlightPremium: Bool {
         #if DEBUG
-        return false
+        return true
         #else
         return Self.grantPremiumInTestFlight
         #endif

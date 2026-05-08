@@ -2013,7 +2013,7 @@ struct LeaderboardSheet: View {
                 HStack(spacing: 24) {
                     statPill(label: "POT", value: "$\(round.potTotal)")
                     statPill(label: "SKINS", value: "\(round.skinsWon)/\(round.totalSkins)")
-                    statPill(label: "PER SKIN", value: round.skinValue > 0 ? "~$\(round.skinValue)" : "—")
+                    statPill(label: "PER SKIN", value: round.skinsWon > 0 ? "~$\(round.skinValue)" : "—")
                 }
                 .padding(.horizontal, 24)
                 .padding(.bottom, 24)
