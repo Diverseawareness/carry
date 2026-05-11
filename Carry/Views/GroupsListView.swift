@@ -33,6 +33,11 @@ struct GroupsListView: View {
     @State private var promptedGroupIds: Set<UUID> = []
     @State private var justConvertedGroupId: UUID? = nil
     @State private var isConvertingGroup = false
+    /// Tracks whether the active RoundCoordinatorView is currently in its
+    /// setup phase. Drives the overlay's dismiss-edge so post-Restart-Round
+    /// back-out slides horizontally (setup convention) instead of vertically
+    /// (scorecard convention). Mirror of the same pattern in HomeView.
+    @State private var coordinatorIsInSetup: Bool = false
     @State private var showDebugCreateGroupCard = false
     @State private var showConvertSetupSheet = false
     @State private var convertGroupName = ""
@@ -115,6 +120,17 @@ struct GroupsListView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .showNewGamePicker)) { _ in
                 showNewGamePicker = true
+            }
+            .onChange(of: appRouter.pendingConvertGroupId) { _, newValue in
+                // The Home-tab Active Round card routes "Create Group" through
+                // AppRouter so this view can fire its convert flow once the
+                // user lands on Games tab. Mirrors the inline handler at the
+                // RoundCoordinatorView call site below — kept in sync.
+                guard let groupId = newValue else { return }
+                appRouter.pendingConvertGroupId = nil
+                completedGroupId = groupId
+                convertSheetPhase = .prompt
+                showConvertSetupSheet = true
             }
             #if DEBUG
             .onReceive(appRouter.$debugShowRecurringPrompt) { show in
@@ -881,6 +897,7 @@ struct GroupsListView: View {
             initialRecurrence: group.recurrence,
             initialBuyIn: group.buyInPerPlayer,
             initialCarriesEnabled: group.carriesEnabled,
+            initialHandicapPercentage: group.handicapPercentage,
             initialRoundConfig: roundConfig,
             roundHistory: group.roundHistory,
             onExit: {
@@ -953,11 +970,18 @@ struct GroupsListView: View {
             onDeclineGroup: {
                 if let idx = groups.firstIndex(where: { $0.id == group.id }) {
                     groups[idx].archiveConcludedRound()
+                    NotificationCenter.default.post(name: .didLocallyArchiveRound, object: nil)
                 }
+            },
+            onPhaseChanged: { isInSetup in
+                coordinatorIsInSetup = isInSetup
             }
         )
         .ignoresSafeArea()
-        .transition(.move(edge: isLive ? .bottom : .trailing))
+        .transition(.asymmetric(
+            insertion: .move(edge: isLive ? .bottom : .trailing),
+            removal: .move(edge: coordinatorIsInSetup ? .trailing : (isLive ? .bottom : .trailing))
+        ))
         .zIndex(1)
     }
 
@@ -1462,6 +1486,7 @@ struct GroupsListView: View {
                 groups[idx].roundHistory.insert(active, at: 0)
                 groups[idx].activeRound = nil
             }
+            NotificationCenter.default.post(name: .didLocallyArchiveRound, object: nil)
         }
         completedGroupId = nil
         showConvertSetupSheet = false
@@ -2673,7 +2698,7 @@ struct SavedGroup: Identifiable, Equatable {
     }
     let id: UUID
     var name: String
-    let members: [Player]
+    var members: [Player]
     let lastPlayed: String?
     let creatorId: Int
     var lastCourse: SelectedCourse?

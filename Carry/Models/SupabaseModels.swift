@@ -199,63 +199,6 @@ struct RoundPlayerDTO: Codable, Identifiable {
     }
 }
 
-/// Invite with joined round + course + inviter profile data
-struct InviteDTO: Codable, Identifiable {
-    let id: UUID              // round_players.id
-    let roundId: UUID
-    let playerId: UUID
-    let status: String
-    let invitedBy: UUID?
-    let groupNum: Int
-    let round: InviteRoundDTO
-
-    enum CodingKeys: String, CodingKey {
-        case id
-        case roundId = "round_id"
-        case playerId = "player_id"
-        case status
-        case invitedBy = "invited_by"
-        case groupNum = "group_num"
-        case round = "rounds"
-    }
-}
-
-struct InviteRoundDTO: Codable {
-    let id: UUID
-    let courseId: UUID
-    let createdBy: UUID
-    let buyIn: Int
-    let gameType: String
-    let net: Bool
-    let carries: Bool
-    let outright: Bool
-    let status: String
-    let createdAt: Date?
-    let course: InviteCourseDTO
-
-    enum CodingKeys: String, CodingKey {
-        case id
-        case courseId = "course_id"
-        case createdBy = "created_by"
-        case buyIn = "buy_in"
-        case gameType = "game_type"
-        case net, carries, outright, status
-        case createdAt = "created_at"
-        case course = "courses"
-    }
-}
-
-struct InviteCourseDTO: Codable {
-    let id: UUID
-    let name: String
-    let clubName: String?
-
-    enum CodingKeys: String, CodingKey {
-        case id, name
-        case clubName = "club_name"
-    }
-}
-
 // MARK: - Score
 
 struct ScoreDTO: Codable, Identifiable {
@@ -426,6 +369,7 @@ struct SkinsGroupDTO: Codable, Identifiable {
     var lastTeeBoxHolesJson: String?  // per-hole par/hcp data, saved at course selection
     var winningsDisplay: String?  // 'gross' (default) or 'net' — how winnings are shown
     var todayDeselectedIds: [UUID]?  // profile UUIDs the creator swiped off today's tee sheet
+    var guestRosterJson: String?  // Quick Game between-round guest roster snapshot (JSON-encoded array of QuickGameGuestStorage.GuestSnapshot)
     let createdAt: Date?
     var updatedAt: Date?
 
@@ -471,6 +415,7 @@ struct SkinsGroupDTO: Codable, Identifiable {
         case lastTeeBoxHolesJson = "last_tee_box_holes_json"
         case winningsDisplay = "winnings_display"
         case todayDeselectedIds = "today_deselected_ids"
+        case guestRosterJson = "guest_roster_json"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
     }
@@ -550,6 +495,10 @@ struct SkinsGroupUpdate: Codable {
     var lastTeeBoxHolesJson: String?
     var winningsDisplay: String?
     var todayDeselectedIds: [UUID]?
+    /// Quick Game between-round guest roster snapshot. Null clears server-side.
+    /// JSON-encoded array of QuickGameGuestStorage.GuestSnapshot.
+    var guestRosterJson: String?
+    var clearGuestRosterJson: Bool = false  // when true, sends null for guest_roster_json column
 
     enum CodingKeys: String, CodingKey {
         case name
@@ -571,6 +520,7 @@ struct SkinsGroupUpdate: Codable {
         case lastTeeBoxHolesJson = "last_tee_box_holes_json"
         case winningsDisplay = "winnings_display"
         case todayDeselectedIds = "today_deselected_ids"
+        case guestRosterJson = "guest_roster_json"
     }
 
     func encode(to encoder: Encoder) throws {
@@ -606,6 +556,11 @@ struct SkinsGroupUpdate: Codable {
         if let lastTeeBoxHolesJson { try container.encode(lastTeeBoxHolesJson, forKey: .lastTeeBoxHolesJson) }
         if let winningsDisplay { try container.encode(winningsDisplay, forKey: .winningsDisplay) }
         if let todayDeselectedIds { try container.encode(todayDeselectedIds, forKey: .todayDeselectedIds) }
+        if let guestRosterJson {
+            try container.encode(guestRosterJson, forKey: .guestRosterJson)
+        } else if clearGuestRosterJson {
+            try container.encodeNil(forKey: .guestRosterJson)
+        }
     }
 }
 

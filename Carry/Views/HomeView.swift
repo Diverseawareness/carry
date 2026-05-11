@@ -273,27 +273,6 @@ struct HomeRound: Identifiable {
         demoGameDone,
     ]
 
-    static let demoInvited: [HomeRound] = [
-        HomeRound(
-            id: UUID(),
-            groupName: "Weekend Warriors",
-            courseName: "Balboa Park Golf Course",
-            players: Array(Player.allPlayers.prefix(4)),
-            status: .invited,
-            currentHole: 0,
-            totalHoles: 18,
-            buyIn: 100,
-            skinsWon: 0,
-            totalSkins: 18,
-            yourSkins: 0,
-            invitedBy: "Garret",
-            creatorId: 2,
-            startedAt: nil,
-            completedAt: nil,
-            scheduledDate: Calendar.current.date(byAdding: .day, value: 3, to: Date())
-        ),
-    ]
-
     static let demoRecent: [HomeRound] = [
         HomeRound(
             id: UUID(),
@@ -407,19 +386,17 @@ struct HomeView: View {
     @State private var showPhoneMigrationEdit = false
     @State private var phoneMigrationBannerDismissed: Bool = false
 
-    @State private var invitedRounds: [HomeRound] = []
-    @State private var pendingInvites: [InviteDTO] = []  // raw Supabase invites
     @State private var selectedRound: HomeRound?
+    /// Tracks whether the active RoundCoordinatorView is currently in its
+    /// setup phase (e.g., after a Restart Round). Drives the overlay's
+    /// dismiss-edge so post-Restart back-out slides horizontally (setup
+    /// convention) instead of vertically (scorecard convention).
+    @State private var coordinatorIsInSetup: Bool = false
     @State private var leaderboardRound: HomeRound?
     @State private var resultsRound: HomeRound?
     @State private var roundToLeave: HomeRound?
     @State private var roundToDelete: HomeRound?
     @State private var loadingQuipIndex: Int = 0
-    @State private var acceptingInviteId: UUID? = nil  // round ID currently being accepted
-    /// Invite the user was trying to accept when the paywall forced them to
-    /// subscribe first. Auto-accepted in the onChange(of: isPremium) handler
-    /// once the trial/subscription activates, so tapping Join once is enough.
-    @State private var pendingInviteAfterPaywall: HomeRound? = nil
 
     private let roundService = RoundService()
     @State private var homePoller: Timer?
@@ -646,7 +623,10 @@ struct HomeView: View {
                     initialMembers: round.players,
                     groupName: round.groupName,
                     currentUserId: authService.currentPlayerId,
+                    creatorId: round.creatorId,
+                    groupId: round.supabaseGroupId,
                     startInActiveMode: round.status == .active || round.status == .concluded,
+                    skipCourseSelection: true,
                     initialRoundConfig: Self.buildRoundConfig(from: round),
                     roundHistory: skinGameGroups.first(where: { $0.activeRound?.id == round.id || $0.concludedRound?.id == round.id })?.roundHistory ?? [],
                     onExit: {
@@ -681,14 +661,43 @@ struct HomeView: View {
                     },
                     isViewer: (round.status == .active || round.status == .concluded) && authService.currentPlayerId != (round.scorerPlayerId ?? round.creatorId) && authService.currentPlayerId != round.creatorId,
                     isQuickGame: skinGameGroups.first(where: { $0.activeRound?.id == round.id || $0.concludedRound?.id == round.id })?.isQuickGame ?? false,
+                    onCreateGroup: {
+                        // "Create Group" tapped from a Home-tab-entered Quick Game.
+                        // Mirror the Games-tab path: complete the round, dismiss
+                        // the overlay, switch to the Games tab, and ask
+                        // GroupsListView to open the convert sheet via AppRouter.
+                        guard let group = skinGameGroups.first(where: { $0.activeRound?.id == round.id || $0.concludedRound?.id == round.id }) else { return }
+                        if let activeOrConcluded = group.activeRound ?? group.concludedRound {
+                            Task {
+                                try? await RoundService().updateRoundStatus(roundId: activeOrConcluded.id, status: "completed")
+                            }
+                        }
+                        let groupId = group.id
+                        withAnimation(.spring(response: 0.45, dampingFraction: 0.9)) {
+                            selectedRound = nil
+                            selectedTab = .skinGames
+                        }
+                        // Hand off to GroupsListView once the user is on the
+                        // Games tab and the overlay has finished dismissing.
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) {
+                            appRouter.pendingConvertGroupId = groupId
+                        }
+                    },
                     onDeclineGroup: {
                         if let idx = skinGameGroups.firstIndex(where: { $0.activeRound?.id == round.id || $0.concludedRound?.id == round.id }) {
                             skinGameGroups[idx].archiveConcludedRound()
+                            NotificationCenter.default.post(name: .didLocallyArchiveRound, object: nil)
                         }
+                    },
+                    onPhaseChanged: { isInSetup in
+                        coordinatorIsInSetup = isInSetup
                     }
                 )
                 .ignoresSafeArea()
-                .transition(.move(edge: .bottom))
+                .transition(.asymmetric(
+                    insertion: .move(edge: .bottom),
+                    removal: .move(edge: coordinatorIsInSetup ? .trailing : .bottom)
+                ))
                 .zIndex(1)
             }
         }
@@ -697,15 +706,6 @@ struct HomeView: View {
         // Re-publishes on every body recomputation, so unmounting the view
         // (e.g. switching tabs) automatically clears the contribution.
         .preference(key: TabBarHiddenKey.self, value: selectedRound != nil)
-        .onChange(of: storeService.isPremium) { _, newValue in
-            // User completed the forced paywall (trial started or subscribed).
-            // Auto-accept the invite that triggered the paywall so they don't
-            // have to tap Join a second time.
-            if newValue, let pending = pendingInviteAfterPaywall {
-                pendingInviteAfterPaywall = nil
-                acceptInvite(pending)
-            }
-        }
         .sheet(item: $leaderboardRound) { round in
             let groupHistory = skinGameGroups.first(where: { $0.name == round.groupName })?.roundHistory ?? []
             LeaderboardSheet(round: round, groupRoundHistory: groupHistory)
@@ -830,16 +830,6 @@ struct HomeView: View {
             }
         }
         .onAppear {
-            // In dev mode with groups, seed demo invites for visual testing
-            #if DEBUG
-            if authService.currentUser == nil && !skinGameGroups.isEmpty && invitedRounds.isEmpty {
-                invitedRounds = HomeRound.demoInvited
-            }
-            #endif
-            // Fetch real invites from Supabase when authenticated
-            if authService.isAuthenticated, let userId = authService.currentUser?.id {
-                Task { await loadInvites(userId: userId) }
-            }
             startHomePoller()
             // Post-install bridge: did invite.html copy a URL to the
             // clipboard that we can surface as a one-tap banner?
@@ -948,8 +938,6 @@ struct HomeView: View {
 
     private func pollHomeData() async {
         guard authService.isAuthenticated, let userId = authService.currentUser?.id else { return }
-        // Poll invites
-        await loadInvites(userId: userId)
         // Poll groups (active rounds, deleted rounds, member changes, etc.)
         do {
             let groupService = GroupService()
@@ -968,62 +956,6 @@ struct HomeView: View {
             #if DEBUG
             print("[HomePoller] Failed to poll: \(error)")
             #endif
-        }
-    }
-
-    private func loadInvites(userId: UUID) async {
-        var allInvites: [HomeRound] = []
-        var allPendingInvites: [InviteDTO] = []
-
-        // Load round invites
-        do {
-            let result = try await roundService.loadPendingInviteRounds(userId: userId)
-            allPendingInvites = result.invites
-            allInvites.append(contentsOf: result.rounds)
-        } catch {
-            #if DEBUG
-            print("❌ Failed to load round invites: \(error)")
-            #endif
-        }
-
-        // Load group invites
-        do {
-            let groupService = GroupService()
-            let groupInvites = try await groupService.loadPendingGroupInvites(userId: userId)
-            for invite in groupInvites {
-                let homeRound = HomeRound(
-                    id: invite.membership.id,
-                    groupName: invite.group.name,
-                    courseName: invite.group.lastCourseName ?? "",
-                    players: invite.members,
-                    status: .groupInvite,
-                    currentHole: 0,
-                    totalHoles: 18,
-                    buyIn: Int(invite.group.buyIn),
-                    skinsWon: 0,
-                    totalSkins: 18,
-                    yourSkins: 0,
-                    invitedBy: invite.inviterName,
-                    creatorId: 0,
-                    startedAt: nil,
-                    completedAt: nil,
-                    scheduledDate: invite.group.scheduledDate
-                )
-                var mutableRound = homeRound
-                mutableRound.supabaseGroupId = invite.group.id
-                allInvites.append(mutableRound)
-            }
-        } catch {
-            #if DEBUG
-            print("❌ Failed to load group invites: \(error)")
-            #endif
-        }
-
-        await MainActor.run {
-            pendingInvites = allPendingInvites
-            withAnimation(.easeOut(duration: 0.25)) {
-                invitedRounds = allInvites
-            }
         }
     }
 
@@ -1125,96 +1057,6 @@ struct HomeView: View {
                         ToastManager.shared.error("This game might still be in setup. Try again in a minute.")
                     }
                 }
-            }
-        }
-    }
-
-    /// Accept an invite — update Supabase, add group locally, remove from invites.
-    private func acceptInvite(_ round: HomeRound, retryCount: Int = 0) {
-        acceptingInviteId = round.id
-        Task {
-            defer { Task { @MainActor in acceptingInviteId = nil } }
-            do {
-                if round.status == .groupInvite {
-                    // Accept the invite. Under the ephemeral-guest rule
-                    // (locked 2026-05-01), Skins Groups are Carry-only, so
-                    // there are no guest profiles to auto-claim against —
-                    // the prior auto-match-by-first-name block was removed.
-                    try await GroupService().acceptGroupInvite(membershipId: round.id)
-                    // Brief delay to let Supabase propagate the status change
-                    try? await Task.sleep(nanoseconds: 500_000_000)
-                    if let userId = authService.currentUser?.id {
-                        let refreshed = try await GroupService().loadGroups(userId: userId)
-                        await MainActor.run {
-                            skinGameGroups = refreshed
-                        }
-                    }
-                    await MainActor.run {
-                        withAnimation {
-                            invitedRounds.removeAll { $0.id == round.id }
-                            pendingInvites.removeAll { $0.id == round.id }
-                        }
-                        // Navigate to Games tab and open the group
-                        selectedTab = .skinGames
-                        if let groupId = round.supabaseGroupId {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                pendingActiveGroupId = groupId
-                            }
-                        }
-                    }
-                    ToastManager.shared.success("You joined \(round.groupName)!")
-                } else {
-                    // Round invite — use RoundService
-                    try await roundService.acceptInvite(roundPlayerId: round.id)
-                    if let userId = authService.currentUser?.id {
-                        let refreshed = try await GroupService().loadGroups(userId: userId)
-                        await MainActor.run {
-                            skinGameGroups = refreshed
-                        }
-                    }
-                    withAnimation {
-                        invitedRounds.removeAll { $0.id == round.id }
-                        pendingInvites.removeAll { $0.id == round.id }
-                        selectedTab = .skinGames
-                    }
-                    ToastManager.shared.success("You're in!")
-                }
-            } catch {
-                // Retry up to 2 times with a short delay (invite data may not be replicated yet)
-                if retryCount < 2 {
-                    try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5s
-                    await MainActor.run { acceptInvite(round, retryCount: retryCount + 1) }
-                    return
-                }
-                ToastManager.shared.error("Couldn't join group. Check your connection.")
-                #if DEBUG
-                print("❌ Failed to accept invite: \(error)")
-                #endif
-            }
-        }
-    }
-
-    /// Decline an invite — update Supabase and remove from list.
-    private func declineInvite(_ round: HomeRound) {
-        Task {
-            do {
-                if round.status == .groupInvite {
-                    // Group invite — use GroupService (membership ID stored in round.id)
-                    try await GroupService().declineGroupInvite(membershipId: round.id)
-                } else {
-                    // Round invite — use RoundService
-                    try await roundService.declineInvite(roundPlayerId: round.id)
-                }
-                withAnimation {
-                    invitedRounds.removeAll { $0.id == round.id }
-                    pendingInvites.removeAll { $0.id == round.id }
-                }
-                ToastManager.shared.success("Invite declined")
-            } catch {
-                #if DEBUG
-                print("❌ Failed to decline invite: \(error)")
-                #endif
-                ToastManager.shared.error("Couldn't decline invite")
             }
         }
     }
@@ -1660,148 +1502,6 @@ struct HomeView: View {
         .accessibilityLabel("\(round.groupName), \(round.courseName), \(round.holeLabel), \(round.isGameDone ? "Game done" : "Live")")
         .accessibilityHint(round.isGameDone ? "Shows final results" : "Opens live scorecard")
         .accessibilityAddTraits(.isButton)
-    }
-
-    // MARK: - Invite Card
-
-    private func inviteCard(_ round: HomeRound) -> some View {
-        VStack(spacing: 0) {
-            // Invited by (above group name)
-            if let inviter = round.invitedBy {
-                HStack {
-                    Text("\(inviter) invited you")
-                        .font(.carry.caption)
-                        .foregroundColor(Color.textTertiary)
-                    Spacer()
-                }
-                .padding(.bottom, 2)
-            }
-
-            // Group name + buy-in
-            HStack {
-                Text(round.groupName)
-                    .font(.carry.bodyLGBold)
-                    .foregroundColor(Color.pureBlack)
-
-                Spacer()
-
-                HStack(spacing: 5) {
-                    Text("$")
-                        .font(.carry.microSM)
-                        .foregroundColor(.white)
-                        .frame(width: 16, height: 16)
-                        .background(Circle().fill(Color.white.opacity(0.3)))
-                    Text("\(round.buyIn) Buy-In")
-                        .font(.carry.caption)
-                        .foregroundColor(.white)
-                }
-                .padding(.leading, 4)
-                .padding(.trailing, 10)
-                .padding(.vertical, 4)
-                .background(
-                    Capsule().fill(Color.goldMuted)
-                )
-            }
-
-            // Course name + scheduled tee time
-            HStack(spacing: 0) {
-                Text(round.courseName)
-                    .font(.carry.bodySM)
-                    .foregroundColor(Color.textTertiary)
-                Spacer()
-            }
-            .padding(.top, 6)
-
-            if let label = round.scheduledLabel {
-                HStack(spacing: 5) {
-                    Text(label)
-                        .font(.carry.bodySM)
-                        .foregroundColor(Color.textTertiary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, 4)
-                .padding(.bottom, 12)
-            }
-
-            // Player pills
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(round.players) { player in
-                        HStack(spacing: 6) {
-                            PlayerAvatar(player: player, size: 28)
-                            Text(player.shortName)
-                                .font(.carry.captionLG)
-                                .foregroundColor(Color.textPrimary)
-                                .lineLimit(1)
-                        }
-                        .padding(.horizontal, 11)
-                        .padding(.vertical, 6)
-                        .background(
-                            Capsule().fill(Color.bgSecondary)
-                        )
-                    }
-                }
-            }
-            .padding(.top, 8)
-
-            // Action buttons
-            VStack(spacing: 0) {
-                Button {
-                    // Force paywall before joining. New downloaders see "Try It
-                    // Free" (starts trial → grants Premium); lapsed users see
-                    // "Subscribe". Either path flips isPremium → true, and the
-                    // onChange handler auto-accepts the pending invite so the
-                    // user doesn't have to tap Join twice.
-                    if storeService.isPremium {
-                        acceptInvite(round)
-                    } else {
-                        pendingInviteAfterPaywall = round
-                        showPaywall = true
-                    }
-                } label: {
-                    Group {
-                        if acceptingInviteId == round.id {
-                            ProgressView()
-                                .tint(.white)
-                        } else {
-                            Text("Join Game")
-                                .font(.carry.bodySMBold)
-                        }
-                    }
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 44)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14)
-                            .fill(Color.textPrimary)
-                    )
-                }
-                .buttonStyle(.plain)
-                .disabled(acceptingInviteId == round.id)
-                .accessibilityLabel("Join \(round.groupName)")
-                .accessibilityHint("Accept invite and join the skins game")
-
-                Button {
-                    declineInvite(round)
-                } label: {
-                    Text("Decline")
-                        .font(.carry.bodySMSemibold)
-                        .foregroundColor(Color.textSecondary)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 44)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Decline invite from \(round.invitedBy ?? "unknown")")
-                .accessibilityHint("Decline the game invite")
-            }
-            .padding(.top, 14)
-        }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 20)
-                .fill(.white)
-                .shadow(color: .black.opacity(0.04), radius: 8, y: 2)
-        )
     }
 
     // MARK: - Recent Round Card
@@ -2340,7 +2040,11 @@ struct ResultsSheet: View {
                 }
                 .frame(maxWidth: .infinity)
 
-                if onShare != nil {
+                // Share is only meaningful for the Final Results state. On
+                // Pending Results the share sheet opens an empty card (the
+                // results aren't fully computed yet), so suppress the button
+                // entirely until isFinal. (2026-05-10 — was a UX dead-end.)
+                if isFinal, onShare != nil {
                     Button { onShare?() } label: {
                         Image(systemName: "square.and.arrow.up")
                             .font(Font.system(size: 16, weight: .semibold))

@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		552AF7443964484AA3D2F35A /* SkinConfettiBurst.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E4B1697B91D41F1A81D3762 /* SkinConfettiBurst.swift */; };
 		5FCAFE1A2B3C4D5E6F7E8901 /* PhoneInviteFinderSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FCAFE1A2B3C4D5E6F7E8902 /* PhoneInviteFinderSheet.swift */; };
+		600617DA2FB02A8500C1CD37 /* QuickGameGuestStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 600617D92FB02A8500C1CD37 /* QuickGameGuestStorage.swift */; };
 		602CE33D2F747A2F0028D0AF /* TeeTimePickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 602CE33C2F747A2F0028D0AF /* TeeTimePickerSheet.swift */; };
 		60385FDD2F76EC5C00FBF213 /* QuickStartSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60385FDC2F76EC5C00FBF213 /* QuickStartSheet.swift */; };
 		60385FDF2F76EC9B00FBF213 /* GuestProfileService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60385FDE2F76EC9B00FBF213 /* GuestProfileService.swift */; };
@@ -130,6 +131,7 @@
 
 /* Begin PBXFileReference section */
 		5FCAFE1A2B3C4D5E6F7E8902 /* PhoneInviteFinderSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneInviteFinderSheet.swift; sourceTree = "<group>"; };
+		600617D92FB02A8500C1CD37 /* QuickGameGuestStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickGameGuestStorage.swift; sourceTree = "<group>"; };
 		602CE33C2F747A2F0028D0AF /* TeeTimePickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeeTimePickerSheet.swift; sourceTree = "<group>"; };
 		60385FDC2F76EC5C00FBF213 /* QuickStartSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickStartSheet.swift; sourceTree = "<group>"; };
 		60385FDE2F76EC9B00FBF213 /* GuestProfileService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuestProfileService.swift; sourceTree = "<group>"; };
@@ -414,6 +416,7 @@
 		C10007 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				600617D92FB02A8500C1CD37 /* QuickGameGuestStorage.swift */,
 				609646682F8F6140002F3BA9 /* LiveActivityService.swift */,
 				60385FE22F78D12100FBF213 /* ShareCardRenderer.swift */,
 				60385FDE2F76EC9B00FBF213 /* GuestProfileService.swift */,
@@ -646,6 +649,7 @@
 				60385FE52F7A167800FBF213 /* SMSInviteSheet.swift in Sources */,
 				A10015 /* BottomBar.swift in Sources */,
 				60385FE32F78D12100FBF213 /* ShareCardRenderer.swift in Sources */,
+				600617DA2FB02A8500C1CD37 /* QuickGameGuestStorage.swift in Sources */,
 				M10002 /* MembershipRadioButton.swift in Sources */,
 				A10016 /* PlayerAvatar.swift in Sources */,
 				60385FDF2F76EC9B00FBF213 /* GuestProfileService.swift in Sources */,
@@ -777,7 +781,7 @@
 				CODE_SIGN_ENTITLEMENTS = Carry/Carry.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 79;
+				CURRENT_PROJECT_VERSION = 80;
 				INFOPLIST_FILE = Carry/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -786,7 +790,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.6;
+				MARKETING_VERSION = 1.0.7;
 				PRODUCT_BUNDLE_IDENTIFIER = com.diverseawareness.carry;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -810,7 +814,7 @@
 				GCC_WARN_UNDECLARED_SELECTOR = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.0.6;
+				MARKETING_VERSION = 1.0.7;
 				PRODUCT_BUNDLE_IDENTIFIER = com.diverseawareness.CarryTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -836,7 +840,7 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 79;
+				CURRENT_PROJECT_VERSION = 80;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = CarryWidgets/Info.plist;
@@ -848,7 +852,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.6;
+				MARKETING_VERSION = 1.0.7;
 				PRODUCT_BUNDLE_IDENTIFIER = com.diverseawareness.carry.CarryWidgets;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -876,7 +880,7 @@
 				GCC_WARN_UNDECLARED_SELECTOR = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.0.6;
+				MARKETING_VERSION = 1.0.7;
 				PRODUCT_BUNDLE_IDENTIFIER = com.diverseawareness.CarryTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -905,7 +909,7 @@
 				GCC_WARN_UNDECLARED_SELECTOR = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.0.6;
+				MARKETING_VERSION = 1.0.7;
 				PRODUCT_BUNDLE_IDENTIFIER = com.diverseawareness.CarryTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -931,7 +935,7 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 79;
+				CURRENT_PROJECT_VERSION = 80;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = CarryWidgets/Info.plist;
@@ -943,7 +947,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.6;
+				MARKETING_VERSION = 1.0.7;
 				PRODUCT_BUNDLE_IDENTIFIER = com.diverseawareness.carry.CarryWidgets;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -968,7 +972,7 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 79;
+				CURRENT_PROJECT_VERSION = 80;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = CarryWidgets/Info.plist;
@@ -980,7 +984,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.6;
+				MARKETING_VERSION = 1.0.7;
 				PRODUCT_BUNDLE_IDENTIFIER = com.diverseawareness.carry.CarryWidgets;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -1003,7 +1007,7 @@
 				CODE_SIGN_ENTITLEMENTS = Carry/Carry.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 79;
+				CURRENT_PROJECT_VERSION = 80;
 				INFOPLIST_FILE = Carry/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -1012,7 +1016,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.6;
+				MARKETING_VERSION = 1.0.7;
 				PRODUCT_BUNDLE_IDENTIFIER = com.diverseawareness.carry;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1031,7 +1035,7 @@
 				CODE_SIGN_ENTITLEMENTS = Carry/Carry.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 79;
+				CURRENT_PROJECT_VERSION = 80;
 				INFOPLIST_FILE = Carry/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -1040,7 +1044,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.6;
+				MARKETING_VERSION = 1.0.7;
 				PRODUCT_BUNDLE_IDENTIFIER = com.diverseawareness.carry;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";

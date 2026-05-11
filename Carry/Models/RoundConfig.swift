@@ -38,7 +38,7 @@ struct RoundConfig {
     let groups: [GroupConfig]
     let creatorId: Int?  // player ID of round creator (nil for legacy/demo)
     let groupName: String
-    let players: [Player]  // all players in this round
+    var players: [Player]  // all players in this round (mutable to allow guest profileId reconciliation at round-start; see RoundCoordinatorView.createSupabaseRound)
     var holes: [Hole]? = nil  // per-hole par/handicap from API (nil = use Hole.allHoles defaults)
 
     // Supabase IDs — nil in devMode, populated when round is created in Supabase

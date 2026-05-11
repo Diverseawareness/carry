@@ -43,4 +43,10 @@ class AppRouter: ObservableObject {
     /// Set when a "round started" push is tapped — opens the group's scorecard.
     @Published var pendingRoundGroupId: UUID? = nil
 
+    /// Set when "Create Group" is tapped from a Quick Game's final results
+    /// while the round was entered via the Home-tab Active Round card.
+    /// GroupsListView watches this to fire its convert flow once the user
+    /// lands on the Games tab. Cleared by the consumer.
+    @Published var pendingConvertGroupId: UUID? = nil
+
 }

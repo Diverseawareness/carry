@@ -11,6 +11,11 @@ struct ScorecardView: View {
     var onCourseChanged: ((SelectedCourse) -> Void)?
     var onCreateGroup: (() -> Void)?
     var onDeclineGroup: (() -> Void)?
+    /// Cancel-Round-as-restart: phase back to .setup without unmounting
+    /// the RoundCoordinator. Preserves Quick Game guest roster across
+    /// the cancel; falling through to onBack would force a server reload
+    /// and drop the in-memory guests.
+    var onCancelToSetup: (() -> Void)?
     var isQuickGame: Bool = false
     @StateObject private var viewModel: RoundViewModel
     @State private var showInput = false
@@ -32,6 +37,8 @@ struct ScorecardView: View {
     @State private var showGameEndedAlert = false
     // Generic failure alert for End Game network/server errors (offline, auth, etc.)
     @State private var showEndGameFailedAlert = false
+    // Read-only "Game Details" alert — shows course, tee box, index allowance
+    @State private var showGameDetailsAlert = false
     /// Set to a short status string while a destructive menu action (Cancel
     /// Round / End Game / End & Save Results) is in flight. Drives a full-
     /// screen blocking overlay so the user gets feedback that something's
@@ -62,7 +69,7 @@ struct ScorecardView: View {
 
     let currentUserId: Int
 
-    init(config: RoundConfig, onBack: (() -> Void)? = nil, onEditPlayers: (() -> Void)? = nil, onCourseChanged: ((SelectedCourse) -> Void)? = nil, onCreateGroup: (() -> Void)? = nil, onDeclineGroup: (() -> Void)? = nil, isQuickGame: Bool = false, currentUserId: Int = 1, demoScores: Bool = false, demoMode: RoundViewModel.DemoMode = .none, isViewer: Bool = false) {
+    init(config: RoundConfig, onBack: (() -> Void)? = nil, onEditPlayers: (() -> Void)? = nil, onCourseChanged: ((SelectedCourse) -> Void)? = nil, onCreateGroup: (() -> Void)? = nil, onDeclineGroup: (() -> Void)? = nil, onCancelToSetup: (() -> Void)? = nil, isQuickGame: Bool = false, currentUserId: Int = 1, demoScores: Bool = false, demoMode: RoundViewModel.DemoMode = .none, isViewer: Bool = false) {
         self.config = config
         // In "everyone scores" mode, nobody is a viewer — all players can enter scores
         self._isViewer = State(initialValue: config.scoringMode == .everyone ? false : isViewer)
@@ -71,6 +78,7 @@ struct ScorecardView: View {
         self.onCourseChanged = onCourseChanged
         self.onCreateGroup = onCreateGroup
         self.onDeclineGroup = onDeclineGroup
+        self.onCancelToSetup = onCancelToSetup
         self.isQuickGame = isQuickGame
         self.currentUserId = currentUserId
         let mode: RoundViewModel.DemoMode = demoScores ? .midGame : demoMode
@@ -96,12 +104,87 @@ struct ScorecardView: View {
         return (window.safeAreaInsets.top, window.safeAreaInsets.bottom)
     }
 
+    private var teeBoxLine: String {
+        if let tee = config.teeBox {
+            let rating = String(format: "%.1f", tee.courseRating)
+            return "\(tee.name) (\(rating)/\(tee.slopeRating), par \(tee.par))"
+        }
+        return "Simple handicap (no tee box)"
+    }
+
+    private var indexAllowancePct: Int {
+        Int((config.skinRules.handicapPercentage * 100).rounded())
+    }
+
+    /// iOS-alert-shaped custom dialog used for "Game Details" — needed so the
+    /// footer "*to make changes, restart game" can render at a smaller font
+    /// than the body. SwiftUI's `.alert` enforces uniform message text.
+    @ViewBuilder
+    private func gameDetailsDialog() -> some View {
+        ZStack {
+            Color.black.opacity(0.35)
+                .ignoresSafeArea()
+                .onTapGesture { showGameDetailsAlert = false }
+
+            VStack(spacing: 0) {
+                VStack(spacing: 14) {
+                    Text("Game Details")
+                        .font(.system(size: 19, weight: .semibold))
+                        .padding(.top, 20)
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        gameDetailRow(label: "Course", value: config.course)
+                        gameDetailRow(label: "Tee Box", value: teeBoxLine)
+                        gameDetailRow(label: "Index Allowance", value: "\(indexAllowancePct)%")
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 18)
+
+                    Text("*to make changes, restart game")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 4)
+                        .padding(.bottom, 16)
+                }
+
+                Divider()
+
+                Button {
+                    showGameDetailsAlert = false
+                } label: {
+                    Text("Done")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundColor(.blue)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 44)
+                }
+            }
+            .frame(width: 300)
+            .background(.regularMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+        }
+        .zIndex(300)
+        .transition(.opacity)
+    }
+
+    @ViewBuilder
+    private func gameDetailRow(label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.system(size: 17))
+                .foregroundColor(.primary)
+        }
+    }
+
     var body: some View {
         ZStack {
             GeometryReader { geo in
                 let insets = safeAreaInsets
                 let topPad = insets.top - 7
-                let collapsedBarH: CGFloat = (showRoundComplete && roundCompleteCollapsed) ? 90 : 0
+                let collapsedBarH: CGFloat = (showRoundComplete && roundCompleteCollapsed) ? 70 : 0
                 let contentH = UIScreen.main.bounds.height - topPad - insets.bottom - collapsedBarH
                 let stableSize = CGSize(width: geo.size.width, height: contentH)
                 let layout = LayoutMetrics(size: stableSize, playerCount: viewModel.groupPlayers.count)
@@ -115,9 +198,14 @@ struct ScorecardView: View {
                     .transition(.opacity)
                     .zIndex(200)
             }
+
+            if showGameDetailsAlert {
+                gameDetailsDialog()
+            }
         }
         .ignoresSafeArea(.container, edges: .top)
         .ignoresSafeArea(.keyboard)
+        .animation(.easeInOut(duration: 0.18), value: showGameDetailsAlert)
     }
 
     @ViewBuilder
@@ -213,23 +301,30 @@ struct ScorecardView: View {
             guard !events.isEmpty, activeToast == nil else { return }
             showNextToast()
         }
-        .alert("Cancel Round?", isPresented: $showCancelRoundAlert) {
+        .alert("Restart Round?", isPresented: $showCancelRoundAlert) {
             Button("Keep Playing", role: .cancel) { }
-            Button("Cancel Round", role: .destructive) {
+            Button("Restart Round", role: .destructive) {
                 Task {
-                    await MainActor.run { menuActionInFlight = "Cancelling round…" }
+                    await MainActor.run { menuActionInFlight = "Restarting round…" }
                     if let roundId = viewModel.config.supabaseRoundId {
                         try? await RoundService().deleteRound(roundId: roundId)
                     }
                     await MainActor.run {
                         menuActionInFlight = nil
-                        NotificationCenter.default.post(name: .didCancelRound, object: nil)
-                        onBack?()
+                        // Restart-in-place: preserves Quick Game guests + setup
+                        // state. Falls back to the old bounce-out path only when
+                        // the host didn't wire onCancelToSetup (debug previews).
+                        if let onCancelToSetup {
+                            onCancelToSetup()
+                        } else {
+                            NotificationCenter.default.post(name: .didCancelRound, object: nil)
+                            onBack?()
+                        }
                     }
                 }
             }
         } message: {
-            Text("This will delete the round and all scores. Your game setup will be preserved.")
+            Text("Scores will be discarded. You'll return to setup to adjust settings (handicap %, players, tee times) before restarting.")
         }
         .alert("End Game?", isPresented: $showEndGameAlert) {
             Button("Keep Playing", role: .cancel) { }
@@ -526,6 +621,26 @@ struct ScorecardView: View {
                 Menu {
                     let isRoundCreator = true
 
+                    // Read-only "Game Details" — top of menu. Lets the creator
+                    // sanity-check course / tee box / index allowance without
+                    // bouncing back to setup (which Restart Round does and is
+                    // a footgun mid-scores).
+                    //
+                    // Defer the alert toggle by ~0.25s so the SwiftUI Menu's
+                    // UIKit-level dismissal animation completes before the
+                    // dialog's dim overlay paints. Without this, the `...`
+                    // anchor button stays in iOS's menu-dismissal layer above
+                    // our ZStack and visibly peeks through the dim for ~1-2s.
+                    Button {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                            showGameDetailsAlert = true
+                        }
+                    } label: {
+                        Label("Game Details", systemImage: "info.circle")
+                    }
+
+                    Divider()
+
                     // Group Settings intentionally omitted mid-round — it flips the
                     // whole flow back to setup phase which is a footgun while scores
                     // exist. onEditPlayers prop kept for future lighter edit paths.
@@ -547,21 +662,21 @@ struct ScorecardView: View {
                         Button {
                             showCancelRoundAlert = true
                         } label: {
-                            Label("Cancel Round", systemImage: "trash")
+                            Label("Restart Round", systemImage: "arrow.counterclockwise")
                         }
 
                         Divider()
 
                         Button(role: .destructive) {
-                            showEndGameAlert = true
-                        } label: {
-                            Label("End Game", systemImage: "trash")
-                        }
-
-                        Button(role: .destructive) {
                             showEndGameSaveAlert = true
                         } label: {
                             Label("End Game & Save Results", systemImage: "checkmark.circle")
+                        }
+
+                        Button(role: .destructive) {
+                            showEndGameAlert = true
+                        } label: {
+                            Label("End Game", systemImage: "trash")
                         }
                     }
                 } label: {
@@ -970,10 +1085,26 @@ struct ScorecardView: View {
                     showPaywall = true
                     return
                 }
+                let isPendingEdit = showRoundComplete
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                     viewModel.enterScore(playerId: player.id, holeNum: hole, score: score)
                 }
                 dismiss()
+                // Pending Results state: a score edit invalidates all the
+                // derived math the user is currently looking at (skins,
+                // winnings, leaderboard). Surface a brief "Updating Scores…"
+                // overlay so the recalculation isn't silent. The @Published
+                // chain auto-recomputes everything in the background; this
+                // is just visual feedback. Auto-clear after 0.5s so the
+                // overlay doesn't linger.
+                if isPendingEdit {
+                    menuActionInFlight = "Updating Scores…"
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        if menuActionInFlight == "Updating Scores…" {
+                            menuActionInFlight = nil
+                        }
+                    }
+                }
             }
             let nextTarget = nextUnscoredTarget(after: player, hole: hole)
             let onScoreNext: ((Int) -> Void) = { score in
@@ -982,6 +1113,7 @@ struct ScorecardView: View {
                     showPaywall = true
                     return
                 }
+                let isPendingEdit = showRoundComplete
                 viewModel.enterScore(playerId: player.id, holeNum: hole, score: score)
                 if let (nextP, nextH) = nextTarget, nextH == hole {
                     // Same hole — rotate to next unscored player
@@ -991,6 +1123,15 @@ struct ScorecardView: View {
                 } else {
                     // All players scored this hole (or round complete) — dismiss
                     dismiss()
+                }
+                // Pending Results edit feedback — see onSelect for rationale.
+                if isPendingEdit {
+                    menuActionInFlight = "Updating Scores…"
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        if menuActionInFlight == "Updating Scores…" {
+                            menuActionInFlight = nil
+                        }
+                    }
                 }
             }
 
@@ -1021,7 +1162,7 @@ struct ScorecardView: View {
                         currentScore: existingScore,
                         onSelect: onSelect,
                         onScoreNext: onScoreNext,
-                        extraBottomPadding: roundCompleteCollapsed ? 88 : 0
+                        extraBottomPadding: roundCompleteCollapsed ? 68 : 0
                     )
                     .id(player.id)
                     .transition(.asymmetric(
@@ -1031,7 +1172,7 @@ struct ScorecardView: View {
                 }
                 .clipped()
                 // Fixed 62% of screen — matches Figma score sheet proportions
-                .frame(height: UIScreen.main.bounds.height * 0.62 + (roundCompleteCollapsed ? 90 : 0))
+                .frame(height: UIScreen.main.bounds.height * 0.62 + (roundCompleteCollapsed ? 70 : 0))
                 .offset(y: max(0, sheetDrag))
                 .gesture(
                     DragGesture()

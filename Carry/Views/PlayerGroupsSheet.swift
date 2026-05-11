@@ -62,6 +62,7 @@ struct PlayerGroupsSheet: View {
 
     // Context from parent (read-only)
     let currentUserId: Int
+    let creatorId: Int
     let supabaseGroupId: UUID?
     let isQuickGame: Bool
     let handicapPercentage: Double
@@ -420,7 +421,7 @@ struct PlayerGroupsSheet: View {
                             excludeProfileIds: excludedScorerIds(exceptGroup: groupIndex),
                             groupLabel: "Group \(groupIndex + 1)",
                             defaultColor: scorerColors[(groupIndex * 4) % scorerColors.count],
-                            readOnly: groupIndex == 0
+                            readOnly: groups[groupIndex].contains(where: { $0.id == creatorId })
                         )
                     }
                 }
@@ -772,6 +773,12 @@ struct PlayerGroupsSheet: View {
             set: { newValue in
                 guard let idx = groups[groupIndex].firstIndex(where: { $0.id == player.id }) else { return }
                 groups[groupIndex][idx].name = newValue
+                // Keep initials in sync with name. Server-side
+                // update_guest_profile RPC auto-derives initials from
+                // display_name, but the local snapshot + race guard read
+                // Player.initials directly — without this, the avatar bubble
+                // shows stale initials until the next refresh re-fetches.
+                groups[groupIndex][idx].initials = String(newValue.prefix(2)).uppercased()
             }
         )
     }
@@ -823,9 +830,13 @@ struct PlayerGroupsSheet: View {
                 // Creator is locked as scorer of whichever group they're in.
                 // Reject any attempt to reassign that slot via the scorer
                 // picker — the lock icon on the creator's row signals this
-                // isn't editable.
+                // isn't editable. Tracks the actual game creator (creatorId),
+                // not the logged-in user, so non-creator Carry users in the
+                // creator's group don't accidentally bypass the lock, and
+                // Score Keeper slots in groups the creator isn't in remain
+                // editable regardless of who's testing.
                 if groupIndex < groups.count,
-                   groups[groupIndex].contains(where: { $0.id == currentUserId }) {
+                   groups[groupIndex].contains(where: { $0.id == creatorId }) {
                     return
                 }
                 let oldValue = scorerSlots[groupIndex]
@@ -1140,9 +1151,12 @@ struct PlayerGroupsSheet: View {
         while scorerIDs.count > groups.count { scorerIDs.removeLast() }
         // Creator-locked-as-scorer invariant: the group the creator sits in
         // always has the creator as its scorer. Mirrors GroupManagerView's
-        // sync — the scorer slot for the creator's group is not editable.
-        for i in 0..<groups.count where groups[i].contains(where: { $0.id == currentUserId }) {
-            scorerIDs[i] = currentUserId
+        // sync (which uses `creatorId`) — the scorer slot for the creator's
+        // group is not editable. Using `creatorId` over `currentUserId`
+        // keeps the lock anchored to the actual game creator regardless of
+        // who's currently logged in.
+        for i in 0..<groups.count where groups[i].contains(where: { $0.id == creatorId }) {
+            scorerIDs[i] = creatorId
         }
     }
 
@@ -1435,13 +1449,34 @@ struct PlayerGroupsSheet: View {
             cleanGroups.append(groupPlayers)
         }
 
+        // Reconcile `allMembers` from `cleanGroups`. Edits in the sheet (name
+        // via guestNameBinding, handicap via the picker) only mutate
+        // `groups[i][j]` — `allMembers` is a separate @State. Without this
+        // reconciliation, `result.allMembers` arrives at the parent with
+        // stale name/handicap, and any caller diffing old-vs-new for
+        // server-persistence (e.g., update_guest_profile RPC in
+        // GroupManagerView's onSave) sees no change and skips the write.
+        // Skins payouts are handicap-weighted, so this silent gap caused
+        // wrong winnings until 2026-05-10.
+        let groupsById: [Int: Player] = Dictionary(
+            uniqueKeysWithValues: cleanGroups.flatMap { $0 }.map { ($0.id, $0) }
+        )
+        let reconciledAllMembers: [Player] = allMembers.map { existing in
+            guard let updated = groupsById[existing.id] else { return existing }
+            var merged = existing
+            merged.name = updated.name
+            merged.initials = updated.initials
+            merged.handicap = updated.handicap
+            return merged
+        }
+
         return PlayerGroupsResult(
             groups: cleanGroups,
             scorerIDs: scorerIDs,
             teeTimes: teeTimes,
             startingSides: startingSides,
             selectedTees: selectedTees,
-            allMembers: allMembers,
+            allMembers: reconciledAllMembers,
             selectedIDs: selectedIDs,
             nextGuestID: nextGuestID
         )

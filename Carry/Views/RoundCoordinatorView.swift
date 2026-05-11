@@ -12,6 +12,7 @@ struct RoundCoordinatorView: View {
     var onDeleteGroup: (() -> Void)?
     var onCreateGroup: (() -> Void)?
     var onDeclineGroup: (() -> Void)?
+    var onPhaseChanged: ((Bool) -> Void)?
     var startInActiveMode: Bool
     var skipCourseSelection: Bool
     var preselectedCourse: SelectedCourse?
@@ -23,6 +24,7 @@ struct RoundCoordinatorView: View {
     var initialRecurrence: GameRecurrence? = nil
     var initialBuyIn: Double
     var initialCarriesEnabled: Bool = false
+    var initialHandicapPercentage: Double = 1.0
     var initialRoundConfig: RoundConfig?
     var initialDemoMode: RoundViewModel.DemoMode
     var roundHistory: [HomeRound]
@@ -56,6 +58,7 @@ struct RoundCoordinatorView: View {
         initialRecurrence: GameRecurrence? = nil,
         initialBuyIn: Double = 0,
         initialCarriesEnabled: Bool = false,
+        initialHandicapPercentage: Double = 1.0,
         initialRoundConfig: RoundConfig? = nil,
         initialDemoMode: RoundViewModel.DemoMode = .none,
         roundHistory: [HomeRound] = [],
@@ -68,7 +71,8 @@ struct RoundCoordinatorView: View {
         showInviteCrewOnAppear: Bool = false,
         onGroupRefreshed: ((SavedGroup) -> Void)? = nil,
         onCreateGroup: (() -> Void)? = nil,
-        onDeclineGroup: (() -> Void)? = nil
+        onDeclineGroup: (() -> Void)? = nil,
+        onPhaseChanged: ((Bool) -> Void)? = nil  // Bool = isInSetupPhase. Lets parent overlays pick dismiss-edge based on current phase, not entry phase.
     ) {
         self.initialMembers = initialMembers
         self._groupName = State(initialValue: groupName)
@@ -86,6 +90,7 @@ struct RoundCoordinatorView: View {
         self.initialRecurrence = initialRecurrence
         self.initialBuyIn = initialBuyIn
         self.initialCarriesEnabled = initialCarriesEnabled
+        self.initialHandicapPercentage = initialHandicapPercentage
         self.initialRoundConfig = initialRoundConfig
         self.initialDemoMode = initialDemoMode
         self.roundHistory = roundHistory
@@ -99,8 +104,30 @@ struct RoundCoordinatorView: View {
         self.onGroupRefreshed = onGroupRefreshed
         self.onCreateGroup = onCreateGroup
         self.onDeclineGroup = onDeclineGroup
+        self.onPhaseChanged = onPhaseChanged
         // Determine starting phase and initial course
         self._selectedCourse = State(initialValue: preselectedCourse)
+        // Wiring guard (locked 2026-05-10): an existing-group entry MUST
+        // pass at least one of `skipCourseSelection`, `startInActiveMode`,
+        // or `initialRoundConfig`. Otherwise the coordinator launches into
+        // `.courseSelection` — a full-screen course search the user
+        // can only escape via the X button — even though the group already
+        // has all the context needed for setup. This was the root cause of
+        // the Home-tab Restart Round trap (2026-05-10). Force-fix in production
+        // by promoting `skipCourseSelection` to true; trap in DEBUG so the
+        // wiring mistake is caught at the call site instead of landing on
+        // users.
+        let effectiveSkipCourseSelection: Bool = {
+            if skipCourseSelection { return true }
+            if groupId != nil && initialRoundConfig == nil && !startInActiveMode {
+                #if DEBUG
+                assertionFailure("RoundCoordinatorView: existing-group entry (groupId != nil) must pass skipCourseSelection: true OR startInActiveMode: true OR initialRoundConfig. Forcing skipCourseSelection to avoid the courseSelection trap. See phase-transitions.md.")
+                #endif
+                print("[RoundCoordinator] WARNING: forcing skipCourseSelection=true — caller passed groupId without skipCourseSelection/startInActiveMode/initialRoundConfig")
+                return true
+            }
+            return false
+        }()
         if initialRoundConfig != nil {
             // Active round exists — start directly in scorecard with pre-built config
             self._phase = State(initialValue: .active)
@@ -109,7 +136,7 @@ struct RoundCoordinatorView: View {
         } else if startInActiveMode {
             self._phase = State(initialValue: .active)
             self._hasStartedRound = State(initialValue: true)
-        } else if skipCourseSelection {
+        } else if effectiveSkipCourseSelection {
             self._phase = State(initialValue: .setup)
         } else {
             self._phase = State(initialValue: .courseSelection)
@@ -119,6 +146,12 @@ struct RoundCoordinatorView: View {
     @State private var phase: Phase
     @State private var roundConfig: RoundConfig?
     @State private var roundCreationTask: Task<Void, Never>?
+    /// Captures the just-played roster (incl. Quick Game guests) when the
+    /// user taps Cancel Round on the scorecard. Falling back to the
+    /// statically-captured `initialMembers` would drop guests added during
+    /// setup or in QuickStartSheet, since the server roster doesn't store
+    /// ephemeral guests.
+    @State private var postCancelMembers: [Player]? = nil
     @State private var groups: [[Player]] = []
     @State private var startingSides: [String] = []
     @State private var groupName: String = "The Friday Skins"
@@ -155,23 +188,37 @@ struct RoundCoordinatorView: View {
                 .transition(.opacity)
 
             case .setup:
-                GroupManagerView(allMembers: initialMembers, selectedCourse: selectedCourse, onCourseChanged: { course in
+                GroupManagerView(allMembers: postCancelMembers ?? initialMembers, selectedCourse: selectedCourse, onCourseChanged: { course in
                     self.selectedCourse = course
                     self.onCourseSelected?(course)
-                }, onTeeTimeChanged: onTeeTimeChanged, onRecurrenceChanged: onRecurrenceChanged, initialTeeTime: initialTeeTime, initialTeeTimes: initialTeeTimes, initialBuyIn: initialBuyIn, initialRecurrence: initialRecurrence, initialCarriesEnabled: initialCarriesEnabled, groupName: groupName, currentUserId: currentUserId, creatorId: creatorId, isLiveRound: hasStartedRound, roundHistory: roundHistory, onLeaveGroup: onLeaveGroup, onDeleteGroup: onDeleteGroup, scheduledLabel: scheduledLabel, onBack: {
+                }, onTeeTimeChanged: onTeeTimeChanged, onRecurrenceChanged: onRecurrenceChanged, initialTeeTime: initialTeeTime, initialTeeTimes: initialTeeTimes, initialBuyIn: initialBuyIn, initialRecurrence: initialRecurrence, initialCarriesEnabled: initialCarriesEnabled, initialHandicapPercentage: initialHandicapPercentage, groupName: groupName, currentUserId: currentUserId, creatorId: creatorId, isLiveRound: hasStartedRound, roundHistory: roundHistory, onLeaveGroup: onLeaveGroup, onDeleteGroup: onDeleteGroup, scheduledLabel: scheduledLabel, onBack: {
                     if hasStartedRound {
                         // Return to scorecard without rebuilding config
                         withAnimation(.spring(response: 0.45, dampingFraction: 0.9)) {
                             phase = .active
                         }
-                    } else if skipCourseSelection {
-                        // Came from Skin Games tab — just exit
-                        onExit?()
                     } else {
-                        // Go back to course selection
-                        withAnimation(.easeInOut(duration: 0.3)) {
-                            phase = .courseSelection
-                        }
+                        // Architectural invariant (locked 2026-05-10): pressing
+                        // Back from the setup view always dismisses the
+                        // coordinator. It NEVER navigates to `.courseSelection`.
+                        //
+                        // Why: `.courseSelection` is only entered via the
+                        // constructor (and only when `initialRoundConfig` is nil
+                        // AND `startInActiveMode` is false AND `skipCourseSelection`
+                        // is false — a combination no production caller uses).
+                        // If a user wants to change the course mid-setup, the
+                        // in-setup sheet at GroupManagerView:5157 covers that
+                        // path without a phase transition. The previous
+                        // "fall back to courseSelection" branch was dead code
+                        // in well-formed callers, but became a TRAP whenever
+                        // any caller's prop wiring drifted (HomeView regression
+                        // 2026-05-10) — user lands on a full-screen course
+                        // search with no escape but the X button.
+                        //
+                        // See [bug-archive 2026-05-10 "Home-tab Quick Game
+                        // entry: Restart Round breaks drag + back navigation"]
+                        // and [phase-transitions.md].
+                        onExit?()
                     }
                 }, supabaseGroupId: groupId, isQuickGame: isQuickGame, showInviteCrewOnAppear: showInviteCrewOnAppear, onGroupRefreshed: onGroupRefreshed) { config in
                     var mutableConfig = config
@@ -298,6 +345,42 @@ struct RoundCoordinatorView: View {
                     // Creator declined — surface to parent so it can hide the
                     // Quick Game from the Games tab immediately (before async reload).
                     onDeclineGroup?()
+                }, onCancelToSetup: {
+                    // Restart-in-place. Order matters:
+                    //   1. Snapshot the roster BEFORE any state mutation —
+                    //      `roundConfig?.players` is the only source of guests
+                    //      after the round is deleted.
+                    //   2. Animate the phase change FIRST. Mutating
+                    //      `roundConfig = nil` before the phase swap leaves
+                    //      one frame where (phase=.active, roundConfig=nil)
+                    //      renders the `.active` branch's fallback "Setting
+                    //      up round..." view, whose onAppear schedules the
+                    //      offline-timeout that surfaces a misleading
+                    //      "Couldn't connect — starting offline" toast.
+                    //      Following `onEditPlayers`'s established pattern
+                    //      (phase change only, no roundConfig mutation
+                    //      inside the closure) keeps the transition clean.
+                    //   3. Defer the cleanup to the next runloop. By then
+                    //      `phase` has propagated and the `.active` branch
+                    //      is no longer evaluated, so clearing `roundConfig`
+                    //      can't trigger the fallback view.
+                    if let players = roundConfig?.players {
+                        postCancelMembers = players
+                    }
+                    withAnimation(.spring(response: 0.45, dampingFraction: 0.9)) {
+                        phase = .setup
+                    }
+                    DispatchQueue.main.async {
+                        hasStartedRound = false
+                        roundConfig = nil
+                        roundCreationTask?.cancel()
+                        roundCreationTask = nil
+                        showFlag = false
+                        showTitle = false
+                        showDetails = false
+                        showStats = false
+                        pulseFlag = false
+                    }
                 }, isQuickGame: isQuickGame, currentUserId: currentUserId, demoMode: initialDemoMode, isViewer: isViewer)
                 .transition(.move(edge: .bottom))
                 } else {
@@ -332,6 +415,19 @@ struct RoundCoordinatorView: View {
             } // end if initialMembers.isEmpty else
         }
         .animation(.easeInOut(duration: 0.4), value: phase)
+        .onChange(of: phase) { _, newPhase in
+            // Surface "is in setup phase" to parent overlays so they can pick
+            // the right dismiss-edge for the wrapper transition. Without this,
+            // a parent that opened the overlay with a vertical entry (because
+            // the round was active) would also dismiss vertically post-Restart-
+            // Round — even though the user is now in setup, where horizontal
+            // is the convention. (Locked 2026-05-10.)
+            onPhaseChanged?(newPhase == .setup)
+        }
+        .onAppear {
+            // Initial state — fire so parent can set its baseline.
+            onPhaseChanged?(phase == .setup)
+        }
     }
 
     // MARK: - Supabase Round Creation
@@ -375,11 +471,122 @@ struct RoundCoordinatorView: View {
             }
         }
 
-        // 3. Map players to Supabase UUIDs with group numbers
+        // 3a. Reconcile guest profiles. Per the ephemeral-guest invariant
+        // ([guest-lifecycle.md]), guest profiles only exist for the lifetime
+        // of a round. After Restart Round / End Game / End-and-Save / convert,
+        // `delete_quick_game_guests` deletes them server-side, leaving the
+        // local Player.profileId pointing at a non-existent row. If we use
+        // those stale profileIds when creating `round_players`, the new
+        // round renders all guests as "Guest" + 0.0 (the wiped-guest
+        // fallback in `buildHomeRound`) because the profile fetch comes
+        // back empty. Fix: at every round-start, check which guests'
+        // profileIds still exist server-side. For any that don't, recreate
+        // fresh guest profiles via `createGuestProfiles` and remap the
+        // local Player.profileId before inserting round_players. (Bug 2026-05-10.)
+        var configForRound = config
+        let guestPlayers = configForRound.players.enumerated().compactMap { (idx, p) -> (idx: Int, player: Player)? in
+            guard p.isGuest, !p.name.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+            return (idx, p)
+        }
+        if !guestPlayers.isEmpty {
+            let candidateIds = guestPlayers.compactMap(\.player.profileId)
+            // Find which candidate ids actually exist server-side as guest profiles.
+            let existingIds: Set<UUID> = await {
+                guard !candidateIds.isEmpty else { return [] }
+                let dtos: [ProfileDTO] = (try? await SupabaseManager.shared.client
+                    .from("profiles")
+                    .select("id")
+                    .in("id", values: candidateIds.map(\.uuidString))
+                    .eq("is_guest", value: true)
+                    .execute()
+                    .value) ?? []
+                return Set(dtos.map(\.id))
+            }()
+            let missing = guestPlayers.filter { entry in
+                guard let pid = entry.player.profileId else { return true }
+                return !existingIds.contains(pid)
+            }
+            if !missing.isEmpty {
+                // Pull canonical names/handicaps from the QuickGameGuestStorage
+                // snapshot (matched by profileId, falling back to id). The
+                // in-memory roster's `name` may already be "Guest" if a prior
+                // `buildHomeRound` wiped-fallback corrupted it (see
+                // GroupService.swift:1599). The snapshot preserves the
+                // user-typed names from the original Quick Start sheet.
+                let snapshotById: [Int: Player] = {
+                    guard let gid = configForRound.supabaseGroupId else { return [:] }
+                    let loaded = QuickGameGuestStorage.load(groupId: gid)
+                    return Dictionary(uniqueKeysWithValues: loaded.map { ($0.id, $0) })
+                }()
+                let snapshotByProfileId: [UUID: Player] = {
+                    guard let gid = configForRound.supabaseGroupId else { return [:] }
+                    let loaded = QuickGameGuestStorage.load(groupId: gid)
+                    return Dictionary(loaded.compactMap { p in p.profileId.map { ($0, p) } }, uniquingKeysWith: { a, _ in a })
+                }()
+                func canonicalName(for entry: (idx: Int, player: Player)) -> String {
+                    if let pid = entry.player.profileId, let snap = snapshotByProfileId[pid], !snap.name.trimmingCharacters(in: .whitespaces).isEmpty, snap.name != "Guest" {
+                        return snap.name
+                    }
+                    if let snap = snapshotById[entry.player.id], !snap.name.trimmingCharacters(in: .whitespaces).isEmpty, snap.name != "Guest" {
+                        return snap.name
+                    }
+                    return entry.player.name
+                }
+                func canonicalHandicap(for entry: (idx: Int, player: Player)) -> Double {
+                    if let pid = entry.player.profileId, let snap = snapshotByProfileId[pid], snap.handicap != 0.0 {
+                        return snap.handicap
+                    }
+                    if let snap = snapshotById[entry.player.id], snap.handicap != 0.0 {
+                        return snap.handicap
+                    }
+                    return entry.player.handicap
+                }
+                #if DEBUG
+                print("[RoundCoordinator] \(missing.count) guest profile(s) missing — recreating before round_players insert: \(missing.map { canonicalName(for: $0) })")
+                #endif
+                do {
+                    let names = missing.map { canonicalName(for: $0) }
+                    let initials = missing.map(\.player.initials)
+                    let handicaps = missing.map { canonicalHandicap(for: $0) }
+                    let colors = missing.map(\.player.color)
+                    let newUUIDs = try await GuestProfileService().createGuestProfiles(
+                        names: names,
+                        initials: initials,
+                        handicaps: handicaps,
+                        colors: colors,
+                        creatorId: userId
+                    )
+                    guard newUUIDs.count == missing.count else {
+                        throw NSError(domain: "RoundCoordinator", code: 1, userInfo: [NSLocalizedDescriptionKey: "Guest profile recreate count mismatch: expected \(missing.count), got \(newUUIDs.count)"])
+                    }
+                    // Apply new profileIds + canonical name/handicap to configForRound.players
+                    var updatedPlayers = configForRound.players
+                    for (i, entry) in missing.enumerated() {
+                        var p = updatedPlayers[entry.idx]
+                        p.profileId = newUUIDs[i]
+                        p.name = names[i]
+                        p.handicap = handicaps[i]
+                        updatedPlayers[entry.idx] = p
+                    }
+                    configForRound.players = updatedPlayers
+                } catch {
+                    #if DEBUG
+                    print("[RoundCoordinator] Failed to recreate guest profiles: \(error)")
+                    #endif
+                    await MainActor.run {
+                        self.roundConfig = config
+                        ToastManager.shared.error("Couldn't set up guest players. Try again.")
+                    }
+                    return
+                }
+            }
+        }
+
+        // 3b. Map players to Supabase UUIDs with group numbers
         var playerTuples: [(userId: UUID, group: Int)] = []
-        for gc in config.groups {
+        for gc in configForRound.groups {
             for playerId in gc.playerIDs {
-                guard let player = config.players.first(where: { $0.id == playerId }),
+                guard let player = configForRound.players.first(where: { $0.id == playerId }),
                       let profileId = player.profileId else { continue }
                 playerTuples.append((userId: profileId, group: gc.id))
             }
@@ -401,20 +608,21 @@ struct RoundCoordinatorView: View {
                 courseId: courseId,
                 createdBy: userId,
                 teeBoxId: teeBoxId,
-                buyIn: config.buyIn,
-                net: config.skinRules.net,
-                carries: config.skinRules.carries,
-                outright: config.skinRules.outright,
-                handicapPercentage: config.skinRules.handicapPercentage,
-                groupId: config.supabaseGroupId,
-                scorerId: config.scorerProfileId ?? userId,
-                scoringMode: config.scoringMode.rawValue,
+                buyIn: configForRound.buyIn,
+                net: configForRound.skinRules.net,
+                carries: configForRound.skinRules.carries,
+                outright: configForRound.skinRules.outright,
+                handicapPercentage: configForRound.skinRules.handicapPercentage,
+                groupId: configForRound.supabaseGroupId,
+                scorerId: configForRound.scorerProfileId ?? userId,
+                scoringMode: configForRound.scoringMode.rawValue,
                 players: playerTuples
             )
             guard !Task.isCancelled else { return }
 
-            // Set roundConfig WITH the round ID so ScorecardView gets it at init
-            var configWithRoundId = config
+            // Set roundConfig WITH the round ID + any recreated guest profileIds
+            // so ScorecardView gets the up-to-date player list at init.
+            var configWithRoundId = configForRound
             configWithRoundId.supabaseRoundId = roundDTO.id
             await MainActor.run {
                 self.roundConfig = configWithRoundId
@@ -422,14 +630,14 @@ struct RoundCoordinatorView: View {
             #if DEBUG
             print("[RoundCoordinator] Round created in Supabase: \(roundDTO.id)")
             #endif
-            Analytics.roundStarted(groupName: config.groupName, playerCount: config.players.count, buyIn: config.buyIn, courseName: config.course)
+            Analytics.roundStarted(groupName: configForRound.groupName, playerCount: configForRound.players.count, buyIn: configForRound.buyIn, courseName: configForRound.course)
         } catch {
             guard !Task.isCancelled else { return }
             #if DEBUG
             print("[RoundCoordinator] Failed to create round: \(error)")
             #endif
             await MainActor.run {
-                self.roundConfig = config
+                self.roundConfig = configForRound
                 ToastManager.shared.error("Failed to create round")
             }
         }
@@ -560,24 +768,6 @@ struct RoundCoordinatorView: View {
                                 RoundedRectangle(cornerRadius: 12)
                                     .fill(Color.textPrimary)
                             )
-                    }
-
-                    // Back to groups
-                    Button {
-                        showFlag = false
-                        showTitle = false
-                        showDetails = false
-                        showStats = false
-                        pulseFlag = false
-                        withAnimation(.spring(response: 0.45, dampingFraction: 0.9)) {
-                            phase = .setup
-                        }
-                    } label: {
-                        Text("Back to Groups")
-                            .font(.carry.bodySM)
-                            .foregroundColor(Color.textPrimary.opacity(0.4))
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 52)
                     }
                 }
                 .padding(.horizontal, 40)

@@ -137,6 +137,12 @@ extension NSNotification.Name {
     static let didTapRoundNotification = NSNotification.Name("didTapRoundNotification")
     static let didEndRound = NSNotification.Name("didEndRound")
     static let didCancelRound = NSNotification.Name("didCancelRound")
+    /// Posted when iOS locally archives a concludedRound into roundHistory
+    /// (e.g., user declined the convert prompt). Tells MainTabView to stamp
+    /// `skinGameGroupsLocallyMutatedAt` so the next poll's empty-result
+    /// guard kicks in. Without this, the Home tab showed empty state for
+    /// ~15s after the convert decline (Bug G).
+    static let didLocallyArchiveRound = NSNotification.Name("didLocallyArchiveRound")
     static let showNewGamePicker = NSNotification.Name("showNewGamePicker")
     /// Posted when the creator's device receives a memberJoined / memberDeclined
     /// push while the app is foregrounded. Object = group UUID. GroupManagerView

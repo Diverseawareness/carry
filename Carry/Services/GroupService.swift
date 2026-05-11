@@ -713,6 +713,20 @@ final class GroupService {
         try await updateGroup(groupId: groupId, update: update)
     }
 
+    /// Persist the Quick Game between-round guest roster snapshot.
+    /// Pass `nil` to clear server-side. RLS gates writes to the creator.
+    /// See `QuickGameGuestStorage` + the 2026-05-10 migration for the
+    /// rationale (durable across app delete + reinstall + multi-device).
+    func saveGuestRoster(groupId: UUID, json: String?) async throws {
+        let update: SkinsGroupUpdate
+        if let json {
+            update = SkinsGroupUpdate(guestRosterJson: json)
+        } else {
+            update = SkinsGroupUpdate(guestRosterJson: nil, clearGuestRosterJson: true)
+        }
+        try await updateGroup(groupId: groupId, update: update)
+    }
+
     /// Delete a group entirely — uses RPC to delete in FK-safe order.
     func deleteGroup(groupId: UUID) async throws {
         try await client.rpc("delete_group", params: ["gid": groupId.uuidString]).execute()
@@ -1244,6 +1258,41 @@ final class GroupService {
             }
         }
 
+        // Quick Game between-rounds backfill from `guest_roster_json` (added
+        // 2026-05-10). When no active/concluded/completed round exists, the
+        // round_players backfill above doesn't fire — but the QG may still
+        // have guests captured in the durable `skins_groups.guest_roster_json`
+        // column (post Bug E). Synthesize them so the Games tab card pills
+        // show the full roster across all QG states (active round, between
+        // rounds, post-cancel). This does NOT violate the Carry-only
+        // invariant: synthesized guests aren't written anywhere; they're
+        // only added to the in-memory `players` array used by SavedGroup.
+        // Carry-only `group_members` is untouched.
+        if (group.isQuickGame ?? false), backfillRoundDTO == nil,
+           let json = group.guestRosterJson,
+           let data = json.data(using: .utf8),
+           let snapshots = try? JSONDecoder().decode([QuickGameGuestStorage.GuestSnapshot].self, from: data) {
+            let existingIds = Set(players.map(\.id))
+            // Corruption-cycle filter (mirrors QuickGameGuestStorage.load):
+            // strip any "Guest" / whitespace-only entries that legacy server
+            // payloads may carry. Without this, a server snapshot from before
+            // the 2026-05-10 cycle-fix would resurrect "Guest"+0.0 into
+            // Games-tab pills. See guest-lifecycle.md §"Disease string rule".
+            let synthesized = snapshots
+                .filter { !existingIds.contains($0.id) }
+                .filter { snap in
+                    let trimmed = snap.name.trimmingCharacters(in: .whitespaces)
+                    return !trimmed.isEmpty && trimmed != "Guest"
+                }
+                .map(\.asPlayer)
+            players.append(contentsOf: synthesized)
+            #if DEBUG
+            if !synthesized.isEmpty {
+                print("[loadSingleGroup] QG between-rounds: synthesized \(synthesized.count) guests from guest_roster_json for \(group.name)")
+            }
+            #endif
+        }
+
         let activePlayers = players.filter { !$0.isPendingAccept }
 
         // Compute per-group tee times once so every round in this group can
@@ -1321,6 +1370,14 @@ final class GroupService {
         }
 
         let teeTimes = groupTeeTimes
+
+        // Hydrate the local Quick Game guest roster cache from server. The
+        // server is the source of truth (durable across app delete + reinstall
+        // + multi-device per the 2026-05-10 migration). UserDefaults is a
+        // fast-read cache and gets overwritten here.
+        if (group.isQuickGame ?? false) {
+            QuickGameGuestStorage.hydrateFromServer(groupId: group.id, json: group.guestRosterJson)
+        }
 
         return SavedGroup(
             id: group.id,
@@ -1543,13 +1600,48 @@ final class GroupService {
                 // termination (per the ephemeral-guest rule). Reconstruct a
                 // Player from the denormalized guest_display_name + guest_handicap
                 // fields so Round History keeps showing the guest by name.
+                //
+                // Lookup priority (long-term fix 2026-05-10):
+                //   1. round_players denormalized fields (rp.guestDisplayName /
+                //      rp.guestHandicap) — written by `delete_quick_game_guests`.
+                //   2. Server-side `guest_roster_json` snapshot, matched by
+                //      profileId — durable, cross-device. Used when (1) is NULL
+                //      (e.g., legacy round_players that were created before the
+                //      ephemeral-guest migration, or any data where the
+                //      denormalize step didn't run).
+                //   3. Literal "Guest" + 0.0 fallback — last resort. Once seen,
+                //      this string can corrupt the local snapshot if it lands
+                //      in `Player.name`, so (1) and (2) MUST be prioritized.
+                //
+                // Without (2), corruption cycle was: NULL denormalized field →
+                // "Guest"+0.0 in iOS roster → user moves player → snapshot save
+                // captures "Guest"+0.0 → next reconciliation reads snapshot →
+                // creates new profile named "Guest" → permanent corruption.
                 let foundIds = Set(profiles.map(\.id))
                 let wipedRps = rpDTOs.filter {
                     missingIds.contains($0.playerId) && !foundIds.contains($0.playerId)
                 }
+                let snapshotByProfileId: [UUID: Player] = {
+                    guard let gid = supabaseGroupId else { return [:] }
+                    let loaded = QuickGameGuestStorage.load(groupId: gid)
+                    return Dictionary(loaded.compactMap { p in p.profileId.map { ($0, p) } }, uniquingKeysWith: { a, _ in a })
+                }()
                 for rp in wipedRps {
-                    let displayName = rp.guestDisplayName ?? "Guest"
-                    let handicap = rp.guestHandicap ?? 0.0
+                    let snapMatch = snapshotByProfileId[rp.playerId]
+                    let displayName: String = {
+                        if let n = rp.guestDisplayName, !n.trimmingCharacters(in: .whitespaces).isEmpty, n != "Guest" {
+                            return n
+                        }
+                        if let s = snapMatch, !s.name.trimmingCharacters(in: .whitespaces).isEmpty, s.name != "Guest" {
+                            return s.name
+                        }
+                        return rp.guestDisplayName ?? "Guest"
+                    }()
+                    let handicap: Double = {
+                        if let h = rp.guestHandicap { return h }
+                        if let s = snapMatch { return s.handicap }
+                        return 0.0
+                    }()
                     let player = Player(
                         id: Player.stableId(from: rp.playerId),
                         name: displayName,

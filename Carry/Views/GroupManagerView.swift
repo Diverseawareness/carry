@@ -98,6 +98,30 @@ struct GroupManagerView: View {
     /// recompute would stomp the user's edit. This stamp lets refresh
     /// skip the recompute branch for a short window after any local edit.
     @State private var teeTimesLastSavedAt: Date? = nil
+    /// Same pattern as `teeTimesLastSavedAt` — guards the refresh handler
+    /// from overwriting a just-saved handicap percentage with a server
+    /// snapshot that hasn't yet replicated the new value.
+    @State private var handicapPercentageLastSavedAt: Date? = nil
+    /// Same pattern again — guards drag-and-drop reorders. The
+    /// `.onChange(of: groups)` handler debounces 1s before persisting
+    /// `group_num`/`sort_order` to Supabase. The 30s polling refresh
+    /// rebuilds `groups[][]` authoritatively from server's `group_num`
+    /// (see refreshGroupData), so a refresh landing during the debounce
+    /// or replication window would stomp the user's drag. This stamp lets
+    /// refresh skip the rebuild for a short window after any local edit
+    /// AND patches the localized snapshot sent to the parent so the
+    /// re-mounted GroupManagerView preserves the new arrangement.
+    @State private var groupNumLastSavedAt: Date? = nil
+    /// Same pattern (6th instance) — guards guest profile edits (name +
+    /// handicap) made via PlayerGroupsSheet. The save handler fires async
+    /// UPDATEs via the `update_guest_profile` RPC for any guest whose name
+    /// or handicap changed; in the window before the write replicates back,
+    /// refreshGroupData would otherwise pull stale server values and stomp
+    /// the local edit. Stamped at the save site, consulted by refresh's
+    /// filteredFreshMembers patch to preserve local guest name+handicap for
+    /// an 8s window. Skins payouts are handicap-weighted, so silent
+    /// reversion = wrong winnings.
+    @State private var guestProfileEditsLastSavedAt: Date? = nil
     @State private var countdownText = ""  // updated every second by timer
     @State private var refreshTimer: Timer? = nil  // 30s auto-refresh polling
     @State private var isJoiningRound = false  // loading state for "Join Round" button
@@ -135,7 +159,7 @@ struct GroupManagerView: View {
     /// Only the group creator can manage settings, players and tee times.
     private var isCreator: Bool { currentUserId == creatorId }
 
-    init(allMembers: [Player], selectedCourse: SelectedCourse? = nil, onCourseChanged: ((SelectedCourse) -> Void)? = nil, onTeeTimeChanged: ((Date?) -> Void)? = nil, onRecurrenceChanged: ((GameRecurrence?) -> Void)? = nil, initialTeeTime: Date? = nil, initialTeeTimes: [Date?]? = nil, initialBuyIn: Double = 0, initialDate: Date? = nil, initialRecurrence: GameRecurrence? = nil, initialCarriesEnabled: Bool = false, preselected: Set<Int>? = nil, groupName: String = "The Friday Skins", currentUserId: Int = 1, creatorId: Int = 1, isLiveRound: Bool = false, roundStarted: Bool = false, roundHistory: [HomeRound] = [], onLeaveGroup: (() -> Void)? = nil, onDeleteGroup: (() -> Void)? = nil, scheduledLabel: String? = nil, onBack: (() -> Void)? = nil, supabaseGroupId: UUID? = nil, isQuickGame: Bool = false, showInviteCrewOnAppear: Bool = false, onGroupRefreshed: ((SavedGroup) -> Void)? = nil, onConfirm: @escaping (RoundConfig) -> Void) {
+    init(allMembers: [Player], selectedCourse: SelectedCourse? = nil, onCourseChanged: ((SelectedCourse) -> Void)? = nil, onTeeTimeChanged: ((Date?) -> Void)? = nil, onRecurrenceChanged: ((GameRecurrence?) -> Void)? = nil, initialTeeTime: Date? = nil, initialTeeTimes: [Date?]? = nil, initialBuyIn: Double = 0, initialDate: Date? = nil, initialRecurrence: GameRecurrence? = nil, initialCarriesEnabled: Bool = false, initialHandicapPercentage: Double = 1.0, preselected: Set<Int>? = nil, groupName: String = "The Friday Skins", currentUserId: Int = 1, creatorId: Int = 1, isLiveRound: Bool = false, roundStarted: Bool = false, roundHistory: [HomeRound] = [], onLeaveGroup: (() -> Void)? = nil, onDeleteGroup: (() -> Void)? = nil, scheduledLabel: String? = nil, onBack: (() -> Void)? = nil, supabaseGroupId: UUID? = nil, isQuickGame: Bool = false, showInviteCrewOnAppear: Bool = false, onGroupRefreshed: ((SavedGroup) -> Void)? = nil, onConfirm: @escaping (RoundConfig) -> Void) {
         self._allMembers = State(initialValue: allMembers)
         self._currentCourse = State(initialValue: selectedCourse)
         // Cache API holes so they survive Supabase refreshes that lose hole data
@@ -211,6 +235,7 @@ struct GroupManagerView: View {
         _selectedTees = State(initialValue: Array(repeating: "Combos", count: groupCount))
         _buyInText = State(initialValue: initialBuyIn > 0 ? "\(Int(initialBuyIn))" : "")
         _carriesEnabled = State(initialValue: initialCarriesEnabled)
+        _handicapPercentage = State(initialValue: initialHandicapPercentage)
         // Round date: use initialDate, or extract date from tee time, or default to today
         _roundDate = State(initialValue: initialDate ?? initialTeeTime ?? Date())
 
@@ -832,9 +857,60 @@ struct GroupManagerView: View {
                 )
 
                 // Filter out players that were just manually removed (refresh race condition)
-                let filteredFreshMembers = freshGroup.members.filter { !recentlyRemovedIds.contains($0.id) }
-                allMembers = filteredFreshMembers
-                let memberIds = Set(filteredFreshMembers.map(\.id))
+                var filteredFreshMembers = freshGroup.members.filter { !recentlyRemovedIds.contains($0.id) }
+                // Race guard (6th instance — see refresh-race-guards.md):
+                // if a guest profile edit (name or handicap) was saved in
+                // the last 8s, the RPC may not have replicated back yet.
+                // Preserve the local guest name + handicap for any fresh-
+                // member entry whose profileId matches a guest in our
+                // current allMembers. Without this, the just-edited values
+                // revert to the server's stale state. Quick Game only —
+                // Skins Groups don't allow guest profile edits via this
+                // path (Carry-only invariant).
+                let isGuestProfileEditsRecent = guestProfileEditsLastSavedAt.map { Date().timeIntervalSince($0) < 8 } ?? false
+                if isQuickGame, isGuestProfileEditsRecent {
+                    struct LocalGuestProfile {
+                        let name: String
+                        let initials: String
+                        let handicap: Double
+                    }
+                    let localGuestProfiles: [UUID: LocalGuestProfile] = Dictionary(
+                        uniqueKeysWithValues: allMembers
+                            .filter { $0.isGuest }
+                            .compactMap { p in
+                                p.profileId.map { ($0, LocalGuestProfile(name: p.name, initials: p.initials, handicap: p.handicap)) }
+                            }
+                    )
+                    filteredFreshMembers = filteredFreshMembers.map { fresh in
+                        guard fresh.isGuest,
+                              let pid = fresh.profileId,
+                              let local = localGuestProfiles[pid]
+                        else { return fresh }
+                        var patched = fresh
+                        if local.name != fresh.name { patched.name = local.name }
+                        if local.initials != fresh.initials { patched.initials = local.initials }
+                        if local.handicap != fresh.handicap { patched.handicap = local.handicap }
+                        return patched
+                    }
+                }
+                // Quick Game guests live in `round_players`, never in
+                // `group_members`, so `loadSingleGroup` returns them only
+                // while a round is active/concluded (per its backfill at
+                // GroupService:1199-1208). After Cancel Round (and during
+                // pre-round setup before round_players is written), the
+                // fresh server snapshot has no guests — but they're still
+                // valid in local @State. Re-merge them here so the 3s
+                // post-appear refresh doesn't wipe them. Skins Groups skip
+                // this branch (Carry-only invariant from 2026-05-01).
+                let preservedGuests: [Player]
+                if isQuickGame {
+                    let freshIds = Set(filteredFreshMembers.map(\.id))
+                    preservedGuests = allMembers.filter { $0.isGuest && !freshIds.contains($0.id) }
+                } else {
+                    preservedGuests = []
+                }
+                allMembers = filteredFreshMembers + preservedGuests
+                let memberIds = Set(allMembers.map(\.id))
 
                 // Preserve the user's playing roster across refreshes, but with
                 // a critical fix layered on top:
@@ -893,7 +969,11 @@ struct GroupManagerView: View {
                         }
                     }
 
-                    let maxGroupNum = filteredFreshMembers.map(\.group).max() ?? 1
+                    // Compute target group count from the union (server +
+                    // preserved guests) so a Quick Game group with only
+                    // guests still gets a tee-sheet slot.
+                    let rosterForRebuild = filteredFreshMembers + preservedGuests
+                    let maxGroupNum = rosterForRebuild.map(\.group).max() ?? 1
                     let targetCount = max(maxGroupNum, 1)
                     var rebuilt: [[Player]] = Array(repeating: [], count: targetCount)
                     // Exclude pending players from the tee sheet display — they
@@ -916,7 +996,7 @@ struct GroupManagerView: View {
                     if let serverScorers = freshGroup.scorerIds {
                         scorerIdSetLocal.formUnion(serverScorers)
                     }
-                    for fresh in filteredFreshMembers {
+                    for fresh in rosterForRebuild {
                         let isPending = fresh.isPendingInvite || fresh.isPendingAccept
                         let isAssignedScorer = scorerIdSetLocal.contains(fresh.id)
                         guard !isPending || isAssignedScorer else { continue }
@@ -929,10 +1009,22 @@ struct GroupManagerView: View {
                         let idx = max(0, min(fresh.group - 1, targetCount - 1))
                         rebuilt[idx].append(fresh)
                     }
-                    while rebuilt.last?.isEmpty == true && rebuilt.count > 1 {
-                        rebuilt.removeLast()
+                    // Guard the authoritative rebuild during the local-edit
+                    // window. Without this, a 30s poll firing within ~1-8s
+                    // after a drag would overwrite the user's arrangement
+                    // with the (still stale) server group_num. The newly-
+                    // accepted-scorer detection above is independent of the
+                    // rebuilt assignment, so toasts still fire.
+                    let recentGroupNumSave: Bool = {
+                        guard let at = groupNumLastSavedAt else { return false }
+                        return Date().timeIntervalSince(at) < 8
+                    }()
+                    if !recentGroupNumSave {
+                        while rebuilt.last?.isEmpty == true && rebuilt.count > 1 {
+                            rebuilt.removeLast()
+                        }
+                        groups = rebuilt
                     }
-                    groups = rebuilt
 
                     for name in newlyAcceptedScorers {
                         let first = name.components(separatedBy: " ").first ?? name
@@ -951,42 +1043,63 @@ struct GroupManagerView: View {
                     groups = safeGrouped
                 }
 
-                // Cross-session "new member joined" toast. The baseline is
-                // a per-group set of *membership row IDs* (not player UUIDs).
-                // Because `group_members.id` is regenerated on every insert,
-                // a user who leaves and rejoins gets a fresh row_id and
-                // fires the toast again — even if the creator's device
-                // never refreshed in the gap between leave and rejoin.
-                // A player-UUID baseline would have missed that edge case,
-                // since the UUID stays the same across leave/rejoin.
+                // Cross-session "new member joined" toast. Baseline is a
+                // per-group set of *playerId UUIDs* (not membership row IDs).
+                //
+                // Why playerId, not row id (changed 2026-05-10): `group_members`
+                // can have multiple rows for the same logical member —
+                // phone-invite reconciliation leaves the original `invited_phone`
+                // set on the active row, which sidesteps the partial unique
+                // index `group_members_unique_real_player`. `dedupeMembers`
+                // collapses duplicates client-side but its dictionary
+                // iteration is non-deterministic, so the chosen row's `id`
+                // can swap between refreshes for the same person → diff
+                // shows them as "new" → toast refires every poll, including
+                // delayed ones from the 30s timer that keeps running after
+                // navigation to scorecard.
+                //
+                // Trade-off: a leave-and-rejoin on the same device no longer
+                // re-fires the toast (the playerId UUID is unchanged across
+                // a fresh `group_members` insert). Acceptable — server push
+                // covers the more common cross-device case, and spurious
+                // refires were the worse user experience.
+                //
                 // On first visit no toast fires (baseline is established).
                 // Applies to both Skins Groups and Quick Games.
                 do {
-                    let seenKey = "seenActiveMemberRowIds_\(groupId.uuidString)"
-                    let currentRowIds = Set(
+                    let seenKey = "seenActiveMemberPlayerIds_\(groupId.uuidString)"
+                    let currentPlayerIds = Set(
                         activeMembershipRows
                             .filter { $0.status == "active" }
-                            .map { $0.id.uuidString }
+                            .map { $0.playerId.uuidString }
                     )
                     let previouslySeen = UserDefaults.standard.stringArray(forKey: seenKey).map(Set.init)
-                    if let prev = previouslySeen {
-                        let newlyJoinedRowIds = currentRowIds.subtracting(prev)
-                        // Map row IDs back to Player objects for the toast text.
-                        let newlyJoinedProfileIds = Set(
-                            activeMembershipRows
-                                .filter { newlyJoinedRowIds.contains($0.id.uuidString) }
-                                .map { $0.playerId }
-                        )
-                        let newlyJoinedPlayers = filteredFreshMembers.filter {
-                            guard let profileId = $0.profileId else { return false }
-                            return newlyJoinedProfileIds.contains(profileId)
+                    // Transient-empty guard (added 2026-05-10): if the fetch
+                    // returned no active rows AND we already have a non-empty
+                    // baseline, treat as a transient failure (network blip,
+                    // RLS hiccup, race) and SKIP both diff + save. Otherwise
+                    // the empty save would stomp the real baseline, and the
+                    // next successful refresh would fire toasts for every
+                    // existing member as if they "just joined". Members
+                    // realistically can't go from N → 0 in normal use; if
+                    // they truly all left, the next refresh will record it.
+                    if currentPlayerIds.isEmpty, let prev = previouslySeen, !prev.isEmpty {
+                        // skip — preserve baseline, no toast
+                    } else {
+                        if let prev = previouslySeen {
+                            let newlyJoinedProfileIdStrings = currentPlayerIds.subtracting(prev)
+                            let newlyJoinedProfileIds: Set<UUID> = Set(newlyJoinedProfileIdStrings.compactMap(UUID.init(uuidString:)))
+                            let newlyJoinedPlayers = filteredFreshMembers.filter {
+                                guard let profileId = $0.profileId else { return false }
+                                return newlyJoinedProfileIds.contains(profileId)
+                            }
+                            for player in newlyJoinedPlayers {
+                                let first = player.name.components(separatedBy: " ").first ?? player.name
+                                ToastManager.shared.success("\(first) joined — tap Manage to add to tee sheet")
+                            }
                         }
-                        for player in newlyJoinedPlayers {
-                            let first = player.name.components(separatedBy: " ").first ?? player.name
-                            ToastManager.shared.success("\(first) joined — tap Manage to add to tee sheet")
-                        }
+                        UserDefaults.standard.set(Array(currentPlayerIds), forKey: seenKey)
                     }
-                    UserDefaults.standard.set(Array(currentRowIds), forKey: seenKey)
                 }
 
                 let groupCount = max(groups.count, 1)
@@ -1128,11 +1241,72 @@ struct GroupManagerView: View {
                 // Sync winnings display preference
                 winningsDisplay = freshGroup.winningsDisplay
 
+                // Sync handicap allowance — picks up edits made on other devices.
+                // Skip when a local save is in flight (<8s ago); the server
+                // snapshot may not have replicated the new value yet, and
+                // clobbering local @State would revert the slider visually.
+                let recentHcSave: Bool = {
+                    guard let at = handicapPercentageLastSavedAt else { return false }
+                    return Date().timeIntervalSince(at) < 8
+                }()
+                if !recentHcSave {
+                    handicapPercentage = freshGroup.handicapPercentage
+                }
+
                 // Update round status
                 roundStarted = freshGroup.activeRound != nil || freshGroup.concludedRound != nil
 
-                // Notify parent so it can update its groups array
-                onGroupRefreshed?(freshGroup)
+                // Notify parent so it can update its groups array. Patch the
+                // snapshot so the parent's `groups[idx]` doesn't end up holding
+                // stale field values during the brief replication window after
+                // a local save.
+                var localized = freshGroup
+                if recentHcSave {
+                    localized.handicapPercentage = handicapPercentage
+                }
+                // Pills contract: `SavedGroup.members` pushed to parent MUST be
+                // 1:1 with the in-app roster. Two operations in order:
+                //
+                //   (a) Patch `.group` for every player visible in the local
+                //       tee-sheet `groups[][]` from local arrangement. Local
+                //       is ground truth for visible players regardless of
+                //       timing — if the refresh just rebuilt `groups` from
+                //       server (drag race-guard expired), local matches
+                //       server and the patch is a no-op; if the user has a
+                //       recent local edit (within 8s, race guard still
+                //       active), the patch overrides server's stale state.
+                //       Players not in local `groups[][]` (pending invitees,
+                //       deselected) keep their server group field.
+                //
+                //   (b) For QGs, append any local guests missing from
+                //       `localized.members`. Covers the server-write race
+                //       window post-edit where `guest_roster_json` hasn't
+                //       round-tripped yet.
+                //
+                // See [guest-lifecycle.md §"Games tab card pills — contract"].
+                var localGroupById: [Int: Int] = [:]
+                for (idx, group) in groups.enumerated() {
+                    for player in group {
+                        localGroupById[player.id] = idx + 1
+                    }
+                }
+                localized.members = freshGroup.members.map { m in
+                    if let g = localGroupById[m.id] {
+                        var patched = m
+                        patched.group = g
+                        return patched
+                    }
+                    return m
+                }
+                if isQuickGame {
+                    let memberIds = Set(localized.members.map(\.id))
+                    let localGuests = allMembers.filter { $0.isGuest && !memberIds.contains($0.id) }
+                    if !localGuests.isEmpty {
+                        localized.members.append(contentsOf: localGuests)
+                    }
+                }
+
+                onGroupRefreshed?(localized)
 
                 #if DEBUG
                 let activeCount = freshGroup.members.filter { !$0.isPendingAccept }.count
@@ -1623,10 +1797,25 @@ struct GroupManagerView: View {
                         }
                     } label: {
                         HStack(spacing: 10) {
-                            if canStartRound || isLiveRound {
-                                Image(systemName: "flag.fill")
-                                    .font(.carry.bodySMSemibold)
-                            }
+                            // Always render the icon to reserve layout space.
+                            // Toggle visibility via opacity so first paint matches
+                            // post-load state — prevents the icon-pops-in-after-text
+                            // visual bug when entering from Games tab where
+                            // `canStartRound`/`isLiveRound` flip true a frame after
+                            // first render. (Bug J, 2026-05-10.)
+                            //
+                            // `.animation(nil, value:)` opts the opacity out of
+                            // inherited animations from the drag-and-drop's
+                            // `withAnimation(.easeOut(0.2))` block. Without this,
+                            // mid-drag transient flips of `canStartRound` (e.g.
+                            // when source group temporarily has <2 players during
+                            // the move) would animate the flag fading in/out as a
+                            // visible flicker. (Bug J follow-up, 2026-05-10.)
+                            Image(systemName: "flag.fill")
+                                .font(.carry.bodySMSemibold)
+                                .opacity(canStartRound || isLiveRound ? 1 : 0)
+                                .animation(nil, value: canStartRound)
+                                .animation(nil, value: isLiveRound)
                             Text(startButtonLabel)
                                 .font(.carry.bodyLGSemibold)
                         }
@@ -1842,7 +2031,10 @@ struct GroupManagerView: View {
                     winningsDisplay = result.winningsDisplay
                     handicapPercentage = result.handicapPercentage
                     buyInText = result.buyInText
-                    // Persist name + buy-in + winnings display to Supabase
+                    // Stamp BEFORE the async write so any poll that fires
+                    // before server replication keeps local @State.
+                    handicapPercentageLastSavedAt = Date()
+                    // Persist name + buy-in + handicap + winnings display to Supabase
                     if let groupId = supabaseGroupId {
                         Task {
                             try? await GroupService().updateGroup(
@@ -1850,9 +2042,16 @@ struct GroupManagerView: View {
                                 update: SkinsGroupUpdate(
                                     name: result.groupName,
                                     buyIn: Double(result.buyInText) ?? 0,
+                                    handicapPercentage: result.handicapPercentage,
                                     winningsDisplay: result.winningsDisplay
                                 )
                             )
+                            // Re-fetch so the parent's `groups[idx]` (via
+                            // onGroupRefreshed) carries the new value. Without
+                            // this, exiting and re-entering the group quickly
+                            // re-mounts GroupManagerView from stale parent
+                            // state and reverts the slider visually.
+                            await refreshGroupData()
                         }
                     }
                     if let t = result.teeTime {
@@ -2022,11 +2221,26 @@ struct GroupManagerView: View {
                 initialSelectedIDs: selectedIDs,
                 initialNextGuestID: nextGuestID,
                 currentUserId: currentUserId,
+                creatorId: creatorId,
                 supabaseGroupId: supabaseGroupId,
                 isQuickGame: isQuickGame,
                 handicapPercentage: handicapPercentage,
                 currentCourse: currentCourse,
                 onSave: { result in
+                    // Snapshot OLD guest name + handicap before we overwrite allMembers,
+                    // so we can diff and persist any changes to profiles.{display_name,handicap}.
+                    struct OldGuestProfile {
+                        let name: String
+                        let handicap: Double
+                    }
+                    let oldGuestProfiles: [UUID: OldGuestProfile] = Dictionary(
+                        uniqueKeysWithValues: allMembers
+                            .filter { $0.isGuest }
+                            .compactMap { p in
+                                p.profileId.map { ($0, OldGuestProfile(name: p.name, handicap: p.handicap)) }
+                            }
+                    )
+
                     groups = result.groups
                     scorerIDs = result.scorerIDs
                     teeTimes = result.teeTimes
@@ -2044,6 +2258,65 @@ struct GroupManagerView: View {
                     // state from being stomped by the next 30s refresh before
                     // the server write has replicated back.
                     scorerIdsLastSavedAt = Date()
+                    // Stamp BEFORE the async profile-handicap writes so any
+                    // refresh landing during the replication window preserves
+                    // local guest handicaps (see refreshGroupData filtered-
+                    // FreshMembers patch). Skins math depends on handicap, so
+                    // silent reversion = wrong winnings (load-bearing).
+                    guestProfileEditsLastSavedAt = Date()
+                    // Persist Quick Game guests to UserDefaults — captures
+                    // any roster changes from PlayerGroupsSheet so they
+                    // survive app process death without an active round.
+                    if let groupId = supabaseGroupId {
+                        QuickGameGuestStorage.save(
+                            groupId: groupId,
+                            isQuickGame: isQuickGame,
+                            allRosterPlayers: allMembers + guests
+                        )
+                    }
+                    // Diff guest name + handicap and UPDATE profiles for any
+                    // that changed. RLS forbids direct profile UPDATEs from the
+                    // creator (auth.uid() = id), so we route through the
+                    // creator-authorized RPC update_guest_profile (migration
+                    // 20260510000001). Without this, the next refreshGroupData
+                    // would pull stale display_name + handicap from profiles
+                    // and stomp the local edit. Skins math depends on handicap
+                    // (load-bearing); name change is visible in pills/scorecard
+                    // and would silently revert without server-side persistence.
+                    struct GuestProfileEdit {
+                        let profileId: UUID
+                        let newName: String?
+                        let newHandicap: Double?
+                    }
+                    let guestEdits: [GuestProfileEdit] = result.allMembers.compactMap { p in
+                        guard p.isGuest, let pid = p.profileId, let old = oldGuestProfiles[pid] else { return nil }
+                        let nameChanged = old.name != p.name
+                        let hcChanged = old.handicap != p.handicap
+                        guard nameChanged || hcChanged else { return nil }
+                        return GuestProfileEdit(
+                            profileId: pid,
+                            newName: nameChanged ? p.name : nil,
+                            newHandicap: hcChanged ? p.handicap : nil
+                        )
+                    }
+                    if !guestEdits.isEmpty {
+                        Task {
+                            let svc = GuestProfileService()
+                            for edit in guestEdits {
+                                do {
+                                    try await svc.updateGuestProfile(
+                                        profileId: edit.profileId,
+                                        displayName: edit.newName,
+                                        handicap: edit.newHandicap
+                                    )
+                                } catch {
+                                    #if DEBUG
+                                    print("[GroupManager] Failed to update guest profile \(edit.profileId): \(error)")
+                                    #endif
+                                }
+                            }
+                        }
+                    }
                     onTeeTimeChanged?(teeTimes.first.flatMap { $0 })
                     syncTeeTimesToSupabase()
                     showPlayerGroups = false
@@ -2224,7 +2497,84 @@ struct GroupManagerView: View {
         } message: {
             Text("They'll be removed from this Quick Game. If they were the scorer, you'll need to assign someone else.")
         }
+        .onChange(of: isQuickGame) { _, newValue in
+            // Quick Game → Skins Group conversion just completed. Force an
+            // immediate refresh so the local @State sheds any guest entries
+            // it was preserving (refreshGroupData's `if isQuickGame` branch
+            // returns preservedGuests = [] now, so the next pull from server
+            // — which is Carry-only post-conversion — wins). Without this,
+            // the guests linger client-side until the next 30s tick.
+            //
+            // Also clear the separate `guests` @State (populated by Manage
+            // Members in setup phase). Phone invitees that were locally
+            // appended here also get cleared, but they're returned by the
+            // server's `loadSingleGroup` so they re-surface via `allMembers`
+            // on the same refresh — no double-removal of pending invites.
+            //
+            // And drop the UserDefaults guest snapshot — Skins Groups can't
+            // have guests by the architectural invariant locked 2026-05-01.
+            guard !newValue, let groupId = supabaseGroupId else { return }
+            guests.removeAll()
+            QuickGameGuestStorage.clear(groupId: groupId)
+            Task { await refreshGroupData() }
+        }
         .onAppear {
+            // Quick Game guest persistence: hydrate any locally-snapshotted
+            // guests before the first refresh fires. Quick Game guests live
+            // only in `round_players` server-side (architectural invariant);
+            // when the round isn't active (fresh QG pre-start, or post-Restart-
+            // Round) they have nowhere to live across app process death. The
+            // UserDefaults snapshot fills that gap. See QuickGameGuestStorage
+            // for the strategy + cleanup contracts.
+            //
+            // IMPORTANT: hydrate into `allMembers` (not the `guests` bucket).
+            // refreshGroupData's preservedGuests filter looks at allMembers;
+            // putting restored guests there means they survive the 3s post-
+            // appear refresh + the 30s polling refresh. Hydrating into the
+            // `guests` bucket instead would let the refresh's groups[][]
+            // rebuild silently drop them after a few seconds.
+            if isQuickGame, let groupId = supabaseGroupId {
+                let saved = QuickGameGuestStorage.load(groupId: groupId)
+                if !saved.isEmpty {
+                    // Override existing entries' fields from the saved
+                    // snapshot. Necessary because parent's `group.members`
+                    // (used for `initialMembers`) may carry stale
+                    // `Player.group` from before the user's last edit if the
+                    // server `guest_roster_json` write hadn't completed when
+                    // parent last refreshed. The saved snapshot is local
+                    // truth (UserDefaults written synchronously by
+                    // `QuickGameGuestStorage.save`).
+                    let savedById = Dictionary(uniqueKeysWithValues: saved.map { ($0.id, $0) })
+                    for i in allMembers.indices {
+                        if allMembers[i].isGuest, let s = savedById[allMembers[i].id] {
+                            allMembers[i].group = s.group
+                        }
+                    }
+                    for i in guests.indices {
+                        if let s = savedById[guests[i].id] {
+                            guests[i].group = s.group
+                        }
+                    }
+                    // Append any guests missing entirely
+                    let existingIds = Set(allMembers.map(\.id) + guests.map(\.id))
+                    let toRestore = saved.filter { !existingIds.contains($0.id) }
+                    if !toRestore.isEmpty {
+                        allMembers.append(contentsOf: toRestore)
+                        for p in toRestore { selectedIDs.insert(p.id) }
+                    }
+                    // Re-derive groups[][] from the now-correct Player.group
+                    // values across allMembers + guests.
+                    regroup()
+                }
+                // Also save current state — captures QuickStartSheet guests
+                // that arrived in `allMembers` via initialMembers and are
+                // not yet in the snapshot.
+                QuickGameGuestStorage.save(
+                    groupId: groupId,
+                    isQuickGame: true,
+                    allRosterPlayers: allMembers + guests
+                )
+            }
             // Fresh load on appear and start 30s polling
             if supabaseGroupId != nil {
                 // Quick Games: delay first refresh to let Supabase writes settle
@@ -2264,10 +2614,80 @@ struct GroupManagerView: View {
             stopDetailAutoRefresh()
         }
         .onChange(of: groups) { _, _ in
-            // Debounce: sync sort_order + group_num after user stops reordering
+            // Single source of truth contract for tee-group arrangement
+            // (locked 2026-05-10): `groups[][]` is canonical. Every player's
+            // `Player.group` field MUST equal its array index + 1. Mutation
+            // sites (drop handler, regroup, refresh rebuild, swap, etc.) only
+            // update `groups[][]` — they don't always update `Player.group`
+            // on the moved players. This handler is the canonical post-
+            // mutation reconciler:
+            //
+            //   Step 1 (this if block): if any player's `.group` doesn't
+            //   match its index, rewrite `groups` with corrected values and
+            //   early-return. SwiftUI re-fires .onChange with the corrected
+            //   value; on that re-fire, no rewrite is needed and we fall
+            //   through to step 2.
+            //
+            //   Step 2: mirror the now-correct arrangement into `allMembers`
+            //   and `guests`, persist the QG snapshot, schedule debounced
+            //   server sync.
+            //
+            // See [docs/architecture/group-formation-canonical.md] for the
+            // single-source-of-truth design + rationale.
+            var corrected = groups
+            var needsRewrite = false
+            for gi in corrected.indices {
+                for j in corrected[gi].indices {
+                    if corrected[gi][j].group != gi + 1 {
+                        corrected[gi][j].group = gi + 1
+                        needsRewrite = true
+                    }
+                }
+            }
+            if needsRewrite {
+                groups = corrected
+                return  // re-fire of .onChange runs step 2 with corrected groups
+            }
+
+            // Step 2: groups is now self-consistent. Run the mirror + persist.
+            groupNumLastSavedAt = Date()
+
+            // Mirror Player.group into allMembers and guests so consumers
+            // reading from those structures (refresh's preservedGuests
+            // filter, autoGroup on next remount, etc.) see the correct
+            // group_num for every player.
+            var groupById: [Int: Int] = [:]
+            for (gi, group) in groups.enumerated() {
+                for player in group {
+                    groupById[player.id] = gi + 1
+                }
+            }
+            for i in allMembers.indices {
+                if let g = groupById[allMembers[i].id] {
+                    allMembers[i].group = g
+                }
+            }
+            for i in guests.indices {
+                if let g = groupById[guests[i].id] {
+                    guests[i].group = g
+                }
+            }
+
+            // Persist the QG guest snapshot to UserDefaults (sync) + server
+            // `guest_roster_json` (debounced async). Survives app delete +
+            // reinstall and multi-device.
+            if isQuickGame, let groupId = supabaseGroupId {
+                QuickGameGuestStorage.save(
+                    groupId: groupId,
+                    isQuickGame: true,
+                    allRosterPlayers: allMembers
+                )
+            }
+
+            // Debounce server-side group_num sync.
             orderSyncTask?.cancel()
             orderSyncTask = Task {
-                try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
                 guard !Task.isCancelled else { return }
                 syncPlayerOrderToSupabase()
                 syncGroupNumsToSupabase()
@@ -4190,6 +4610,16 @@ struct GroupManagerView: View {
         showGuestEntry = false
 
         regroup()
+        // Persist the new guest roster so it survives app rebuilds /
+        // process death without an active round (round_players being the
+        // only server-side home for Quick Game guests).
+        if let groupId = supabaseGroupId {
+            QuickGameGuestStorage.save(
+                groupId: groupId,
+                isQuickGame: isQuickGame,
+                allRosterPlayers: allMembers + guests
+            )
+        }
         ToastManager.shared.success("\(guest.name) added to \(groupName)")
     }
 

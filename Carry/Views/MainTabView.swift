@@ -60,6 +60,15 @@ struct MainTabView: View {
     /// doesn't get spam-toasted for every group they're already in on first
     /// fetch — only surfaces additions that happen AFTER the initial load.
     @State private var didCompleteInitialGroupLoad: Bool = false
+    /// Stamp set when a local mutation to `skinGameGroups` happens that the
+    /// server may not have replicated yet (e.g., `archiveConcludedRound` on
+    /// convert-prompt decline). The 15s poll's empty-result handling reads
+    /// this — within 10s of a local mutation, refuse to overwrite a
+    /// non-empty list with a transient empty result from the server.
+    /// Same pattern as the 6 race-guard stamps in GroupManagerView. Without
+    /// this, the convert-decline flow showed an empty Home tab for ~15s.
+    /// 7th instance — see refresh-race-guards.md.
+    @State private var skinGameGroupsLocallyMutatedAt: Date? = nil
 
     private let groupService = GroupService()
 
@@ -170,13 +179,24 @@ struct MainTabView: View {
                         for groupId in myCreatedGroupIds {
                             guard let prev = skinGameGroups.first(where: { $0.id == groupId }),
                                   let fresh = groups.first(where: { $0.id == groupId }) else { continue }
+                            // Carry-only diff: this toast is the sender-side
+                            // signal for "a Carry user joined my group" (across
+                            // devices, in response to invite acceptance / phone
+                            // reconciliation). Guests are created BY the
+                            // sender, not joiners — including them here causes
+                            // spurious "X joined" toasts during drag-and-drop
+                            // when the snapshot's transient member-list shape
+                            // makes a guest appear "new" in the diff. The
+                            // `!$0.isGuest` filter eliminates the bug class
+                            // by restricting the comparison to Carry users.
+                            // Locked 2026-05-10.
                             let prevActiveProfileIds = Set(
                                 prev.members
-                                    .filter { !$0.isPendingAccept && !$0.isPendingInvite }
+                                    .filter { !$0.isPendingAccept && !$0.isPendingInvite && !$0.isGuest }
                                     .compactMap(\.profileId)
                             )
                             let freshActiveMembers = fresh.members.filter {
-                                !$0.isPendingAccept && !$0.isPendingInvite
+                                !$0.isPendingAccept && !$0.isPendingInvite && !$0.isGuest
                             }
                             for member in freshActiveMembers {
                                 guard let pid = member.profileId,
@@ -232,7 +252,23 @@ struct MainTabView: View {
                         }
                     } else {
                         pendingKickedGroupId = nil
-                        skinGameGroups = groups
+                        // Transient-empty guard: if the server returns an
+                        // empty list AND we have a recent local mutation
+                        // AND we currently have non-empty state, skip the
+                        // assignment. The server write may not have
+                        // replicated yet (e.g., convert-decline's
+                        // archiveConcludedRound just ran; the 'completed'
+                        // status flip may be in flight). Without this, the
+                        // Home tab showed an empty state for ~15s until
+                        // the next poll. Bug G fix, 2026-05-10.
+                        let isRecentLocalMutation = skinGameGroupsLocallyMutatedAt.map { Date().timeIntervalSince($0) < 10 } ?? false
+                        if groups.isEmpty && !skinGameGroups.isEmpty && isRecentLocalMutation {
+                            #if DEBUG
+                            print("[AutoRefresh] Skipping empty result — recent local mutation, treating as transient")
+                            #endif
+                        } else {
+                            skinGameGroups = groups
+                        }
                     }
                 } catch {
                     #if DEBUG
@@ -251,6 +287,9 @@ struct MainTabView: View {
         mainContentWithDataHandlers
             .onReceive(NotificationCenter.default.publisher(for: .didEndRound)) { _ in clearCacheAndReload() }
             .onReceive(NotificationCenter.default.publisher(for: .didCancelRound)) { _ in clearCacheAndReload() }
+            .onReceive(NotificationCenter.default.publisher(for: .didLocallyArchiveRound)) { _ in
+                skinGameGroupsLocallyMutatedAt = Date()
+            }
             .onChange(of: selectedTab) { handleTabChanged() }
             .onChange(of: scenePhase) { _, phase in handleScenePhaseChange(phase) }
             .onDisappear { refreshTimer?.invalidate(); refreshTimer = nil }

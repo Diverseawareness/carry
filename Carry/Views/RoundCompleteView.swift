@@ -128,9 +128,13 @@ struct RoundCompleteView: View {
                         )
                         .shadow(color: isCollapsed ? .black.opacity(0.09) : .clear, radius: 10, y: -2)
 
-                    // Plain white fill extending into bottom safe area
+                    // Plain white fill extending into bottom safe area.
+                    // Trimmed from 50 → 28 (2026-05-10) so the collapsed bar
+                    // sits low enough to not cover the score-input sheet's
+                    // Save / Score Next buttons when both are visible. Also
+                    // makes the always-collapsed state more compact.
                     Color.white
-                        .frame(height: 50)
+                        .frame(height: 28)
                 }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .gesture(sheetDragGesture)
@@ -165,12 +169,14 @@ struct RoundCompleteView: View {
 
     private var sheetContainer: some View {
         VStack(spacing: 0) {
-            // Drag handle
+            // Drag handle. Top padding trimmed when collapsed so the bar
+            // stays compact and doesn't overlap the score-input sheet's
+            // bottom buttons.
             Capsule()
                 .fill(Color.gridLine)
                 .frame(width: 36, height: 4)
-                .padding(.top, 10)
-                .padding(.bottom, isCollapsed ? 12 : 8)
+                .padding(.top, isCollapsed ? 6 : 10)
+                .padding(.bottom, isCollapsed ? 8 : 8)
                 .accessibilityHidden(true)
 
             if isCollapsed {
@@ -666,21 +672,47 @@ struct RoundCompleteView: View {
                 #endif
             }()
             if !pendingHoles.isEmpty {
-                // Still waiting on other groups — exit to Games tab but keep round active
-                Button {
-                    if let onExitRound { onExitRound() } else { onDismiss() }
-                } label: {
-                    Text("Done — Waiting on others")
-                        .font(Font.system(size: 20, weight: .semibold))
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 18)
-                        .background(
-                            RoundedRectangle(cornerRadius: 19)
-                                .fill(Color.textPrimary)
-                        )
+                // Pending state — other groups still scoring. Two actions:
+                //   Edit Scores: collapse the sheet so the user can tap a
+                //   score on the scorecard to edit (covers the "we noticed
+                //   a mistake while waiting" case). Existing edit path at
+                //   ScorecardView's onTapCell handler is already wired —
+                //   the gate `showRoundComplete && !roundCompleteCollapsed`
+                //   permits taps when collapsed=true.
+                //   Done: exit to Games tab. Round stays active.
+                HStack(spacing: 10) {
+                    Button {
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                            isCollapsed = true
+                        }
+                    } label: {
+                        Text("Edit Scores")
+                            .font(Font.system(size: 20, weight: .semibold))
+                            .foregroundColor(Color.textPrimary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 18)
+                            .background(
+                                RoundedRectangle(cornerRadius: 19)
+                                    .strokeBorder(Color.textPrimary, lineWidth: 1)
+                            )
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        if let onExitRound { onExitRound() } else { onDismiss() }
+                    } label: {
+                        Text("Done")
+                            .font(Font.system(size: 20, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 18)
+                            .background(
+                                RoundedRectangle(cornerRadius: 19)
+                                    .fill(Color.textPrimary)
+                            )
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             } else if !isCreator {
                 // Member view — all groups finished, results are final, but
                 // round-state transitions are creator-only (End & Save Results,
@@ -1099,7 +1131,7 @@ struct RoundStatsView: View {
                 Spacer()
 
                 Text(moneyText(money))
-                    .font(Font.system(size: 17, weight: .medium))
+                    .font(Font.system(size: 17, weight: .semibold))
                     .monospacedDigit()
                     .foregroundColor(
                         money > 0 ? Color.goldMuted

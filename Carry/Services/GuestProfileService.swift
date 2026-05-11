@@ -29,6 +29,30 @@ class GuestProfileService {
         }
     }
 
+    /// Update a guest profile's name / handicap. RLS forbids the creator from
+    /// directly UPDATEing a guest's profile row (`auth.uid() = id` check),
+    /// so we route through a SECURITY DEFINER RPC that re-checks
+    /// `created_by = auth.uid()`. See migration
+    /// 20260510000001_update_guest_profile_handicap.sql.
+    ///
+    /// Pass nil for fields not being updated. Without this call, guest
+    /// edits in PlayerGroupsSheet only mutated local @State + the
+    /// guest_roster_json snapshot — never `profiles.display_name` /
+    /// `profiles.handicap`. The next refresh stomped the local edit with
+    /// stale server state. Skins payouts are handicap-weighted, so silent
+    /// reversion of handicap = wrong winnings.
+    ///
+    /// Initials are auto-derived server-side from displayName when
+    /// displayName is non-nil (matches Player.initials convention).
+    func updateGuestProfile(profileId: UUID, displayName: String? = nil, handicap: Double? = nil) async throws {
+        var params: [String: AnyJSON] = [
+            "p_profile_id": .string(profileId.uuidString)
+        ]
+        if let displayName { params["p_display_name"] = .string(displayName) }
+        if let handicap { params["p_handicap"] = .double(handicap) }
+        _ = try await client.rpc("update_guest_profile", params: params).execute()
+    }
+
     /// Wipe all guest profiles tied to this Quick Game round. Called on every
     /// Quick Game termination path (skip / save / end / force-end / convert).
     /// Server-side denormalizes display_name + handicap onto round_players and
