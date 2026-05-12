@@ -42,7 +42,7 @@ struct DemoConvertSheet: View {
 
             // Title + body
             Text("Set up your weekly game?")
-                .font(.system(size: 24, weight: .bold))
+                .font(.carry.sheetTitleBold)
                 .foregroundColor(Color.textPrimary)
                 .multilineTextAlignment(.center)
                 .padding(.top, 20)

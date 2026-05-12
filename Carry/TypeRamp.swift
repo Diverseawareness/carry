@@ -27,6 +27,8 @@ struct CarryTypeRamp {
     let pageTitle  = Font.system(size: 28, weight: .semibold)
     /// 26pt semibold — sheet/modal titles ("Add Players", "Edit Score")
     let sheetTitle = Font.system(size: 26, weight: .semibold)
+    /// 26pt bold — sheet titles with extra weight (hero/onboarding sheets)
+    let sheetTitleBold = Font.system(size: 26, weight: .bold)
     /// 20pt semibold — section headers
     let sectionTitle = Font.system(size: 20, weight: .semibold)
 
