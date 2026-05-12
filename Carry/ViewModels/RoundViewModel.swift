@@ -551,6 +551,26 @@ class RoundViewModel: ObservableObject {
         ScoreStorage.shared.save(scores: scores, forKey: roundKey)
     }
 
+    /// Mark all current won/carried holes as already-celebrated/emitted so
+    /// subsequent scoring won't fire confetti or toasts for them. Used by
+    /// the Demo Round which seeds 15 pre-played holes - without this, the
+    /// first hole-16 tap calls checkForNewSkinWins and the dedup sets are
+    /// empty, so it floods toasts for every pre-seeded skin. Mirrors the
+    /// init-time logic at the bottom of init() but callable AFTER seeding
+    /// scores externally.
+    func markCurrentSkinsAsAlreadyCelebrated() {
+        let skins = calculateSkins()
+        for (holeNum, status) in skins {
+            if case .won = status {
+                celebratedSkinHoles.insert(holeNum)
+                emittedEventHoles.insert(holeNum)
+            }
+            if case .carried = status {
+                emittedCarryHoles.insert(holeNum)
+            }
+        }
+    }
+
     // MARK: - Supabase Realtime
 
     /// Subscribe to realtime score changes from other players/scorers.

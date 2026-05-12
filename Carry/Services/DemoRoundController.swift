@@ -71,6 +71,12 @@ enum DemoRoundController {
         // on hole 16 (the first unscored hole) instead of falling back to
         // hole 1.
         vm.activeHole = vm.computeActiveHole()
+        // Pre-mark all seeded holes as already-celebrated so the first
+        // hole-16 tap doesn't trigger a flood of toasts from holes 1-15
+        // (checkForNewSkinWins iterates ALL won/carried holes and emits
+        // events for any not yet in the dedup sets — without this, the
+        // user sees 6+ skin-won toasts the moment they tap into hole 16).
+        vm.markCurrentSkinsAsAlreadyCelebrated()
         return vm
     }
 
