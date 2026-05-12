@@ -89,6 +89,9 @@ struct RoundCompleteView: View {
     @State private var showShareSheet = false
     @State private var venmoIndex: Int = 0
     @State private var showPaywall = false
+    /// Demo Round end-of-round conversion sheet ("Want a weekly game like this?").
+    /// Presented when viewModel.config.isDemo is true and Save Results is tapped.
+    @State private var showDemoConvertSheet = false
 
     // MARK: - Body
 
@@ -162,6 +165,26 @@ struct RoundCompleteView: View {
                         onCreateGroup?()
                     }
                 }
+        }
+        .sheet(isPresented: $showDemoConvertSheet) {
+            DemoConvertSheet(
+                displayName: viewModel.allPlayers.first(where: { $0.id == DemoSeed.userId })?.name,
+                onAccept: {
+                    // Yes -> dismiss demo, fire onCreateGroup which routes to
+                    // the new-Skins-Group flow. Mark demo dismissed so the
+                    // card never re-renders.
+                    DemoRoundController.isDismissed = true
+                    showDemoConvertSheet = false
+                    onCreateGroup?()
+                    onDismiss()
+                },
+                onDecline: {
+                    // No thanks -> dismiss demo, return to Home empty state.
+                    DemoRoundController.isDismissed = true
+                    showDemoConvertSheet = false
+                    if let onExitRound { onExitRound() } else { onDismiss() }
+                }
+            )
         }
     }
 
@@ -752,6 +775,16 @@ struct RoundCompleteView: View {
                             async let advance: Void = { if let groupId { await GroupService().advanceScheduledDateIfRecurring(groupId: groupId) } }()
                             _ = await (statusUpdate, advance)
                         }
+                    }
+
+                    // Demo Round: present DemoConvertSheet instead of the
+                    // standard convert-QG-to-SG path. Sarah/Mike/Tom can't be
+                    // carried into a real group, so the demo gets its own
+                    // sheet that offers to start a fresh recurring Skins
+                    // Group with the user as solo host. See `demo-round` skill.
+                    if viewModel.config.isDemo {
+                        showDemoConvertSheet = true
+                        return
                     }
 
                     let playedFullRound = isQuickGame && !viewModel.forceCompleted

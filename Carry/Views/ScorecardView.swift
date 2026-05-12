@@ -1087,7 +1087,16 @@ struct ScorecardView: View {
                 }
                 let isPendingEdit = showRoundComplete
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                    viewModel.enterScore(playerId: player.id, holeNum: hole, score: score)
+                    // Demo Round: route the user's own tap through the controller
+                    // so opponents auto-fill per the script (holes 16-18). For
+                    // every other case (real round OR a demo opponent's row,
+                    // which the user can't tap on anyway because scoringMode
+                    // is .single and creator-locked), behave normally.
+                    if viewModel.config.isDemo && player.id == DemoSeed.userId {
+                        DemoRoundController.recordUserScore(hole: hole, score: score, viewModel: viewModel)
+                    } else {
+                        viewModel.enterScore(playerId: player.id, holeNum: hole, score: score)
+                    }
                 }
                 dismiss()
                 // Pending Results state: a score edit invalidates all the
