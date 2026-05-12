@@ -27,7 +27,7 @@ enum DemoSeed {
 
     // MARK: - Opponents (fixed across all users)
 
-    /// Ryan — the leader through hole 15. Low handicap, plays steady.
+    /// Ryan — the leader through hole 15. Low single-digit handicap.
     /// Avatar: demo_01 (user-provided face avatar; swap filename in
     /// `avatarImageName` below if you'd rather match a different photo).
     static let ryan = Player(
@@ -35,7 +35,7 @@ enum DemoSeed {
         name: "Ryan",
         initials: "R",
         color: "#E0457B",
-        handicap: 8.0,
+        handicap: 4.0,
         avatar: "⛳",
         group: 1,
         ghinNumber: nil,
@@ -43,14 +43,14 @@ enum DemoSeed {
         avatarImageName: "demo_01"
     )
 
-    /// Mike — mid-pack. Higher handicap, gets more strokes but uses them inconsistently.
+    /// Mike — mid-pack single-digit. Solid but inconsistent.
     /// Avatar: demo_02.
     static let mike = Player(
         id: mikeId,
         name: "Mike",
         initials: "M",
         color: "#3B82F6",
-        handicap: 18.0,
+        handicap: 7.0,
         avatar: "🏌️",
         group: 1,
         ghinNumber: nil,
@@ -58,14 +58,14 @@ enum DemoSeed {
         avatarImageName: "demo_02"
     )
 
-    /// Lisa — last place. High handicap, struggles even with the strokes.
+    /// Lisa — single-digit, but a slow start today.
     /// Avatar: demo_03.
     static let lisa = Player(
         id: lisaId,
         name: "Lisa",
         initials: "L",
         color: "#16A34A",
-        handicap: 22.0,
+        handicap: 5.0,
         avatar: "🍻",
         group: 1,
         ghinNumber: nil,
