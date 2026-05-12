@@ -121,6 +121,12 @@ struct GroupsListView: View {
             .onReceive(NotificationCenter.default.publisher(for: .showNewGamePicker)) { _ in
                 showNewGamePicker = true
             }
+            .onReceive(NotificationCenter.default.publisher(for: .showCreateSkinsGroup)) { _ in
+                // Direct route from the Demo Round Yes-tap - skip the QG/SG
+                // picker and open CreateGroupSheet immediately. After creation,
+                // GroupsListView lands the user in the new group's details.
+                showCreateGroup = true
+            }
             .onChange(of: appRouter.pendingConvertGroupId) { _, newValue in
                 // The Home-tab Active Round card routes "Create Group" through
                 // AppRouter so this view can fire its convert flow once the

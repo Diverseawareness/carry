@@ -146,9 +146,14 @@ extension NSNotification.Name {
     static let showNewGamePicker = NSNotification.Name("showNewGamePicker")
     /// Posted when the user taps "Yes" on the Demo Round convert sheet.
     /// HomeView listens, clears the demo overlay, switches to skinGames tab,
-    /// then forwards `.showNewGamePicker` so GroupsListView opens the new
-    /// Skins Group flow.
+    /// then forwards `.showCreateSkinsGroup` so GroupsListView opens the
+    /// Create Group sheet directly (bypassing the QG/SG picker — the demo
+    /// flow only converts into a recurring Skins Group).
     static let demoRoundAcceptedConvert = NSNotification.Name("demoRoundAcceptedConvert")
+    /// Forwarded from `.demoRoundAcceptedConvert`. GroupsListView listens
+    /// and sets `showCreateGroup = true` directly. Lands the user in the
+    /// new group's details after creation.
+    static let showCreateSkinsGroup = NSNotification.Name("showCreateSkinsGroup")
     /// Posted when the creator's device receives a memberJoined / memberDeclined
     /// push while the app is foregrounded. Object = group UUID. GroupManagerView
     /// listens to refresh its roster immediately instead of waiting for the 30s

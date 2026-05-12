@@ -759,13 +759,15 @@ struct HomeView: View {
         .onReceive(NotificationCenter.default.publisher(for: .demoRoundAcceptedConvert)) { _ in
             // Demo round Yes-tap: ScorecardView/RoundCompleteView already
             // dismissed themselves via onExitRound. Route to Games tab and
-            // forward the standard new-game-picker notification so the user
-            // lands directly in the New Skins Game flow.
+            // forward .showCreateSkinsGroup to open CreateGroupSheet directly
+            // (bypassing the QG/SG picker - we know they want a Skins Group).
+            // After they finish the sheet, GroupsListView lands them in the
+            // new group's details (where the coach marks will live).
             withAnimation(.spring(response: 0.45, dampingFraction: 0.9)) {
                 selectedTab = .skinGames
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                NotificationCenter.default.post(name: .showNewGamePicker, object: nil)
+                NotificationCenter.default.post(name: .showCreateSkinsGroup, object: nil)
             }
         }
         .sheet(item: $leaderboardRound) { round in
