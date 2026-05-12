@@ -170,20 +170,27 @@ struct RoundCompleteView: View {
             DemoConvertSheet(
                 displayName: viewModel.allPlayers.first(where: { $0.id == DemoSeed.userId })?.name,
                 onAccept: {
-                    // Yes -> mark demo dismissed, exit the demo (closes
-                    // RoundCompleteView + ScorecardView via onExitRound which
-                    // triggers HomeView's onBack chain to clear demoViewModel),
-                    // then post .demoRoundAcceptedConvert. HomeView listens,
-                    // switches to skinGames tab, and forwards .showNewGamePicker
+                    // Yes -> exit the demo (closes RoundCompleteView +
+                    // ScorecardView via onExitRound which triggers HomeView's
+                    // onBack chain to clear demoViewModel), then post
+                    // .demoRoundAcceptedConvert. HomeView listens, switches
+                    // to skinGames tab, and forwards .showCreateSkinsGroup
                     // so GroupsListView opens the new Skins Group flow.
-                    DemoRoundController.isDismissed = true
+                    //
+                    // NOTE: do NOT set DemoRoundController.isDismissed here.
+                    // The demo card persists on Home until the user explicitly
+                    // long-presses it. In production, accepting leads to a
+                    // real group which naturally hides the card via the
+                    // groupsEmpty gate. In DEBUG (groupsEmpty bypassed), the
+                    // card sticks around for re-testing.
                     showDemoConvertSheet = false
                     if let onExitRound { onExitRound() } else { onDismiss() }
                     NotificationCenter.default.post(name: .demoRoundAcceptedConvert, object: nil)
                 },
                 onDecline: {
-                    // No thanks -> dismiss demo, return to Home empty state.
-                    DemoRoundController.isDismissed = true
+                    // No thanks -> exit the demo back to Home. Card persists
+                    // (only long-press dismisses). User can re-enter or
+                    // long-press to remove.
                     showDemoConvertSheet = false
                     if let onExitRound { onExitRound() } else { onDismiss() }
                 }
