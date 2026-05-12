@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Carry — Invitee onboarding preview</title>
+<style>
+  :root {
+    --bg: #f1efe7;
+    --frame-dark: #1f2418;
+    --frame-light: #ffffff;
+    --mint: #b6e5a8;
+    --mint-deep: #94c987;
+    --avatar: #a7e1a4;
+    --ink: #14160e;
+    --muted: #9aa195;
+    --soft: #d4d8cf;
+    --grid: #e6e3d8;
+  }
+  * { box-sizing: border-box; -webkit-font-smoothing: antialiased; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    padding: 48px 24px 80px;
+    min-height: 100vh;
+  }
+  h1 {
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin: 0 0 4px;
+  }
+  .sub { color: var(--muted); font-size: 13px; margin: 0 0 28px; }
+
+  .section-label {
+    max-width: 1200px;
+    margin: 0 auto 12px;
+    font-size: 12px;
+    color: var(--muted);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 32px 20px;
+    max-width: 1200px;
+    margin: 0 auto 40px;
+  }
+  @media (max-width: 1100px) { .grid { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 820px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 540px) { .grid { grid-template-columns: 1fr; } }
+
+  .frame-wrap { display: flex; flex-direction: column; gap: 12px; align-items: stretch; }
+  .frame-wrap.dimmed { opacity: 0.45; }
+  .frame-label {
+    font-size: 12px;
+    color: var(--muted);
+    letter-spacing: 0.02em;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .badge {
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--soft);
+    color: var(--ink);
+    font-weight: 500;
+    letter-spacing: 0.02em;
+  }
+  .badge.skip { background: #f0e8d4; color: #6b5b2a; }
+  .badge.native { background: #d8e7f0; color: #2a5b6b; }
+
+  /* Phone frame */
+  .phone {
+    aspect-ratio: 9 / 19.5;
+    border-radius: 36px;
+    border: 2px solid var(--ink);
+    overflow: hidden;
+    position: relative;
+    background: var(--frame-light);
+    display: flex;
+    flex-direction: column;
+  }
+  .phone.dark { background: var(--frame-dark); color: #ecefe5; }
+  .phone .notch {
+    position: absolute;
+    top: 8px; left: 50%; transform: translateX(-50%);
+    width: 90px; height: 22px;
+    background: var(--ink);
+    border-radius: 12px;
+    z-index: 2;
+  }
+  .phone-inner {
+    flex: 1;
+    padding: 56px 24px 28px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Common bits */
+  .step { font-size: 13px; color: var(--muted); margin: 0 0 4px; }
+  .h2 { font-size: 26px; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 12px; line-height: 1.1; }
+  .body-copy { font-size: 14px; color: var(--muted); margin: 0; line-height: 1.4; }
+
+  .cta {
+    width: 100%;
+    padding: 16px;
+    border-radius: 999px;
+    background: var(--mint);
+    color: var(--ink);
+    border: none;
+    font: inherit;
+    font-weight: 600;
+    font-size: 15px;
+    text-align: center;
+    cursor: pointer;
+  }
+  .cta.white { background: #fff; }
+  .cta-stack { margin-top: auto; }
+  .ghost { text-align: center; color: rgba(255,255,255,0.55); font-size: 13px; margin-top: 12px; }
+  .ghost.dark { color: var(--muted); }
+
+  /* Avatar bubble */
+  .avatar {
+    width: 56px; height: 56px;
+    border-radius: 999px;
+    background: var(--avatar);
+    color: var(--ink);
+    font-size: 14px;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    letter-spacing: 0.04em;
+  }
+  .avatar.lg { width: 84px; height: 84px; font-size: 22px; }
+  .avatar.sm { width: 28px; height: 28px; font-size: 11px; }
+
+  /* Screen 01 */
+  .s01 .lead { font-size: 13px; color: rgba(236,239,229,0.55); margin: 0 0 64px; text-align: center; }
+  .s01 .invited-by { margin: 0 0 8px; color: rgba(236,239,229,0.6); font-size: 14px; text-align: center; }
+  .s01 .group-name { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 8px; text-align: center; }
+  .s01 .when { color: var(--mint); font-size: 14px; font-weight: 500; text-align: center; }
+  .s01 .hero { display: flex; flex-direction: column; align-items: center; flex: 1; justify-content: center; }
+
+  /* Apple sheet mock */
+  .apple-sheet {
+    background: rgba(31,36,24,0.92);
+    backdrop-filter: blur(6px);
+    color: #fff;
+    border-radius: 20px;
+    padding: 24px 18px;
+    margin: auto 0;
+    text-align: center;
+  }
+  .apple-sheet .app-icon {
+    width: 48px; height: 48px;
+    border-radius: 12px;
+    background: var(--ink);
+    color: var(--mint);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 18px;
+    margin-bottom: 12px;
+  }
+  .apple-sheet .title { font-size: 17px; font-weight: 600; margin: 0 0 4px; }
+  .apple-sheet .desc { font-size: 12px; color: rgba(255,255,255,0.65); margin: 0 0 16px; }
+  .apple-sheet .id-row {
+    background: rgba(255,255,255,0.08);
+    border-radius: 12px;
+    padding: 14px;
+    text-align: left;
+    font-size: 13px;
+    margin-bottom: 14px;
+  }
+  .apple-sheet .face-id {
+    margin-top: 8px;
+    color: rgba(255,255,255,0.65);
+    font-size: 12px;
+    display: flex; gap: 8px; align-items: center; justify-content: center;
+  }
+  .apple-sheet .face-id .glyph {
+    width: 18px; height: 18px;
+    border: 1.5px solid rgba(255,255,255,0.65);
+    border-radius: 4px;
+  }
+
+  /* Screen — phone confirm (deferred) */
+  .field {
+    width: 100%;
+    padding: 14px 16px;
+    border: 1.5px solid var(--ink);
+    border-radius: 12px;
+    background: transparent;
+    font: inherit;
+    font-size: 17px;
+    color: var(--ink);
+    margin: 24px 0 8px;
+  }
+  .field-hint { color: var(--muted); font-size: 13px; }
+
+  /* Screen — profile confirm (deferred) */
+  .s03 .center { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 24px 0 16px; }
+  .s03 .name { font-size: 22px; font-weight: 600; }
+  .s03 .meta { color: var(--muted); font-size: 14px; }
+
+  /* Screen 04 paywall */
+  .s04 .you-are-in { color: var(--mint); font-size: 13px; margin: 0 0 6px; }
+  .s04 .group-tag { font-size: 22px; font-weight: 600; margin: 0 0 16px; letter-spacing: -0.01em; }
+  .roster {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px;
+    padding: 12px;
+  }
+  .roster .row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 4px;
+  }
+  .roster .row .name { flex: 1; font-size: 14px; }
+  .roster .row .hc { font-size: 14px; color: rgba(236,239,229,0.7); }
+  .roster .row.me { color: var(--mint); }
+  .roster .row.me .hc { color: var(--mint); }
+  .roster .row + .row { border-top: 1px solid rgba(255,255,255,0.06); }
+  .s04 .meta-line { color: rgba(236,239,229,0.55); font-size: 13px; margin: 12px 0 0; }
+  .s04 .price-line { color: rgba(236,239,229,0.55); font-size: 12px; text-align: center; margin-top: 10px; }
+
+  /* Screen 05 home */
+  .home-tab .top { display: flex; justify-content: space-between; align-items: center; padding-bottom: 16px; }
+  .home-tab h3 { font-size: 26px; font-weight: 600; margin: 0; letter-spacing: -0.02em; }
+  .home-tab .card {
+    background: var(--frame-dark);
+    color: #ecefe5;
+    border-radius: 16px;
+    padding: 16px;
+    margin-top: 4px;
+  }
+  .home-tab .card .label { font-size: 13px; color: var(--mint); margin: 0 0 4px; }
+  .home-tab .card .big { font-size: 22px; font-weight: 600; margin: 0 0 6px; }
+  .home-tab .card .meta { color: rgba(236,239,229,0.6); font-size: 13px; margin: 0; }
+  .home-tab .ping { color: var(--muted); font-size: 13px; margin: 16px 0 0; }
+  .tab-bar {
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    padding: 12px 0 8px;
+    border-top: 1px solid var(--soft);
+    margin: auto -24px -28px;
+  }
+  .tab-bar .item {
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    font-size: 11px; color: var(--muted);
+  }
+  .tab-bar .item .glyph {
+    width: 18px; height: 18px; border-radius: 4px; background: var(--soft);
+  }
+  .tab-bar .item.active { color: var(--ink); }
+  .tab-bar .item.active .glyph { background: var(--ink); }
+
+  /* Notes block */
+  .summary {
+    max-width: 1200px;
+    margin: 0 auto;
+    background: #fff;
+    border: 1px solid var(--soft);
+    border-radius: 20px;
+    padding: 24px 28px;
+    color: var(--ink);
+  }
+  .summary h2 { font-size: 14px; font-weight: 600; margin: 0 0 14px; letter-spacing: -0.01em; }
+  .summary .grid-rules {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 18px 32px;
+  }
+  @media (max-width: 720px) { .summary .grid-rules { grid-template-columns: 1fr; } }
+  .summary .rule { display: flex; gap: 12px; align-items: flex-start; }
+  .summary .rule .num {
+    flex-shrink: 0;
+    width: 24px; height: 24px;
+    border-radius: 999px;
+    background: var(--mint); color: var(--ink);
+    font-weight: 600; font-size: 12px;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .summary .rule p { margin: 0; font-size: 14px; color: #555c4d; line-height: 1.5; }
+  .summary .rule p strong { color: var(--ink); font-weight: 600; }
+</style>
+</head>
+<body>
+
+<div style="max-width: 1200px; margin: 0 auto 24px;">
+  <h1>Carry — invitee onboarding preview</h1>
+  <p class="sub">Streamlined: pre-fill skips screens. Magical case = 3 of our screens + 1 Apple sheet.</p>
+</div>
+
+<!-- HAPPY PATH -->
+<div class="section-label">Happy path · Bob pre-filled name + HC + phone</div>
+<div class="grid">
+
+  <!-- 01 invite landing -->
+  <div class="frame-wrap">
+    <div class="frame-label">
+      <span>01 · invite landing</span>
+      <span class="badge">ours</span>
+    </div>
+    <div class="phone dark s01">
+      <div class="notch"></div>
+      <div class="phone-inner">
+        <p class="lead">you've been invited</p>
+        <div class="hero">
+          <div class="avatar" style="margin-bottom: 16px;">BH</div>
+          <p class="invited-by">Bob Henderson invited you to</p>
+          <p class="group-name">Sequoyah Friday Skins</p>
+          <p class="when">Fri May 8 · 7:42 AM tee</p>
+        </div>
+        <div class="cta-stack">
+          <button class="cta white">Continue with Apple</button>
+          <p class="ghost">What is Carry?</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Apple sheet -->
+  <div class="frame-wrap">
+    <div class="frame-label">
+      <span>02 · Apple sign-in</span>
+      <span class="badge native">Apple</span>
+    </div>
+    <div class="phone dark">
+      <div class="notch"></div>
+      <div class="phone-inner" style="padding: 56px 18px 18px;">
+        <div style="flex: 1; display: flex; align-items: center; justify-content: center; opacity: 0.4;">
+          <div style="text-align: center; color: rgba(236,239,229,0.5); font-size: 13px;">Bob Henderson<br>invited you to<br>Sequoyah Friday Skins</div>
+        </div>
+        <div class="apple-sheet">
+          <div class="app-icon">C</div>
+          <p class="title">Sign In with Apple ID</p>
+          <p class="desc">to "Carry"</p>
+          <div class="id-row">
+            mike.chen@icloud.com
+            <div style="color: rgba(255,255,255,0.5); font-size: 11px; margin-top: 2px;">Apple ID</div>
+          </div>
+          <button class="cta" style="background: #fff; color: #000;">Continue</button>
+          <div class="face-id">
+            <span class="glyph"></span>
+            Double-click to confirm with Face ID
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 03 paywall -->
+  <div class="frame-wrap">
+    <div class="frame-label">
+      <span>03 · the payoff</span>
+      <span class="badge">ours</span>
+    </div>
+    <div class="phone dark s04">
+      <div class="notch"></div>
+      <div class="phone-inner">
+        <p class="you-are-in">you're in</p>
+        <p class="group-tag">Group 2 · 7:42 AM tee</p>
+        <div class="roster">
+          <div class="row me">
+            <div class="avatar sm">MC</div>
+            <div class="name">Mike Chen</div>
+            <div class="hc">12</div>
+          </div>
+          <div class="row">
+            <div class="avatar sm" style="background: #d8d4c5; color: var(--ink);">SA</div>
+            <div class="name">Steve Adams</div>
+            <div class="hc">8</div>
+          </div>
+          <div class="row">
+            <div class="avatar sm" style="background: #d8d4c5; color: var(--ink);">JP</div>
+            <div class="name">John Park</div>
+            <div class="hc">15</div>
+          </div>
+          <div class="row">
+            <div class="avatar sm" style="background: #d8d4c5; color: var(--ink);">BH</div>
+            <div class="name">Bob Henderson</div>
+            <div class="hc">6</div>
+          </div>
+        </div>
+        <p class="meta-line">$20 buy-in · carries on · net</p>
+        <div class="cta-stack">
+          <button class="cta">Play Friday's round</button>
+          <p class="price-line">Free until Jun 7 · then $29.99/yr</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 04 home -->
+  <div class="frame-wrap">
+    <div class="frame-label">
+      <span>04 · home, ready</span>
+      <span class="badge">ours</span>
+    </div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="phone-inner home-tab">
+        <div class="top">
+          <h3>Home</h3>
+          <div class="avatar sm" style="background: var(--avatar);">MC</div>
+        </div>
+        <div class="card">
+          <p class="label">friday's round</p>
+          <p class="big">In 3 days</p>
+          <p class="meta">Sequoyah · 7:42 AM · 4 players</p>
+        </div>
+        <p class="ping">We'll ping you Friday morning.</p>
+        <div class="cta-stack">
+          <div class="tab-bar">
+            <div class="item active"><div class="glyph"></div>Home</div>
+            <div class="item"><div class="glyph"></div>Games</div>
+            <div class="item"><div class="glyph"></div>Profile</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- DEFERRED SCREENS -->
+<div class="section-label">Conditional · only if Bob's pre-fill is missing the relevant field</div>
+<div class="grid">
+
+  <!-- phone confirm (deferred) -->
+  <div class="frame-wrap dimmed">
+    <div class="frame-label">
+      <span>+ phone confirm</span>
+      <span class="badge skip">if no phone</span>
+    </div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="phone-inner">
+        <p class="step">one more thing</p>
+        <h2 class="h2">Your number</h2>
+        <p class="body-copy">So your crew can find you in groups.</p>
+        <div class="field">+1 (510) ___-____</div>
+        <div class="cta-stack">
+          <button class="cta">Continue</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- profile confirm (deferred) -->
+  <div class="frame-wrap dimmed">
+    <div class="frame-label">
+      <span>+ profile confirm</span>
+      <span class="badge skip">if no name/HC</span>
+    </div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="phone-inner s03">
+        <p class="step">one more thing</p>
+        <h2 class="h2">Quick check</h2>
+        <div class="center">
+          <div class="avatar lg">MC</div>
+          <div class="name">Mike Chen</div>
+          <div class="meta">Handicap <strong style="color: var(--ink); font-weight: 600;">12</strong></div>
+        </div>
+        <p class="body-copy" style="text-align: center;">Tap any field to edit.</p>
+        <div class="cta-stack">
+          <button class="cta">Looks right</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="frame-wrap" style="display: flex; align-items: center; justify-content: center; opacity: 0.35;">
+    <div style="text-align: center; max-width: 220px; font-size: 13px; color: var(--ink); line-height: 1.5;">
+      <p style="margin: 0 0 8px; font-weight: 600;">Edit-later path</p>
+      <p style="margin: 0; color: var(--muted);">Anything missing or wrong → Profile tab → Edit. No first-run friction.</p>
+    </div>
+  </div>
+
+  <div class="frame-wrap" style="display: flex; align-items: center; justify-content: center; opacity: 0.35;">
+    <div style="text-align: center; max-width: 220px; font-size: 13px; color: var(--ink); line-height: 1.5;">
+      <p style="margin: 0 0 8px; font-weight: 600;">Organic install</p>
+      <p style="margin: 0; color: var(--muted);">No invite token → original 5-screen flow (phone + profile + paywall).</p>
+    </div>
+  </div>
+
+</div>
+
+<!-- summary card -->
+<div class="summary">
+  <h2>The model: pre-fill skips screens</h2>
+  <div class="grid-rules">
+    <div class="rule">
+      <span class="num">1</span>
+      <p><strong>Bob's bulk-invite is the prerequisite.</strong> He enters name, handicap, phone for each invitee in iOS. That metadata rides into the deep link as <code>invite_token</code>.</p>
+    </div>
+    <div class="rule">
+      <span class="num">2</span>
+      <p><strong>Tap link → app fetches pre-fill</strong> via <code>resolve_invite_token</code>. Whatever Bob filled, we silently write into the new <code>profiles</code> row after Apple Sign-In.</p>
+    </div>
+    <div class="rule">
+      <span class="num">3</span>
+      <p><strong>Magical case = 3 of our screens.</strong> Invite landing → Apple sheet → paywall → home. No typing. Under 30 seconds, glove on.</p>
+    </div>
+    <div class="rule">
+      <span class="num">4</span>
+      <p><strong>Missing data inserts a screen.</strong> No phone → phone confirm. No name/HC → profile confirm. No invite token at all → original 5-screen flow.</p>
+    </div>
+    <div class="rule">
+      <span class="num">5</span>
+      <p><strong>Apple Sign-In and the paywall stay.</strong> Apple is one Face ID tap; paywall has to happen before Friday morning so it doesn't block the round on the tee box.</p>
+    </div>
+    <div class="rule">
+      <span class="num">6</span>
+      <p><strong>Edit-later for accuracy.</strong> If Bob misspelled a name or got an index wrong, the invitee fixes it in Profile → Edit. Not blocking first run.</p>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

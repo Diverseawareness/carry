@@ -3,7 +3,7 @@ import SwiftUI
 /// Home-tab card for the first-launch Demo Round.
 ///
 /// Visual variant of the standard Active Round card with a `DEMO · LIVE` badge,
-/// the demo's pre-played leaderboard preview (Sarah leading, 3 carried skins),
+/// the demo's pre-played leaderboard preview (Ryan leading, 3 carried skins),
 /// and a "Continue Round" CTA. Top-right ✕ dismisses without playing.
 ///
 /// Renders only when `DemoRoundController.isDismissed == false` AND the user
@@ -60,7 +60,7 @@ struct DemoRoundCard: View {
                     // Player pills — pre-state through hole 15
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
-                            playerPill(name: "Sarah", money: 23, avatarAsset: "demo_01", isLeader: true)
+                            playerPill(name: "Ryan", money: 23, avatarAsset: "demo_01", isLeader: true)
                             playerPill(name: displayName ?? "You", money: 8, avatarAsset: nil)
                             playerPill(name: "Mike", money: -12, avatarAsset: "demo_02")
                             playerPill(name: "Tom", money: -19, avatarAsset: "demo_03")

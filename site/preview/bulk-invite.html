@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Carry — Invite your crew</title>
+<style>
+  :root {
+    --bg: #f1efe7;
+    --card: #ffffff;
+    --frame-dark: #1f2418;
+    --mint: #b6e5a8;
+    --mint-deep: #94c987;
+    --avatar: #a7e1a4;
+    --ink: #14160e;
+    --muted: #767e6e;
+    --soft: #d4d8cf;
+    --line: #e6e3d8;
+    --danger: #c04444;
+  }
+  * { box-sizing: border-box; -webkit-font-smoothing: antialiased; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    padding: 32px 16px 80px;
+    min-height: 100vh;
+  }
+
+  .shell {
+    max-width: 720px;
+    margin: 0 auto;
+  }
+
+  /* Header */
+  header.brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 32px;
+  }
+  header.brand .logo {
+    width: 32px; height: 32px;
+    background: var(--ink);
+    border-radius: 8px;
+    color: var(--mint);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 14px;
+    letter-spacing: -0.02em;
+  }
+  header.brand .name {
+    font-weight: 600;
+    font-size: 14px;
+    letter-spacing: -0.01em;
+  }
+
+  /* Hero */
+  .hero { margin-bottom: 28px; }
+  .hero .group-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--muted);
+    margin-bottom: 12px;
+  }
+  .hero .group-tag .dot {
+    width: 6px; height: 6px; border-radius: 999px; background: var(--mint-deep);
+  }
+  .hero h1 {
+    font-size: 32px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+    margin: 0 0 12px;
+  }
+  .hero p {
+    font-size: 15px;
+    color: var(--muted);
+    margin: 0;
+    line-height: 1.5;
+  }
+
+  /* Card */
+  .card {
+    background: var(--card);
+    border-radius: 20px;
+    border: 1px solid var(--line);
+    overflow: hidden;
+  }
+
+  /* Headers above rows */
+  .row-head {
+    display: grid;
+    grid-template-columns: 1.4fr 1.6fr 1.4fr 0.7fr 36px;
+    gap: 12px;
+    padding: 16px 16px 8px;
+    font-size: 12px;
+    color: var(--muted);
+    letter-spacing: 0.02em;
+  }
+
+  /* Row */
+  .row {
+    display: grid;
+    grid-template-columns: 1.4fr 1.6fr 1.4fr 0.7fr 36px;
+    gap: 12px;
+    padding: 8px 16px;
+    align-items: center;
+  }
+  .row + .row { border-top: 1px solid var(--line); padding-top: 12px; }
+  .row.first { padding-top: 4px; }
+  .row input {
+    width: 100%;
+    padding: 12px 12px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    font: inherit;
+    font-size: 15px;
+    color: var(--ink);
+    background: #fafaf5;
+    transition: border-color 0.15s;
+  }
+  .row input:focus {
+    outline: none;
+    border-color: var(--mint-deep);
+    background: #fff;
+  }
+  .row input::placeholder { color: #b0b6a9; }
+  .row .index-input { text-align: center; }
+  .row .remove {
+    width: 32px; height: 32px;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    border-radius: 999px;
+    font-size: 18px;
+  }
+  .row .remove:hover { background: var(--line); color: var(--danger); }
+
+  /* Add another */
+  .add-row {
+    width: 100%;
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    padding: 16px;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    text-align: left;
+    border-top: 1px dashed var(--line);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .add-row:hover { background: #fafaf5; color: var(--ink); }
+  .add-row .plus {
+    width: 22px; height: 22px;
+    border-radius: 999px;
+    background: var(--line);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    color: var(--ink);
+  }
+
+  /* Footer / submit */
+  .actions {
+    margin-top: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .submit {
+    width: 100%;
+    padding: 18px;
+    border-radius: 999px;
+    border: none;
+    background: var(--ink);
+    color: var(--mint);
+    font: inherit;
+    font-weight: 600;
+    font-size: 16px;
+    cursor: pointer;
+    letter-spacing: -0.01em;
+  }
+  .submit:hover { background: #000; }
+  .footnote {
+    text-align: center;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  /* Bulk paste accordion */
+  .paste-block {
+    margin-top: 24px;
+    border-radius: 14px;
+    background: rgba(0,0,0,0.025);
+    border: 1px solid var(--line);
+  }
+  .paste-block summary {
+    cursor: pointer;
+    padding: 14px 16px;
+    font-size: 14px;
+    color: var(--ink);
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .paste-block summary::-webkit-details-marker { display: none; }
+  .paste-block summary .chev {
+    width: 16px; height: 16px;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: var(--muted);
+    transition: transform 0.15s;
+  }
+  .paste-block[open] summary .chev { transform: rotate(90deg); }
+  .paste-block .body {
+    padding: 0 16px 16px;
+    border-top: 1px solid var(--line);
+  }
+  .paste-block textarea {
+    width: 100%;
+    min-height: 110px;
+    margin-top: 12px;
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    font: inherit;
+    font-size: 14px;
+    background: #fafaf5;
+    resize: vertical;
+  }
+  .paste-block textarea:focus { outline: none; border-color: var(--mint-deep); background: #fff; }
+  .paste-block .body p { font-size: 13px; color: var(--muted); margin: 12px 0 0; }
+  .paste-block .body .parse-cta {
+    margin-top: 12px;
+    padding: 10px 16px;
+    border-radius: 999px;
+    border: 1px solid var(--ink);
+    background: transparent;
+    font: inherit;
+    font-size: 14px;
+    cursor: pointer;
+    color: var(--ink);
+  }
+
+  @media (max-width: 600px) {
+    .row-head { grid-template-columns: 1fr; padding: 16px 16px 0; gap: 4px; }
+    .row-head span:nth-child(n+2) { display: none; }
+    .row { grid-template-columns: 1fr; gap: 8px; padding: 14px 16px; }
+    .row .remove { justify-self: end; margin-top: -4px; }
+    .row + .row { padding-top: 14px; }
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <header class="brand">
+    <span class="logo">C</span>
+    <span class="name">Carry</span>
+  </header>
+
+  <div class="hero">
+    <div class="group-tag"><span class="dot"></span>Sequoyah Friday Skins</div>
+    <h1>Invite your crew</h1>
+    <p>Add everyone who plays. Each gets a text with a one-tap link — the app's already filled in for them.</p>
+  </div>
+
+  <div class="card">
+    <div class="row-head">
+      <span>Name</span>
+      <span>Email</span>
+      <span>Phone</span>
+      <span>Index</span>
+      <span></span>
+    </div>
+
+    <form id="crew-form" onsubmit="return false;">
+      <div id="rows">
+        <div class="row first">
+          <input type="text" placeholder="Mike Chen" autocomplete="off">
+          <input type="email" placeholder="mike@example.com" autocomplete="off">
+          <input type="tel" placeholder="(510) 555-0142" autocomplete="off">
+          <input type="text" class="index-input" placeholder="12" autocomplete="off">
+          <button type="button" class="remove" aria-label="Remove">×</button>
+        </div>
+        <div class="row">
+          <input type="text" placeholder="Steve Adams" autocomplete="off">
+          <input type="email" placeholder="steve@example.com" autocomplete="off">
+          <input type="tel" placeholder="(510) 555-0192" autocomplete="off">
+          <input type="text" class="index-input" placeholder="8" autocomplete="off">
+          <button type="button" class="remove" aria-label="Remove">×</button>
+        </div>
+        <div class="row">
+          <input type="text" placeholder="John Park" autocomplete="off">
+          <input type="email" placeholder="john@example.com" autocomplete="off">
+          <input type="tel" placeholder="(510) 555-0177" autocomplete="off">
+          <input type="text" class="index-input" placeholder="15" autocomplete="off">
+          <button type="button" class="remove" aria-label="Remove">×</button>
+        </div>
+      </div>
+
+      <button type="button" class="add-row" id="add-row">
+        <span class="plus">+</span>
+        Add another
+      </button>
+    </form>
+  </div>
+
+  <details class="paste-block">
+    <summary>
+      <span class="chev">›</span>
+      Paste a list instead
+    </summary>
+    <div class="body">
+      <textarea placeholder="Mike Chen, mike@example.com, 5105550142, 12&#10;Steve Adams, steve@example.com, 5105550192, 8&#10;..."></textarea>
+      <p>One per line. Order: name, email, phone, index. We'll fill the form above.</p>
+      <button type="button" class="parse-cta">Parse list</button>
+    </div>
+  </details>
+
+  <div class="actions">
+    <button type="submit" class="submit" form="crew-form">Send invites</button>
+    <p class="footnote">Each person gets one text. They tap once to join — no typing, no signup forms.</p>
+  </div>
+
+</div>
+
+<script>
+  document.getElementById('add-row').addEventListener('click', () => {
+    const rows = document.getElementById('rows');
+    const r = document.createElement('div');
+    r.className = 'row';
+    r.innerHTML = `
+      <input type="text" placeholder="Name" autocomplete="off">
+      <input type="email" placeholder="Email" autocomplete="off">
+      <input type="tel" placeholder="Phone" autocomplete="off">
+      <input type="text" class="index-input" placeholder="—" autocomplete="off">
+      <button type="button" class="remove" aria-label="Remove">×</button>
+    `;
+    r.querySelector('.remove').addEventListener('click', () => r.remove());
+    rows.appendChild(r);
+    r.querySelector('input').focus();
+  });
+
+  document.querySelectorAll('.remove').forEach(btn =>
+    btn.addEventListener('click', () => btn.closest('.row').remove())
+  );
+</script>
+</body>
+</html>

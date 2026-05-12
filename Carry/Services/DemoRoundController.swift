@@ -50,7 +50,7 @@ enum DemoRoundController {
             groups: [GroupConfig(
                 id: 1,
                 startingSide: "front",
-                playerIDs: [DemoSeed.userId, DemoSeed.sarahId, DemoSeed.mikeId, DemoSeed.tomId]
+                playerIDs: [DemoSeed.userId, DemoSeed.ryanId, DemoSeed.mikeId, DemoSeed.tomId]
             )],
             creatorId: DemoSeed.userId,
             groupName: "Demo Round",
@@ -118,7 +118,7 @@ enum DemoRoundController {
             .handicap ?? 14.0
 
         let opponentHandicaps: [Int: Double] = [
-            DemoSeed.sarahId: DemoSeed.sarah.handicap,
+            DemoSeed.ryanId: DemoSeed.ryan.handicap,
             DemoSeed.mikeId: DemoSeed.mike.handicap,
             DemoSeed.tomId: DemoSeed.tom.handicap,
         ]
@@ -135,7 +135,7 @@ enum DemoRoundController {
 
         // 4. Cascade opponent scores with stagger animation
         let opponents: [(id: Int, score: Int)] = [
-            (DemoSeed.sarahId, reactions[DemoSeed.sarahId] ?? score),
+            (DemoSeed.ryanId, reactions[DemoSeed.ryanId] ?? score),
             (DemoSeed.mikeId, reactions[DemoSeed.mikeId] ?? score),
             (DemoSeed.tomId, reactions[DemoSeed.tomId] ?? score),
         ]
