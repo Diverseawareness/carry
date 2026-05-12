@@ -292,8 +292,16 @@ struct ScorecardView: View {
         .animation(.easeInOut(duration: 0.18), value: menuActionInFlight)
         .onReceive(viewModel.$myGroupFinished) { finished in
             if finished && !showRoundComplete {
-                withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
-                    showRoundComplete = true
+                // Demo Round: hold off ~2s so the user gets to see the
+                // big-bang celebration on hole 18 (skin-won animation,
+                // leaderboard reshuffle, money totals jumping) before
+                // RoundCompleteView covers the scorecard. Production
+                // rounds present immediately as before.
+                let delay: Double = viewModel.config.isDemo ? 2.0 : 0
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                    withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
+                        showRoundComplete = true
+                    }
                 }
             }
         }
