@@ -122,10 +122,10 @@ enum DemoSeed {
     // MARK: - Pre-filled scores (holes 1-15)
     //
     // Hand-tuned to produce roughly:
-    //   - Ryan ~6 skins won (steady par golf)
+    //   - Ryan ~6 skins won (steady par golf, leads)
     //   - User  ~4 skins won (mid-pack with handful of bright spots)
-    //   - Mike  ~3 skins won (occasional good hole, mostly bogeys)
-    //   - Zoe    0 skins won (shutout — playing poorly even with strokes)
+    //   - Zoe   ~2 skins won (next-to-last, swings on a couple holes)
+    //   - Mike   0 skins won (shutout — playing poorly today)
     //   - Holes 13, 14, 15 ALL squashed → 3 carried skins sitting on the table
     //     when the user starts playing hole 16
     //
@@ -139,18 +139,20 @@ enum DemoSeed {
     // are the load-bearing property; the exact 6/4/3/0 split is aspirational.
     private static let preFilledScoresByHole: [Int: [Int: Int]] = [
         //  hole : [user, ryan, mike, zoe] (gross)
-        1:  [userId: 5, ryanId: 4, mikeId: 6, zoeId: 7],   // Ryan wins
-        2:  [userId: 4, ryanId: 4, mikeId: 5, zoeId: 6],   // User+Ryan tie low? carries or wins
-        3:  [userId: 4, ryanId: 5, mikeId: 5, zoeId: 7],   // User wins
-        4:  [userId: 6, ryanId: 4, mikeId: 6, zoeId: 8],   // Ryan wins
-        5:  [userId: 5, ryanId: 5, mikeId: 4, zoeId: 7],   // Mike wins
-        6:  [userId: 4, ryanId: 4, mikeId: 5, zoeId: 6],   // tie — carries
-        7:  [userId: 5, ryanId: 4, mikeId: 6, zoeId: 7],   // Ryan wins
-        8:  [userId: 4, ryanId: 5, mikeId: 6, zoeId: 7],   // User wins
-        9:  [userId: 5, ryanId: 4, mikeId: 7, zoeId: 8],   // Ryan wins
-        10: [userId: 4, ryanId: 5, mikeId: 5, zoeId: 7],   // User wins
-        11: [userId: 5, ryanId: 4, mikeId: 5, zoeId: 8],   // Ryan wins
-        12: [userId: 6, ryanId: 5, mikeId: 4, zoeId: 7],   // Mike wins
+        //  Leaderboard order going into hole 16: Ryan > User > Zoe > Mike.
+        //  Mike is now the shutout (last); Zoe sits next-to-last.
+        1:  [userId: 5, ryanId: 4, mikeId: 7, zoeId: 6],   // Ryan wins
+        2:  [userId: 4, ryanId: 4, mikeId: 6, zoeId: 5],
+        3:  [userId: 4, ryanId: 5, mikeId: 7, zoeId: 5],   // User wins
+        4:  [userId: 6, ryanId: 4, mikeId: 8, zoeId: 6],   // Ryan wins
+        5:  [userId: 5, ryanId: 5, mikeId: 7, zoeId: 4],   // Zoe wins
+        6:  [userId: 4, ryanId: 4, mikeId: 6, zoeId: 5],
+        7:  [userId: 5, ryanId: 4, mikeId: 7, zoeId: 6],   // Ryan wins
+        8:  [userId: 4, ryanId: 5, mikeId: 7, zoeId: 6],   // User wins
+        9:  [userId: 5, ryanId: 4, mikeId: 8, zoeId: 7],   // Ryan wins
+        10: [userId: 4, ryanId: 5, mikeId: 7, zoeId: 5],   // User wins
+        11: [userId: 5, ryanId: 4, mikeId: 8, zoeId: 5],   // Ryan wins
+        12: [userId: 6, ryanId: 5, mikeId: 7, zoeId: 4],   // Zoe wins
         // Holes 13-15: HAND-TUNED FOR SQUASH (all carry)
         // Same gross for all 4 → after handicap strokes, multiple players
         // at the same lowest net → squashed.
