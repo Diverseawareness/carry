@@ -179,6 +179,15 @@ struct CarryApp: App {
         URLCache.shared.memoryCapacity = 50 * 1024 * 1024   // 50 MB
         URLCache.shared.diskCapacity = 200 * 1024 * 1024    // 200 MB
 
+        #if DEBUG
+        // Reset the first-launch Demo Round dismissal on every debug build
+        // launch so the card always re-renders on Home (when groups empty).
+        // Lets us test the dismiss UX within a session and verify the card
+        // visual without manually toggling UserDefaults every iteration.
+        // Production builds preserve show-once behavior.
+        DemoRoundController.isDismissed = false
+        #endif
+
         // PostHog setup runs on a detached background task. Its setup() kicks
         // off a feature-flag config fetch that has caused 8-22s startup hangs
         // on iPhone 12 when us-assets.i.posthog.com is slow. Doing this off
