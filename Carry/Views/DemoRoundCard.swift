@@ -26,81 +26,84 @@ struct DemoRoundCard: View {
     @State private var showDeleteConfirm = false
 
     var body: some View {
-        Button(action: onTap) {
-            VStack(spacing: 0) {
-                // Header: course/hole label + DEMO badge
-                HStack {
-                    Text("Pebble Beach")
-                        .font(.carry.bodyLGBold)
-                        .foregroundColor(Color.pureBlack)
+        // Card body is NOT wrapped in a Button — only the "Try the Demo"
+        // CTA below opens the scorecard. Tapping the body itself does
+        // nothing; long-press anywhere brings up the dismiss confirm.
+        VStack(spacing: 0) {
+            // Header: course/hole label + DEMO badge
+            HStack {
+                Text("Pebble Beach")
+                    .font(.carry.bodyLGBold)
+                    .foregroundColor(Color.pureBlack)
 
-                    Spacer()
+                Spacer()
 
-                    // DEMO LIVE badge — distinguishable from real LIVE
-                    HStack(spacing: 5) {
-                        PulsatingDot(color: Color.successGreen, size: 6)
-                        Text("DEMO")
-                            .font(.system(size: 10, weight: .heavy))
-                            .foregroundColor(Color.successGreen)
-                        Text("Hole 16")
-                            .font(.system(size: 10, weight: .heavy))
-                            .foregroundColor(Color.successGreen)
-                    }
-                    .padding(.leading, 10)
-                    .padding(.trailing, 11)
-                    .padding(.vertical, 7)
-                    .background(Capsule().fill(Color.concludedGreen))
-                }
-
-                // Subtitle: course detail + carry hook
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Pebble Beach Golf Links")
-                        .font(.carry.bodySM)
-                        .foregroundColor(Color(hexString: "#7A7A7E"))
-                        .padding(.top, 6)
-                    Text("3 skins carried · ~$80 on the table")
-                        .font(.carry.bodySM)
+                // DEMO LIVE badge — distinguishable from real LIVE
+                HStack(spacing: 5) {
+                    PulsatingDot(color: Color.successGreen, size: 6)
+                    Text("DEMO")
+                        .font(.system(size: 10, weight: .heavy))
                         .foregroundColor(Color.successGreen)
-                        .padding(.top, 2)
+                    Text("Hole 16")
+                        .font(.system(size: 10, weight: .heavy))
+                        .foregroundColor(Color.successGreen)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.bottom, 4)
+                .padding(.leading, 10)
+                .padding(.trailing, 11)
+                .padding(.vertical, 7)
+                .background(Capsule().fill(Color.concludedGreen))
+            }
 
-                // Player pills — pre-state through hole 15. When the
-                // preview VM is provided, pills source live money totals
-                // (so they exactly match what the scorecard will show on
-                // tap-in). Fallback values are used briefly before the
-                // VM is constructed.
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        let money = previewVM?.moneyTotals() ?? [:]
-                        let sortedPlayers = (previewVM?.config.players ?? []).sorted { a, b in
-                            (money[a.id] ?? 0) > (money[b.id] ?? 0)
-                        }
-                        if sortedPlayers.isEmpty {
-                            // Fallback (no VM yet)
-                            playerPill(name: "Ryan", money: 0, avatarAsset: "demo_01", isLeader: true)
-                            playerPill(name: displayName ?? "You", money: 0, avatarAsset: nil)
-                            playerPill(name: "Mike", money: 0, avatarAsset: "demo_02")
-                            playerPill(name: "Zoe", money: 0, avatarAsset: "demo_03")
-                        } else {
-                            ForEach(Array(sortedPlayers.enumerated()), id: \.element.id) { idx, p in
-                                playerPill(
-                                    name: p.id == DemoSeed.userId ? (displayName ?? p.name) : p.name,
-                                    money: money[p.id] ?? 0,
-                                    avatarAsset: p.id == DemoSeed.userId ? nil : p.avatarImageName,
-                                    isLeader: idx == 0
-                                )
-                            }
+            // Subtitle: course detail + carry hook
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Pebble Beach Golf Links")
+                    .font(.carry.bodySM)
+                    .foregroundColor(Color(hexString: "#7A7A7E"))
+                    .padding(.top, 6)
+                Text("3 skins carried · ~$80 on the table")
+                    .font(.carry.bodySM)
+                    .foregroundColor(Color.successGreen)
+                    .padding(.top, 2)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.bottom, 4)
+
+            // Player pills — pre-state through hole 15. When the
+            // preview VM is provided, pills source live money totals
+            // (so they exactly match what the scorecard will show on
+            // tap-in). Fallback values are used briefly before the
+            // VM is constructed.
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    let money = previewVM?.moneyTotals() ?? [:]
+                    let sortedPlayers = (previewVM?.config.players ?? []).sorted { a, b in
+                        (money[a.id] ?? 0) > (money[b.id] ?? 0)
+                    }
+                    if sortedPlayers.isEmpty {
+                        // Fallback (no VM yet)
+                        playerPill(name: "Ryan", money: 0, avatarAsset: "demo_01", isLeader: true)
+                        playerPill(name: displayName ?? "You", money: 0, avatarAsset: nil)
+                        playerPill(name: "Mike", money: 0, avatarAsset: "demo_02")
+                        playerPill(name: "Zoe", money: 0, avatarAsset: "demo_03")
+                    } else {
+                        ForEach(Array(sortedPlayers.enumerated()), id: \.element.id) { idx, p in
+                            playerPill(
+                                name: p.id == DemoSeed.userId ? (displayName ?? p.name) : p.name,
+                                money: money[p.id] ?? 0,
+                                avatarAsset: p.id == DemoSeed.userId ? nil : p.avatarImageName,
+                                isLeader: idx == 0
+                            )
                         }
                     }
                 }
-                .padding(.top, 8)
+            }
+            .padding(.top, 8)
 
-                // CTA — matches the Active Round card's "LIVE Scorecard"
-                // button shape (RoundedRectangle 13pt corner radius, 40pt
-                // height), with primary black fill since this is the
-                // call-to-action.
+            // CTA — the ONLY tappable region that opens the scorecard.
+            // Matches the Active Round card's "LIVE Scorecard" button
+            // shape (RoundedRectangle 13pt corner radius, 40pt height),
+            // with primary black fill since this is the call-to-action.
+            Button(action: onTap) {
                 HStack(spacing: 6) {
                     Text("Try the Demo")
                         .font(.carry.bodySMBold)
@@ -112,23 +115,21 @@ struct DemoRoundCard: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: 40)
                 .background(RoundedRectangle(cornerRadius: 13).fill(Color.pureBlack))
-                .padding(.top, 12)
             }
-            .padding(16)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(.white)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(Color.successGreen.opacity(0.4), lineWidth: 1.5)
-            )
+            .buttonStyle(.plain)
+            .padding(.top, 12)
         }
-        .buttonStyle(.plain)
-        // Long-press to dismiss. minimumDuration 0.6s + a confirm alert
-        // prevents accidental dismissal from prolonged taps. Haptic on
-        // gesture recognition gives clear feedback that long-press is the
-        // dismiss affordance (vs the tap which opens the demo).
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(.white)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.successGreen.opacity(0.4), lineWidth: 1.5)
+        )
+        // Long-press anywhere on the card to dismiss. minimumDuration
+        // 0.6s + a confirm alert prevents accidental dismissal.
         .onLongPressGesture(minimumDuration: 0.6) {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             showDeleteConfirm = true
