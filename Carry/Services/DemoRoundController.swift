@@ -50,7 +50,7 @@ enum DemoRoundController {
             groups: [GroupConfig(
                 id: 1,
                 startingSide: "front",
-                playerIDs: [DemoSeed.userId, DemoSeed.ryanId, DemoSeed.mikeId, DemoSeed.lisaId]
+                playerIDs: [DemoSeed.userId, DemoSeed.ryanId, DemoSeed.mikeId, DemoSeed.zoeId]
             )],
             creatorId: DemoSeed.userId,
             groupName: "Demo Round",
@@ -120,7 +120,7 @@ enum DemoRoundController {
         let opponentHandicaps: [Int: Double] = [
             DemoSeed.ryanId: DemoSeed.ryan.handicap,
             DemoSeed.mikeId: DemoSeed.mike.handicap,
-            DemoSeed.lisaId: DemoSeed.lisa.handicap,
+            DemoSeed.zoeId: DemoSeed.zoe.handicap,
         ]
 
         let reactions = DemoSeed.opponentReactions(
@@ -137,7 +137,7 @@ enum DemoRoundController {
         let opponents: [(id: Int, score: Int)] = [
             (DemoSeed.ryanId, reactions[DemoSeed.ryanId] ?? score),
             (DemoSeed.mikeId, reactions[DemoSeed.mikeId] ?? score),
-            (DemoSeed.lisaId, reactions[DemoSeed.lisaId] ?? score),
+            (DemoSeed.zoeId, reactions[DemoSeed.zoeId] ?? score),
         ]
         for (index, opp) in opponents.enumerated() {
             DispatchQueue.main.asyncAfter(deadline: .now() + opponentStagger * Double(index + 1)) {

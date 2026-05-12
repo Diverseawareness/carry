@@ -4,7 +4,7 @@ import SwiftUI
 ///
 /// Presented by `RoundCompleteView` when the round is a demo round
 /// (`viewModel.config.isDemo == true`). REPLACES the standard convert-QG-to-SG
-/// sheet because the demo's fictional opponents (Ryan/Mike/Lisa) cannot be
+/// sheet because the demo's fictional opponents (Ryan/Mike/Zoe) cannot be
 /// carried into a real recurring group — they were ephemeral by design.
 ///
 /// "Yes" path: dismisses the demo and routes the user into the new-Skins-Group

@@ -66,7 +66,7 @@ struct DemoRoundCard: View {
                         playerPill(name: "Ryan", money: 23, avatarAsset: "demo_01", isLeader: true)
                         playerPill(name: displayName ?? "You", money: 8, avatarAsset: nil)
                         playerPill(name: "Mike", money: -12, avatarAsset: "demo_02")
-                        playerPill(name: "Lisa", money: -19, avatarAsset: "demo_03")
+                        playerPill(name: "Zoe", money: -19, avatarAsset: "demo_03")
                     }
                 }
                 .padding(.top, 8)
