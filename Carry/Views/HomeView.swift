@@ -519,7 +519,12 @@ struct HomeView: View {
                     // groups is empty AND user hasn't dismissed the demo. Once
                     // dismissed (any path), demo card never re-renders and the
                     // empty CTA returns. See DemoRoundController.isDismissed.
-                    if skinGameGroups.isEmpty && !isLoadingGroups && !DemoRoundController.isDismissed {
+                    // Production: demo card shows ONLY when user has zero
+                    // groups + not yet dismissed. In DEBUG we relax the empty
+                    // check so the 30s home poll - which loads real groups
+                    // for the signed-in dev user - doesn't make the demo
+                    // disappear during testing.
+                    if Self.shouldShowDemoCard(groupsEmpty: skinGameGroups.isEmpty, isLoadingGroups: isLoadingGroups) {
                         DemoRoundCard(
                             displayName: authService.currentUser?.displayName,
                             onTap: {
@@ -1170,6 +1175,21 @@ struct HomeView: View {
     }
 
     // MARK: - Greeting
+
+    /// Gating predicate for the Demo Round card on Home.
+    /// - Production: requires skinGameGroups empty + not loading + not yet
+    ///   dismissed. First-launch one-shot.
+    /// - DEBUG: relaxes the empty check so the 30s home poll (which loads
+    ///   real groups for the signed-in dev user) can't make the card
+    ///   disappear during testing.
+    private static func shouldShowDemoCard(groupsEmpty: Bool, isLoadingGroups: Bool) -> Bool {
+        guard !DemoRoundController.isDismissed else { return false }
+        #if DEBUG
+        return !isLoadingGroups
+        #else
+        return groupsEmpty && !isLoadingGroups
+        #endif
+    }
 
     /// Build a clean RoundConfig from a HomeRound (unique ID so no cached scores load)
     private static func buildRoundConfig(from round: HomeRound) -> RoundConfig {

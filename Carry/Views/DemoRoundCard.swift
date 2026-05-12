@@ -4,7 +4,9 @@ import SwiftUI
 ///
 /// Visual variant of the standard Active Round card with a `DEMO · LIVE` badge,
 /// the demo's pre-played leaderboard preview (Ryan leading, 3 carried skins),
-/// and a "Continue Round" CTA. Top-right ✕ dismisses without playing.
+/// and a "Try the Demo" CTA. Long-press the card to dismiss (no visible X —
+/// keeps the card clean and matches the swipe/long-press patterns used by
+/// other Home cards).
 ///
 /// Renders only when `DemoRoundController.isDismissed == false` AND the user
 /// has zero groups AND no real active round (gating done by HomeView).
@@ -15,95 +17,98 @@ struct DemoRoundCard: View {
     var onTap: () -> Void
     var onDismiss: () -> Void
 
+    @State private var showDeleteConfirm = false
+
     var body: some View {
-        ZStack(alignment: .topTrailing) {
-            Button(action: onTap) {
-                VStack(spacing: 0) {
-                    // Header: course/hole label + DEMO badge
-                    HStack {
-                        Text("Pebble Beach")
-                            .font(.carry.bodyLGBold)
-                            .foregroundColor(Color.pureBlack)
+        Button(action: onTap) {
+            VStack(spacing: 0) {
+                // Header: course/hole label + DEMO badge
+                HStack {
+                    Text("Pebble Beach")
+                        .font(.carry.bodyLGBold)
+                        .foregroundColor(Color.pureBlack)
 
-                        Spacer()
+                    Spacer()
 
-                        // DEMO LIVE badge — distinguishable from real LIVE
-                        HStack(spacing: 5) {
-                            PulsatingDot(color: Color.successGreen, size: 6)
-                            Text("DEMO")
-                                .font(.system(size: 10, weight: .heavy))
-                                .foregroundColor(Color.successGreen)
-                            Text("Hole 16")
-                                .font(.system(size: 10, weight: .heavy))
-                                .foregroundColor(Color.successGreen)
-                        }
-                        .padding(.leading, 10)
-                        .padding(.trailing, 30)  // leaves room for ✕ button
-                        .padding(.vertical, 7)
-                        .background(Capsule().fill(Color.concludedGreen))
-                    }
-
-                    // Subtitle: course detail + carry hook
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Pebble Beach Golf Links")
-                            .font(.carry.bodySM)
-                            .foregroundColor(Color(hexString: "#7A7A7E"))
-                            .padding(.top, 6)
-                        Text("3 skins carried · ~$13 on the table")
-                            .font(.carry.bodySM)
+                    // DEMO LIVE badge — distinguishable from real LIVE
+                    HStack(spacing: 5) {
+                        PulsatingDot(color: Color.successGreen, size: 6)
+                        Text("DEMO")
+                            .font(.system(size: 10, weight: .heavy))
                             .foregroundColor(Color.successGreen)
-                            .padding(.top, 2)
+                        Text("Hole 16")
+                            .font(.system(size: 10, weight: .heavy))
+                            .foregroundColor(Color.successGreen)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.bottom, 4)
-
-                    // Player pills — pre-state through hole 15
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            playerPill(name: "Ryan", money: 23, avatarAsset: "demo_01", isLeader: true)
-                            playerPill(name: displayName ?? "You", money: 8, avatarAsset: nil)
-                            playerPill(name: "Mike", money: -12, avatarAsset: "demo_02")
-                            playerPill(name: "Lisa", money: -19, avatarAsset: "demo_03")
-                        }
-                    }
-                    .padding(.top, 8)
-
-                    // CTA — match the LIVE Scorecard button style
-                    HStack(spacing: 6) {
-                        Text("Try the Demo")
-                            .font(.carry.bodySMBold)
-                            .foregroundColor(.white)
-                        Image(systemName: "arrow.right")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundColor(.white)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(Capsule().fill(Color.pureBlack))
-                    .padding(.top, 12)
+                    .padding(.leading, 10)
+                    .padding(.trailing, 11)
+                    .padding(.vertical, 7)
+                    .background(Capsule().fill(Color.concludedGreen))
                 }
-                .padding(16)
-                .background(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(.white)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(Color.successGreen.opacity(0.4), lineWidth: 1.5)
-                )
-            }
-            .buttonStyle(.plain)
 
-            // ✕ dismiss — top-right corner overlay, doesn't trigger card tap
-            Button(action: onDismiss) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundColor(Color.textTertiary)
-                    .frame(width: 24, height: 24)
-                    .background(Circle().fill(Color.bgSecondary.opacity(0.9)))
+                // Subtitle: course detail + carry hook
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Pebble Beach Golf Links")
+                        .font(.carry.bodySM)
+                        .foregroundColor(Color(hexString: "#7A7A7E"))
+                        .padding(.top, 6)
+                    Text("3 skins carried · ~$13 on the table")
+                        .font(.carry.bodySM)
+                        .foregroundColor(Color.successGreen)
+                        .padding(.top, 2)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.bottom, 4)
+
+                // Player pills — pre-state through hole 15
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        playerPill(name: "Ryan", money: 23, avatarAsset: "demo_01", isLeader: true)
+                        playerPill(name: displayName ?? "You", money: 8, avatarAsset: nil)
+                        playerPill(name: "Mike", money: -12, avatarAsset: "demo_02")
+                        playerPill(name: "Lisa", money: -19, avatarAsset: "demo_03")
+                    }
+                }
+                .padding(.top, 8)
+
+                // CTA — match the LIVE Scorecard button style
+                HStack(spacing: 6) {
+                    Text("Try the Demo")
+                        .font(.carry.bodySMBold)
+                        .foregroundColor(.white)
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.white)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(Capsule().fill(Color.pureBlack))
+                .padding(.top, 12)
             }
-            .buttonStyle(.plain)
-            .padding(12)
+            .padding(16)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(.white)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(Color.successGreen.opacity(0.4), lineWidth: 1.5)
+            )
+        }
+        .buttonStyle(.plain)
+        // Long-press to dismiss. minimumDuration 0.6s + a confirm alert
+        // prevents accidental dismissal from prolonged taps. Haptic on
+        // gesture recognition gives clear feedback that long-press is the
+        // dismiss affordance (vs the tap which opens the demo).
+        .onLongPressGesture(minimumDuration: 0.6) {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            showDeleteConfirm = true
+        }
+        .alert("Remove Demo Round?", isPresented: $showDeleteConfirm) {
+            Button("Cancel", role: .cancel) { }
+            Button("Remove", role: .destructive) { onDismiss() }
+        } message: {
+            Text("You can replay the demo from the debug menu (sign-out + reinstall in production).")
         }
     }
 
