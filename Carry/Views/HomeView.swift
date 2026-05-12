@@ -396,6 +396,12 @@ struct HomeView: View {
     /// played; nil before tap and after dismiss. See DemoRoundController +
     /// `~/.claude/skills/demo-round/SKILL.md`.
     @State private var demoViewModel: RoundViewModel?
+    /// Eagerly-constructed preview VM whose `moneyTotals()` drives the
+    /// pill numbers on the Demo Round card. Built once via a .task when
+    /// the card is about to show; nullified on hand-off to demoViewModel
+    /// (the same VM gets reused on tap-in for consistency between the
+    /// card preview and the scorecard leaderboard).
+    @State private var demoPreviewVM: RoundViewModel?
     /// SwiftUI-observable mirror of `DemoRoundController.isDismissed`
     /// (UserDefaults key "demoRoundDismissed"). @AppStorage triggers a
     /// HomeView re-render when the key changes from outside (e.g., the
@@ -534,8 +540,13 @@ struct HomeView: View {
                     if Self.shouldShowDemoCard(groupsEmpty: skinGameGroups.isEmpty, isLoadingGroups: isLoadingGroups, dismissed: demoRoundDismissedStorage) {
                         DemoRoundCard(
                             displayName: authService.currentUser?.displayName,
+                            previewVM: demoPreviewVM,
                             onTap: {
-                                let vm = DemoRoundController.makeViewModel(authService: authService)
+                                // Reuse the preview VM if it's already built
+                                // (pill numbers match exactly). Construct one
+                                // if .task hasn't fired yet.
+                                let vm = demoPreviewVM ?? DemoRoundController.makeViewModel(authService: authService)
+                                demoPreviewVM = nil  // hand off ownership to demoViewModel
                                 withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
                                     demoViewModel = vm
                                 }
@@ -768,6 +779,18 @@ struct HomeView: View {
         // Re-publishes on every body recomputation, so unmounting the view
         // (e.g. switching tabs) automatically clears the contribution.
         .preference(key: TabBarHiddenKey.self, value: selectedRound != nil || demoViewModel != nil)
+        .task(id: "\(demoRoundDismissedStorage)-\(demoViewModel == nil)-\(skinGameGroups.isEmpty)") {
+            // Eagerly construct the preview VM the moment the demo card
+            // is about to show. Pill numbers on the card pull from this
+            // VM's moneyTotals(), so they always match the scorecard
+            // leaderboard the user sees on tap-in. Reconstructs after
+            // back-out (demoViewModel goes nil -> .task re-fires).
+            if Self.shouldShowDemoCard(groupsEmpty: skinGameGroups.isEmpty, isLoadingGroups: isLoadingGroups, dismissed: demoRoundDismissedStorage),
+               demoViewModel == nil,
+               demoPreviewVM == nil {
+                demoPreviewVM = DemoRoundController.makeViewModel(authService: authService)
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .demoRoundAcceptedConvert)) { _ in
             // Demo round Yes-tap: ScorecardView/RoundCompleteView already
             // dismissed themselves via onExitRound. Route to Games tab and

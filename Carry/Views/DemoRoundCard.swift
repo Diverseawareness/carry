@@ -14,6 +14,12 @@ import SwiftUI
 /// See `~/.claude/skills/demo-round/SKILL.md` for the full feature spec.
 struct DemoRoundCard: View {
     let displayName: String?
+    /// Optional preview VM — when provided, the card's player pills
+    /// pull live leaderboard numbers (money + skins) from it so they
+    /// match exactly what the scorecard will show on tap-in. Nil = fall
+    /// back to placeholder pill values (during the brief moment before
+    /// the VM is constructed).
+    var previewVM: RoundViewModel?
     var onTap: () -> Void
     var onDismiss: () -> Void
 
@@ -60,13 +66,33 @@ struct DemoRoundCard: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.bottom, 4)
 
-                // Player pills — pre-state through hole 15
+                // Player pills — pre-state through hole 15. When the
+                // preview VM is provided, pills source live money totals
+                // (so they exactly match what the scorecard will show on
+                // tap-in). Fallback values are used briefly before the
+                // VM is constructed.
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
-                        playerPill(name: "Ryan", money: 23, avatarAsset: "demo_01", isLeader: true)
-                        playerPill(name: displayName ?? "You", money: 8, avatarAsset: nil)
-                        playerPill(name: "Mike", money: -12, avatarAsset: "demo_02")
-                        playerPill(name: "Zoe", money: -19, avatarAsset: "demo_03")
+                        let money = previewVM?.moneyTotals() ?? [:]
+                        let sortedPlayers = (previewVM?.config.players ?? []).sorted { a, b in
+                            (money[a.id] ?? 0) > (money[b.id] ?? 0)
+                        }
+                        if sortedPlayers.isEmpty {
+                            // Fallback (no VM yet)
+                            playerPill(name: "Ryan", money: 0, avatarAsset: "demo_01", isLeader: true)
+                            playerPill(name: displayName ?? "You", money: 0, avatarAsset: nil)
+                            playerPill(name: "Mike", money: 0, avatarAsset: "demo_02")
+                            playerPill(name: "Zoe", money: 0, avatarAsset: "demo_03")
+                        } else {
+                            ForEach(Array(sortedPlayers.enumerated()), id: \.element.id) { idx, p in
+                                playerPill(
+                                    name: p.id == DemoSeed.userId ? (displayName ?? p.name) : p.name,
+                                    money: money[p.id] ?? 0,
+                                    avatarAsset: p.id == DemoSeed.userId ? nil : p.avatarImageName,
+                                    isLeader: idx == 0
+                                )
+                            }
+                        }
                     }
                 }
                 .padding(.top, 8)

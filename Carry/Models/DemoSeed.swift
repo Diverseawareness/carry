@@ -213,6 +213,14 @@ enum DemoSeed {
         let userStrokes = TeeBox.strokesOnHole(playingHandicap: userPlayingHcp, holeHcp: hole.hcp)
         let userNet = max(1, userGross - userStrokes)
 
+        // Realism floor: opponent gross is clamped to at least par on
+        // forceTie (par+1 on userWins) so an unrealistic user score
+        // (HIO, eagle) can't propagate into 3 simultaneous opponent
+        // HIOs/eagles. Trade-off: when user shoots well below par the
+        // script's exact outcome (tie/loss) is no longer guaranteed -
+        // the hole resolves naturally, which is the right behavior.
+        let par = hole.par
+
         var result: [Int: Int] = [:]
         for (oppId, oppHcp) in opponentHandicaps {
             let oppPlayingHcp = teeBox.playingHandicap(forIndex: oppHcp, percentage: handicapPercentage)
@@ -221,12 +229,15 @@ enum DemoSeed {
             switch outcome {
             case .forceTie:
                 // Want opp net == userNet → opp gross = userNet + oppStrokes
-                let targetGross = max(1, userNet + oppStrokes)
+                // Floor at par to prevent unrealistic opp scores.
+                let targetGross = max(par, userNet + oppStrokes)
                 result[oppId] = targetGross
 
             case .userWins:
                 // Want opp net > userNet → opp gross = userNet + oppStrokes + 1
-                let targetGross = max(1, userNet + oppStrokes + 1)
+                // Floor at par+1 (bogey) so opps still look realistic when
+                // user shoots well.
+                let targetGross = max(par + 1, userNet + oppStrokes + 1)
                 result[oppId] = targetGross
             }
         }
