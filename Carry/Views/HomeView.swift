@@ -396,6 +396,13 @@ struct HomeView: View {
     /// played; nil before tap and after dismiss. See DemoRoundController +
     /// `~/.claude/skills/demo-round/SKILL.md`.
     @State private var demoViewModel: RoundViewModel?
+    /// SwiftUI-observable mirror of `DemoRoundController.isDismissed`
+    /// (UserDefaults key "demoRoundDismissed"). @AppStorage triggers a
+    /// HomeView re-render when the key changes from outside (e.g., the
+    /// debug menu's "Reset Demo Round" action), so the card reappears
+    /// without rebuilding. Without this, the static-var read inside
+    /// shouldShowDemoCard is invisible to SwiftUI.
+    @AppStorage("demoRoundDismissed") private var demoRoundDismissedStorage: Bool = false
     @State private var leaderboardRound: HomeRound?
     @State private var resultsRound: HomeRound?
     @State private var roundToLeave: HomeRound?
@@ -524,7 +531,7 @@ struct HomeView: View {
                     // check so the 30s home poll - which loads real groups
                     // for the signed-in dev user - doesn't make the demo
                     // disappear during testing.
-                    if Self.shouldShowDemoCard(groupsEmpty: skinGameGroups.isEmpty, isLoadingGroups: isLoadingGroups) {
+                    if Self.shouldShowDemoCard(groupsEmpty: skinGameGroups.isEmpty, isLoadingGroups: isLoadingGroups, dismissed: demoRoundDismissedStorage) {
                         DemoRoundCard(
                             displayName: authService.currentUser?.displayName,
                             onTap: {
@@ -1182,8 +1189,8 @@ struct HomeView: View {
     /// - DEBUG: relaxes the empty check so the 30s home poll (which loads
     ///   real groups for the signed-in dev user) can't make the card
     ///   disappear during testing.
-    private static func shouldShowDemoCard(groupsEmpty: Bool, isLoadingGroups: Bool) -> Bool {
-        guard !DemoRoundController.isDismissed else { return false }
+    private static func shouldShowDemoCard(groupsEmpty: Bool, isLoadingGroups: Bool, dismissed: Bool) -> Bool {
+        guard !dismissed else { return false }
         #if DEBUG
         return !isLoadingGroups
         #else
