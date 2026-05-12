@@ -12,6 +12,9 @@ struct ScoreInputSheet: View {
     let onSelect: (Int) -> Void
     let onScoreNext: (Int) -> Void
     var extraBottomPadding: CGFloat = 0
+    /// Demo Round: hide the "Score Next" button and extend Save to full width.
+    /// The user only scores themselves; opponents auto-fill via the controller.
+    var isDemo: Bool = false
 
     @State private var selectedIndex: Int = 0
     @State private var dragOffset: CGFloat = 0
@@ -180,7 +183,8 @@ struct ScoreInputSheet: View {
 
     private var bottomActions: some View {
         HStack(spacing: 10) {
-            // Save — filled black
+            // Save — filled black. Becomes full-width when isDemo (the
+            // Score Next button is hidden because demo opponents auto-fill).
             Button {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 onSelect(current.val)
@@ -194,22 +198,25 @@ struct ScoreInputSheet: View {
             }
             .buttonStyle(.plain)
 
-            // Score next — stroke outline
-            Button {
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                onScoreNext(current.val)
-            } label: {
-                Text("Score Next")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundColor(Color.textPrimary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 18)
-                    .background(
-                        RoundedRectangle(cornerRadius: 19)
-                            .strokeBorder(Color.textPrimary, lineWidth: 1)
-                    )
+            // Score next — hidden in demo mode (opponents auto-fill so
+            // there's no "next player to score" concept).
+            if !isDemo {
+                Button {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    onScoreNext(current.val)
+                } label: {
+                    Text("Score Next")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundColor(Color.textPrimary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 18)
+                        .background(
+                            RoundedRectangle(cornerRadius: 19)
+                                .strokeBorder(Color.textPrimary, lineWidth: 1)
+                        )
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
         }
         .padding(.horizontal, 16)
     }

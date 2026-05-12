@@ -225,33 +225,6 @@ struct ScorecardView: View {
                     .padding(.bottom, layout.gapBelowPills)
 
                 scorecardSection(layout: layout, players: players, active: active)
-
-                // Demo-only: a single full-width "Save Score" button at the
-                // bottom replaces tap-to-score on individual cells. User picks
-                // their score in the ScoreInputSheet, opponents auto-fill via
-                // DemoRoundController as before.
-                if viewModel.config.isDemo, !showRoundComplete {
-                    Button {
-                        guard let activeHole = viewModel.activeHole,
-                              let user = viewModel.config.players.first(where: { $0.id == DemoSeed.userId }) else { return }
-                        inputHole = activeHole
-                        inputPlayer = user
-                        sheetDrag = 0
-                        withAnimation(.spring(response: 0.4, dampingFraction: 0.9)) {
-                            showInput = true
-                        }
-                    } label: {
-                        Text("Save Score")
-                            .font(.carry.bodyLGBold)
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 52)
-                            .background(RoundedRectangle(cornerRadius: 13).fill(Color.pureBlack))
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 16)
-                }
             }
 
             scoreInputOverlay()
@@ -850,12 +823,6 @@ struct ScorecardView: View {
                         #endif
                         return
                     }
-                    if config.isDemo {
-                        // Demo round: score entry is gated behind the bottom
-                        // "Save Score" button. Cell taps are a no-op so the
-                        // user follows the guided path.
-                        return
-                    }
                     if config.isQuickGame && !viewModel.isCurrentUserScorerForOwnGroup {
                         #if DEBUG
                         print("[Scorecard.tap] BLOCKED Quick Game scorer-only — current user is not designated scorer for their group")
@@ -1204,7 +1171,8 @@ struct ScorecardView: View {
                         currentScore: existingScore,
                         onSelect: onSelect,
                         onScoreNext: onScoreNext,
-                        extraBottomPadding: roundCompleteCollapsed ? 68 : 0
+                        extraBottomPadding: roundCompleteCollapsed ? 68 : 0,
+                        isDemo: viewModel.config.isDemo
                     )
                     .id(player.id)
                     .transition(.asymmetric(
