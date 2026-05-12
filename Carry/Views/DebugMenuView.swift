@@ -227,6 +227,15 @@ struct DebugMenuView: View {
                     }
                 }
                 divider
+                // Clears the first-launch Demo Round dismissal flag so the
+                // demo card re-renders on Home (requires skinGameGroups.isEmpty
+                // too — sign out of all groups or use the homeEmpty scenario
+                // to see the card without other state changes).
+                actionRow("Reset Demo Round", icon: "play.rectangle.on.rectangle") {
+                    DemoRoundController.isDismissed = false
+                    ToastManager.shared.success("Demo Round reset")
+                }
+                divider
                 // Forces PhoneInviteFinderSheet to present on Home regardless
                 // of the normal hasURLs/skinGameGroups gates. Useful for
                 // visual review of the modal without staging a real invite.
