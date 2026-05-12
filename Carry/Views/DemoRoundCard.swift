@@ -52,7 +52,7 @@ struct DemoRoundCard: View {
                         .font(.carry.bodySM)
                         .foregroundColor(Color(hexString: "#7A7A7E"))
                         .padding(.top, 6)
-                    Text("3 skins carried · ~$13 on the table")
+                    Text("3 skins carried · ~$80 on the table")
                         .font(.carry.bodySM)
                         .foregroundColor(Color.successGreen)
                         .padding(.top, 2)
