@@ -5274,10 +5274,16 @@ struct GroupOptionsSheet: View {
 
                 // Buy-In per Player
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Buy-In per Player")
-                        .font(.carry.bodySMBold)
-                        .foregroundColor(Color.textPrimary)
-                        .padding(.leading, 4)
+                    HStack {
+                        Text("Buy-In per Player")
+                            .font(.carry.bodySMBold)
+                            .foregroundColor(Color.textPrimary)
+                            .padding(.leading, 4)
+                        Spacer()
+                        Text("*Per round buy-in can be changed anytime")
+                            .font(.carry.caption)
+                            .foregroundColor(Color.textDisabled)
+                    }
 
                     VStack(spacing: 8) {
                         HStack {
