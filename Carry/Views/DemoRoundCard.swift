@@ -157,10 +157,12 @@ struct DemoRoundCard: View {
             } else {
                 // Carry-branded default avatar — matches PlayerAvatar's
                 // initialsView (mint fill + ANDONESI font + dark green text).
+                // Initials = first letter of first name + first letter of
+                // last name (matches the app-wide convention).
                 ZStack {
                     Circle().fill(Color(hexString: "#BCF0B5"))
                     Circle().strokeBorder(Color(hexString: "#A3E09C"), lineWidth: 1.5)
-                    Text(String(name.prefix(1)).uppercased())
+                    Text(twoLetterInitials(from: name))
                         .font(.custom("ANDONESI-Regular", size: 28 * 0.48))
                         .foregroundColor(Color(hexString: "#064102"))
                 }
@@ -182,5 +184,16 @@ struct DemoRoundCard: View {
         .padding(.horizontal, 11)
         .padding(.vertical, 6)
         .background(Capsule().fill(Color.bgSecondary))
+    }
+
+    /// First letter of first name + first letter of last name, uppercased.
+    /// Single-word names fall back to just the one letter.
+    private func twoLetterInitials(from name: String) -> String {
+        let parts = name.split(separator: " ").filter { !$0.isEmpty }
+        guard let first = parts.first?.first else { return "?" }
+        if parts.count >= 2, let last = parts.last?.first {
+            return "\(first)\(last)".uppercased()
+        }
+        return String(first).uppercased()
     }
 }
