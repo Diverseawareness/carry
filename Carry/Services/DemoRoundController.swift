@@ -32,6 +32,7 @@ enum DemoRoundController {
     /// - `isDemo: true` — RoundConfig flag that gates `ScoreStorage` writes
     /// - `supabaseRoundId: nil` + `supabaseGroupId: nil` — gates network calls
     ///   (subscriptions, polling, upserts, Live Activity all auto-skip)
+    @MainActor
     static func makeViewModel(authService: AuthService) -> RoundViewModel {
         let displayName = authService.currentUser?.displayName ?? authService.currentUser?.firstName
         let userProfileId = authService.currentUser?.id

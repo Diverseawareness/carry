@@ -392,6 +392,10 @@ struct HomeView: View {
     /// dismiss-edge so post-Restart back-out slides horizontally (setup
     /// convention) instead of vertically (scorecard convention).
     @State private var coordinatorIsInSetup: Bool = false
+    /// First-launch Demo Round ViewModel. Non-nil while the demo is being
+    /// played; nil before tap and after dismiss. See DemoRoundController +
+    /// `~/.claude/skills/demo-round/SKILL.md`.
+    @State private var demoViewModel: RoundViewModel?
     @State private var leaderboardRound: HomeRound?
     @State private var resultsRound: HomeRound?
     @State private var roundToLeave: HomeRound?
@@ -510,8 +514,27 @@ struct HomeView: View {
                         phoneMigrationBanner
                     }
 
-                    // MARK: New User CTA
-                    if skinGameGroups.isEmpty && !isLoadingGroups {
+                    // MARK: New User CTA / Demo Round
+                    // Demo Round card takes precedence over the empty CTA when
+                    // groups is empty AND user hasn't dismissed the demo. Once
+                    // dismissed (any path), demo card never re-renders and the
+                    // empty CTA returns. See DemoRoundController.isDismissed.
+                    if skinGameGroups.isEmpty && !isLoadingGroups && !DemoRoundController.isDismissed {
+                        DemoRoundCard(
+                            displayName: authService.currentUser?.displayName,
+                            onTap: {
+                                let vm = DemoRoundController.makeViewModel(authService: authService)
+                                withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                                    demoViewModel = vm
+                                }
+                            },
+                            onDismiss: {
+                                DemoRoundController.isDismissed = true
+                            }
+                        )
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 24)
+                    } else if skinGameGroups.isEmpty && !isLoadingGroups {
                         VStack(spacing: 12) {
                             Image(systemName: "person.2.fill")
                                 .font(.carry.displaySM)
@@ -699,6 +722,31 @@ struct HomeView: View {
                     removal: .move(edge: coordinatorIsInSetup ? .trailing : .bottom)
                 ))
                 .zIndex(1)
+            }
+        }
+        .overlay {
+            // Demo Round overlay — separate from selectedRound path because the
+            // demo doesn't fit the HomeRound shape (no Supabase IDs, fictional
+            // players). ScorecardView's alternate init takes a pre-built VM,
+            // which DemoRoundController has already seeded with holes 1-15.
+            if let vm = demoViewModel {
+                ScorecardView(
+                    viewModel: vm,
+                    onBack: {
+                        // Dismiss demo on back tap. Mark as dismissed so the card
+                        // doesn't re-render. RoundCompleteView's DemoConvertSheet
+                        // path also sets this; back-out before completion is the
+                        // "give up" exit.
+                        DemoRoundController.isDismissed = true
+                        withAnimation(.spring(response: 0.45, dampingFraction: 0.9)) {
+                            demoViewModel = nil
+                        }
+                    },
+                    isQuickGame: true
+                )
+                .ignoresSafeArea()
+                .transition(.move(edge: .bottom))
+                .zIndex(2)
             }
         }
         .animation(.spring(response: 0.45, dampingFraction: 0.9), value: selectedRound?.id)

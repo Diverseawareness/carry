@@ -96,6 +96,10 @@
 		N10002 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = N10001 /* NotificationService.swift */; };
 		QR0001 /* QRScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = QR0002 /* QRScannerView.swift */; };
 		S10002 /* SyncQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = S10001 /* SyncQueue.swift */; };
+		DA0001 /* DemoSeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB0001 /* DemoSeed.swift */; };
+		DA0002 /* DemoRoundController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB0002 /* DemoRoundController.swift */; };
+		DA0003 /* DemoRoundCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB0003 /* DemoRoundCard.swift */; };
+		DA0004 /* DemoConvertSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB0004 /* DemoConvertSheet.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -221,6 +225,10 @@
 		QR0002 /* QRScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRScannerView.swift; sourceTree = "<group>"; };
 		S10001 /* SyncQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncQueue.swift; sourceTree = "<group>"; };
 		SC0001 /* Secrets.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Secrets.xcconfig; sourceTree = "<group>"; };
+		DB0001 /* DemoSeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoSeed.swift; sourceTree = "<group>"; };
+		DB0002 /* DemoRoundController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoRoundController.swift; sourceTree = "<group>"; };
+		DB0003 /* DemoRoundCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoRoundCard.swift; sourceTree = "<group>"; };
+		DB0004 /* DemoConvertSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoConvertSheet.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -349,6 +357,7 @@
 				B10022 /* SupabaseModels.swift */,
 				B10028 /* TeeBox.swift */,
 				F007D3C867C846239A99A99E /* GolfCourseAPI.swift */,
+				DB0001 /* DemoSeed.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -409,6 +418,8 @@
 				F80001 /* ImageCropView.swift */,
 				F80002 /* CameraView.swift */,
 				QR0002 /* QRScannerView.swift */,
+				DB0003 /* DemoRoundCard.swift */,
+				DB0004 /* DemoConvertSheet.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -435,6 +446,7 @@
 				E40001 /* GroupStorage.swift */,
 				E40002 /* ScoreStorage.swift */,
 				6067A5C62F75E7980055DE9A /* AnalyticsService.swift */,
+				DB0002 /* DemoRoundController.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -689,6 +701,10 @@
 				F70001 /* ImageCropView.swift in Sources */,
 				F70002 /* CameraView.swift in Sources */,
 				QR0001 /* QRScannerView.swift in Sources */,
+				DA0001 /* DemoSeed.swift in Sources */,
+				DA0002 /* DemoRoundController.swift in Sources */,
+				DA0003 /* DemoRoundCard.swift in Sources */,
+				DA0004 /* DemoConvertSheet.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

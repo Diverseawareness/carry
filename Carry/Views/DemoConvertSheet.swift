@@ -36,7 +36,7 @@ struct DemoConvertSheet: View {
 
             // Title + body
             Text("Want a weekly game like this?")
-                .font(.carry.headingMD)
+                .font(.carry.sheetTitle)
                 .foregroundColor(Color.textPrimary)
                 .multilineTextAlignment(.center)
                 .padding(.top, 20)
