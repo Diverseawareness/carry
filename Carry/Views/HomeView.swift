@@ -753,7 +753,7 @@ struct HomeView: View {
         // Hide the parent tab bar whenever a round is fullscreen-presented.
         // Re-publishes on every body recomputation, so unmounting the view
         // (e.g. switching tabs) automatically clears the contribution.
-        .preference(key: TabBarHiddenKey.self, value: selectedRound != nil)
+        .preference(key: TabBarHiddenKey.self, value: selectedRound != nil || demoViewModel != nil)
         .sheet(item: $leaderboardRound) { round in
             let groupHistory = skinGameGroups.first(where: { $0.name == round.groupName })?.roundHistory ?? []
             LeaderboardSheet(round: round, groupRoundHistory: groupHistory)
