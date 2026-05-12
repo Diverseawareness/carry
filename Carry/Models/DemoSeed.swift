@@ -114,7 +114,9 @@ enum DemoSeed {
     }
 
     static let courseName = "Pebble Beach Golf Links"
-    static let buyIn = 20  // $20 × 4 players = $80 pot, $4.44/skin
+    static let buyIn = 50  // $50 × 4 players = $200 pot, $11.11/skin → user
+                           // wins ~$66+ on the hole-18 big bang (in target
+                           // $60-80 winnings range per spec).
 
     // MARK: - Pre-filled scores (holes 1-15)
     //

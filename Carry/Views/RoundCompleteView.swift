@@ -809,7 +809,7 @@ struct RoundCompleteView: View {
                         if let onExitRound { onExitRound() } else { onDismiss() }
                     }
                 } label: {
-                    Text("Save Round Results")
+                    Text(viewModel.config.isDemo ? "Done" : "Save Round Results")
                         .font(Font.system(size: 20, weight: .semibold))
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
