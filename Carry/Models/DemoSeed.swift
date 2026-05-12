@@ -122,13 +122,15 @@ enum DemoSeed {
     //   - Holes 13, 14, 15 ALL squashed → 3 carried skins sitting on the table
     //     when the user starts playing hole 16
     //
-    // Format: [holeNum: [playerId: grossScore]]
+    // Format below: [holeNum: [playerId: grossScore]] — readable hole-by-hole.
+    // `prefilledScoresByPlayer` (computed below) transposes to the shape
+    // `RoundViewModel.scores` expects ([playerId: [holeNum: score]]).
     //
     // Note: actual skin distribution depends on the per-hole hcp ranking from
     // Hole.allHoles. If the resulting distribution drifts noticeably from the
     // intent above, tune individual gross scores here. The carries on 13-15
     // are the load-bearing property; the exact 6/4/3/0 split is aspirational.
-    static let preFilledScores: [Int: [Int: Int]] = [
+    private static let preFilledScoresByHole: [Int: [Int: Int]] = [
         //  hole : [user, sarah, mike, tom] (gross)
         1:  [userId: 5, sarahId: 4, mikeId: 6, tomId: 7],   // Sarah wins
         2:  [userId: 4, sarahId: 4, mikeId: 5, tomId: 6],   // User+Sarah tie low? carries or wins
@@ -149,6 +151,19 @@ enum DemoSeed {
         14: [userId: 4, sarahId: 4, mikeId: 4, tomId: 4],
         15: [userId: 5, sarahId: 5, mikeId: 5, tomId: 5],
     ]
+
+    /// Transposed shape for assignment to `RoundViewModel.scores`
+    /// (`[playerId: [holeNum: score]]`). Built once at access time from
+    /// `preFilledScoresByHole` above.
+    static var preFilledScores: [Int: [Int: Int]] {
+        var result: [Int: [Int: Int]] = [:]
+        for (hole, perPlayer) in preFilledScoresByHole {
+            for (playerId, score) in perPlayer {
+                result[playerId, default: [:]][hole] = score
+            }
+        }
+        return result
+    }
 
     // MARK: - Opponent reaction logic (holes 16-18)
 
