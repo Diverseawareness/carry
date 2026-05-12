@@ -30,19 +30,19 @@ struct DemoConvertSheet: View {
                     .frame(width: 72, height: 72)
                 ZStack(alignment: .topTrailing) {
                     Image(systemName: "calendar")
-                        .font(.system(size: 32, weight: .semibold))
+                        .font(.system(size: 32, weight: .regular))
                         .foregroundColor(Color.successGreen)
                     Circle()
                         .fill(Color.successGreen)
-                        .frame(width: 10, height: 10)
-                        .offset(x: 3, y: -2)
+                        .frame(width: 9, height: 9)
+                        .offset(x: 1, y: -1)
                 }
             }
             .padding(.top, 28)
 
             // Title + body
             Text("Set up your weekly game?")
-                .font(.carry.sheetTitle)
+                .font(.system(size: 24, weight: .bold))
                 .foregroundColor(Color.textPrimary)
                 .multilineTextAlignment(.center)
                 .padding(.top, 20)
