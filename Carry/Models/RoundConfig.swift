@@ -49,6 +49,11 @@ struct RoundConfig {
     var scorerPlayerIds: [Int]? = nil  // Full per-group scorer player IDs from skins_groups.scorer_ids. Used by the QG gate to allow ANY designated scorer (group 1 OR group 2+) to enter scores.
     var scoringMode: ScoringMode = .single
     var isQuickGame: Bool = false  // Quick Game flag — lifts the sequential-hole scoring gate so multi-group parallel play can score any hole at any time
+    /// First-launch sandbox demo round (Sarah/Mike/Tom + user, in-memory only).
+    /// When true: all RoundService persistence calls + ScoreStorage writes are
+    /// skipped (defense-in-depth above the supabaseRoundId == nil gates that
+    /// already short-circuit network paths). See `demo-round` skill spec.
+    var isDemo: Bool = false
     var winningsDisplay: String = "gross"  // "gross" or "net" — controls scorecard cash bar display
     /// Tee time for the scorer's group. Rendered in the scorecard header
     /// subtitle before the course name so scorers in Group 2+ see their own

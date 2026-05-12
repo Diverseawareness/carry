@@ -365,7 +365,7 @@ class RoundViewModel: ObservableObject {
     // Clear all scores (used by Restart Round)
     func clearAllScores() {
         scores = [:]
-        ScoreStorage.shared.save(scores: scores, forKey: roundKey)
+        saveScoresLocally()
         activeHole = computeActiveHole()
         calculateSkins()
         isRoundComplete = false
@@ -395,7 +395,7 @@ class RoundViewModel: ObservableObject {
         }
 
         scores[playerId, default: [:]][holeNum] = score
-        ScoreStorage.shared.save(scores: scores, forKey: roundKey)
+        saveScoresLocally()
 
         // Sync score to Supabase — queue for retry if offline/failed
         if let roundId = config.supabaseRoundId, let playerUUID = playerUUIDs[playerId] {
@@ -509,7 +509,7 @@ class RoundViewModel: ObservableObject {
                 await MainActor.run {
                     if accept {
                         scores[proposal.playerId, default: [:]][proposal.holeNum] = proposal.proposed
-                        ScoreStorage.shared.save(scores: scores, forKey: roundKey)
+                        saveScoresLocally()
                         calculateSkins()
                     }
                     activeProposal = nil
@@ -539,6 +539,16 @@ class RoundViewModel: ObservableObject {
             #endif
             activeProposal = nil
         }
+    }
+
+    // MARK: - Local Persistence
+
+    /// Persist scores to UserDefaults via ScoreStorage. Skipped for demo rounds
+    /// (first-launch sandbox) so demo state never accumulates between launches.
+    /// See `demo-round` skill spec.
+    private func saveScoresLocally() {
+        guard !config.isDemo else { return }
+        ScoreStorage.shared.save(scores: scores, forKey: roundKey)
     }
 
     // MARK: - Supabase Realtime
@@ -628,7 +638,7 @@ class RoundViewModel: ObservableObject {
                 }
 
                 guard updated else { return }
-                ScoreStorage.shared.save(scores: scores, forKey: roundKey)
+                saveScoresLocally()
                 activeHole = computeActiveHole()
 
                 // Recalculate skins and detect new wins
@@ -786,7 +796,7 @@ class RoundViewModel: ObservableObject {
             #endif
             activeProposal = nil
             scores[intId, default: [:]][dto.holeNum] = dto.score
-            ScoreStorage.shared.save(scores: scores, forKey: roundKey)
+            saveScoresLocally()
             calculateSkins()
             return
         }
@@ -825,7 +835,7 @@ class RoundViewModel: ObservableObject {
         // Only apply if it's a new or changed score (avoid re-triggering our own writes)
         guard existing == nil || existing != dto.score else { return }
         scores[intId, default: [:]][dto.holeNum] = dto.score
-        ScoreStorage.shared.save(scores: scores, forKey: roundKey)
+        saveScoresLocally()
         activeHole = computeActiveHole()
         let newSkins = calculateSkins()
         // Detect carry events from realtime updates so other groups see them instantly
@@ -853,7 +863,7 @@ class RoundViewModel: ObservableObject {
                     let hadScores = scores.values.contains { !$0.isEmpty }
                     if hadScores {
                         scores = [:]
-                        ScoreStorage.shared.save(scores: scores, forKey: roundKey)
+                        saveScoresLocally()
                         activeHole = computeActiveHole()
                         calculateSkins()
                     }
@@ -875,7 +885,7 @@ class RoundViewModel: ObservableObject {
                     }
                 }
                 if updated {
-                    ScoreStorage.shared.save(scores: scores, forKey: roundKey)
+                    saveScoresLocally()
                     activeHole = computeActiveHole()
                     calculateSkins()
 
