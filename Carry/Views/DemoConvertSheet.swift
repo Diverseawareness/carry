@@ -26,7 +26,7 @@ struct DemoConvertSheet: View {
             // Hero icon — calendar with notification dot (matches mock)
             ZStack {
                 Circle()
-                    .fill(Color.successGreen.opacity(0.15))
+                    .fill(Color(hexString: "#D9F7D2"))
                     .frame(width: 72, height: 72)
                 ZStack(alignment: .topTrailing) {
                     Image(systemName: "calendar")
@@ -65,8 +65,8 @@ struct DemoConvertSheet: View {
                         .font(.carry.bodyLGBold)
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .background(Capsule().fill(Color.pureBlack))
+                        .frame(height: 52)
+                        .background(RoundedRectangle(cornerRadius: 13).fill(Color.pureBlack))
                 }
                 .buttonStyle(.plain)
 
@@ -82,7 +82,7 @@ struct DemoConvertSheet: View {
             .padding(.horizontal, 24)
             .padding(.bottom, 16)
         }
-        .background(Color.bgPrimary.ignoresSafeArea(edges: .bottom))
+        .background(Color.white.ignoresSafeArea(edges: .bottom))
         .presentationDetents([.medium])
         .presentationDragIndicator(.hidden)
     }
