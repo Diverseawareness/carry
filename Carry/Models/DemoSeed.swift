@@ -28,6 +28,8 @@ enum DemoSeed {
     // MARK: - Opponents (fixed across all users)
 
     /// Sarah — the leader through hole 15. Low handicap, plays steady.
+    /// Avatar: demo_01 (user-provided face avatar; swap filename in
+    /// `avatarImageName` below if you'd rather match a different photo).
     static let sarah = Player(
         id: sarahId,
         name: "Sarah",
@@ -38,10 +40,11 @@ enum DemoSeed {
         group: 1,
         ghinNumber: nil,
         venmoUsername: nil,
-        avatarImageName: "demoSarah"
+        avatarImageName: "demo_01"
     )
 
     /// Mike — mid-pack. Higher handicap, gets more strokes but uses them inconsistently.
+    /// Avatar: demo_02.
     static let mike = Player(
         id: mikeId,
         name: "Mike",
@@ -52,10 +55,11 @@ enum DemoSeed {
         group: 1,
         ghinNumber: nil,
         venmoUsername: nil,
-        avatarImageName: "demoMike"
+        avatarImageName: "demo_02"
     )
 
     /// Tom — last place. High handicap, struggles even with the strokes.
+    /// Avatar: demo_03.
     static let tom = Player(
         id: tomId,
         name: "Tom",
@@ -66,7 +70,7 @@ enum DemoSeed {
         group: 1,
         ghinNumber: nil,
         venmoUsername: nil,
-        avatarImageName: "demoTom"
+        avatarImageName: "demo_03"
     )
 
     // MARK: - User slot constructor
