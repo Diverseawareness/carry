@@ -575,7 +575,7 @@ struct HomeView: View {
                             swipeToLeaveWrapper(round: round) {
                                 recentRoundCard(round)
                             }
-                            .padding(.horizontal, 16)
+                            .padding(.horizontal, 8)
                             .padding(.bottom, 8)
                         }
                     }
@@ -1506,8 +1506,19 @@ struct HomeView: View {
 
     // MARK: - Recent Round Card
 
+    /// Date formatter for Recent Games card date row. Style "Sun, May 7".
+    private static let recentRoundDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "EEE, MMM d"
+        return f
+    }()
+
     private func recentRoundCard(_ round: HomeRound) -> some View {
         let winnings = round.playerWinnings[currentUserId] ?? 0
+        let dateLabel: String? = {
+            let date = round.completedAt ?? round.concludedAt ?? round.startedAt
+            return date.map { Self.recentRoundDateFormatter.string(from: $0) }
+        }()
 
         return HStack(spacing: 14) {
             VStack(alignment: .leading, spacing: 0) {
@@ -1528,6 +1539,13 @@ struct HomeView: View {
                         .foregroundColor(Color.textTertiary)
                 }
                 .padding(.top, 6)
+
+                if let dateLabel {
+                    Text(dateLabel)
+                        .font(.carry.bodySM)
+                        .foregroundColor(Color.textTertiary)
+                        .padding(.top, 2)
+                }
             }
 
             Spacer()

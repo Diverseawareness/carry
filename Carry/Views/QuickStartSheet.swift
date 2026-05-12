@@ -257,9 +257,17 @@ struct QuickGameSheet: View {
 
     // MARK: - Recent Setups
 
+    /// Date formatter for recent-setup card date row. Format: "Sun, May 7"
+    /// — matches the Home tab Recent Games card format for consistency.
+    private static let recentSetupDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "EEE, MMM d"
+        return f
+    }()
+
     @ViewBuilder
     private var recentSetupsSection: some View {
-        let recents = recentQuickGames.prefix(3)
+        let recents = recentQuickGames.prefix(5)
         if !recents.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Recent Setups")
@@ -271,6 +279,12 @@ struct QuickGameSheet: View {
                     HStack(spacing: 8) {
                         ForEach(Array(recents)) { game in
                             let isSelected = selectedRecentGameId == game.id
+                            let dateLabel: String? = {
+                                let date = game.roundHistory.first?.completedAt
+                                    ?? game.roundHistory.first?.concludedAt
+                                    ?? game.scheduledDate
+                                return date.map { Self.recentSetupDateFormatter.string(from: $0) }
+                            }()
                             Button {
                                 selectedRecentGameId = game.id
                                 prefillFromRecentGame(game)
@@ -281,10 +295,17 @@ struct QuickGameSheet: View {
                                         .foregroundColor(Color.textPrimary)
                                         .lineLimit(1)
 
-                                    Text(game.name)
-                                        .font(.carry.captionLG)
-                                        .foregroundColor(Color.textTertiary)
-                                        .lineLimit(1)
+                                    if let dateLabel {
+                                        Text(dateLabel)
+                                            .font(.carry.captionLG)
+                                            .foregroundColor(Color.textTertiary)
+                                            .lineLimit(1)
+                                    } else {
+                                        Text(game.name)
+                                            .font(.carry.captionLG)
+                                            .foregroundColor(Color.textTertiary)
+                                            .lineLimit(1)
+                                    }
 
                                     HStack(spacing: 4) {
                                         Image(systemName: "person.2.fill")
@@ -300,7 +321,7 @@ struct QuickGameSheet: View {
                                     }
                                     .foregroundColor(Color.textDisabled)
                                 }
-                                .frame(width: 125)
+                                .frame(width: 125, alignment: .leading)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 10)
                                 .background(RoundedRectangle(cornerRadius: 12).fill(.white))
@@ -335,10 +356,31 @@ struct QuickGameSheet: View {
         buyInAmount = game.buyInPerPlayer
         handicapPct = game.handicapPercentage
 
-        // Rebuild slots from game members
+        // Rebuild slots from the most recent round's player list, NOT from
+        // `game.members`. SavedGroup.members is Carry-only (from group_members)
+        // — guests live on the round's player list via buildHomeRound's
+        // wiped-fallback (which reads round_players.guest_display_name +
+        // guest_handicap denormalized fields). Using `game.members` would
+        // drop every guest from the prefill.
+        //
+        // Priority: roundHistory.first (most recent completed) → concludedRound
+        // → activeRound → fall back to game.members for safety.
+        let rosterSource: [Player] = {
+            if let recent = game.roundHistory.first {
+                return recent.players
+            }
+            if let concluded = game.concludedRound {
+                return concluded.players
+            }
+            if let active = game.activeRound {
+                return active.players
+            }
+            return game.members
+        }()
+
         // Sort each group so Carry users (scorers) come first in slot 0
         var newSlots: [[PlayerSlot]] = []
-        let grouped = Dictionary(grouping: game.members, by: { $0.group })
+        let grouped = Dictionary(grouping: rosterSource, by: { $0.group })
         let maxGroup = grouped.keys.max() ?? 1
 
         for g in 0..<4 {
