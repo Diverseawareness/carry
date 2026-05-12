@@ -30,9 +30,11 @@ struct DemoRoundCard: View {
         // CTA below opens the scorecard. Tapping the body itself does
         // nothing; long-press anywhere brings up the dismiss confirm.
         VStack(spacing: 0) {
-            // Header: course/hole label + DEMO badge
+            // Header: card title + DEMO badge. Title says "Demo Game" so
+            // it's clear what this card IS (the course name lives in the
+            // subtitle below for context).
             HStack {
-                Text("Pebble Beach")
+                Text("Demo Game")
                     .font(.carry.bodyLGBold)
                     .foregroundColor(Color.pureBlack)
 
