@@ -129,11 +129,17 @@ struct DemoRoundCard: View {
                     .frame(width: 28, height: 28)
                     .clipShape(Circle())
             } else {
-                Text(String(name.prefix(1)).uppercased())
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundColor(.white)
-                    .frame(width: 28, height: 28)
-                    .background(Circle().fill(isLeader ? Color.pureBlack : Color.textTertiary))
+                // Carry-branded default avatar — matches PlayerAvatar's
+                // initialsView (mint fill + ANDONESI font + dark green text).
+                ZStack {
+                    Circle().fill(Color(hexString: "#BCF0B5"))
+                    Circle().strokeBorder(Color(hexString: "#A3E09C"), lineWidth: 1.5)
+                    Text(String(name.prefix(1)).uppercased())
+                        .font(.custom("ANDONESI-Regular", size: 28 * 0.48))
+                        .foregroundColor(Color(hexString: "#064102"))
+                }
+                .frame(width: 28, height: 28)
+                .clipShape(Circle())
             }
 
             Text(name)
