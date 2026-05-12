@@ -170,13 +170,16 @@ struct RoundCompleteView: View {
             DemoConvertSheet(
                 displayName: viewModel.allPlayers.first(where: { $0.id == DemoSeed.userId })?.name,
                 onAccept: {
-                    // Yes -> dismiss demo, fire onCreateGroup which routes to
-                    // the new-Skins-Group flow. Mark demo dismissed so the
-                    // card never re-renders.
+                    // Yes -> mark demo dismissed, exit the demo (closes
+                    // RoundCompleteView + ScorecardView via onExitRound which
+                    // triggers HomeView's onBack chain to clear demoViewModel),
+                    // then post .demoRoundAcceptedConvert. HomeView listens,
+                    // switches to skinGames tab, and forwards .showNewGamePicker
+                    // so GroupsListView opens the new Skins Group flow.
                     DemoRoundController.isDismissed = true
                     showDemoConvertSheet = false
-                    onCreateGroup?()
-                    onDismiss()
+                    if let onExitRound { onExitRound() } else { onDismiss() }
+                    NotificationCenter.default.post(name: .demoRoundAcceptedConvert, object: nil)
                 },
                 onDecline: {
                     // No thanks -> dismiss demo, return to Home empty state.

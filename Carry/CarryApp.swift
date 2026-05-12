@@ -144,6 +144,11 @@ extension NSNotification.Name {
     /// ~15s after the convert decline (Bug G).
     static let didLocallyArchiveRound = NSNotification.Name("didLocallyArchiveRound")
     static let showNewGamePicker = NSNotification.Name("showNewGamePicker")
+    /// Posted when the user taps "Yes" on the Demo Round convert sheet.
+    /// HomeView listens, clears the demo overlay, switches to skinGames tab,
+    /// then forwards `.showNewGamePicker` so GroupsListView opens the new
+    /// Skins Group flow.
+    static let demoRoundAcceptedConvert = NSNotification.Name("demoRoundAcceptedConvert")
     /// Posted when the creator's device receives a memberJoined / memberDeclined
     /// push while the app is foregrounded. Object = group UUID. GroupManagerView
     /// listens to refresh its roster immediately instead of waiting for the 30s

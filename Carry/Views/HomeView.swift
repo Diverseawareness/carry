@@ -756,6 +756,18 @@ struct HomeView: View {
         // Re-publishes on every body recomputation, so unmounting the view
         // (e.g. switching tabs) automatically clears the contribution.
         .preference(key: TabBarHiddenKey.self, value: selectedRound != nil || demoViewModel != nil)
+        .onReceive(NotificationCenter.default.publisher(for: .demoRoundAcceptedConvert)) { _ in
+            // Demo round Yes-tap: ScorecardView/RoundCompleteView already
+            // dismissed themselves via onExitRound. Route to Games tab and
+            // forward the standard new-game-picker notification so the user
+            // lands directly in the New Skins Game flow.
+            withAnimation(.spring(response: 0.45, dampingFraction: 0.9)) {
+                selectedTab = .skinGames
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                NotificationCenter.default.post(name: .showNewGamePicker, object: nil)
+            }
+        }
         .sheet(item: $leaderboardRound) { round in
             let groupHistory = skinGameGroups.first(where: { $0.name == round.groupName })?.roundHistory ?? []
             LeaderboardSheet(round: round, groupRoundHistory: groupHistory)
