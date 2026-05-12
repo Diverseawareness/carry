@@ -733,11 +733,13 @@ struct HomeView: View {
                 ScorecardView(
                     viewModel: vm,
                     onBack: {
-                        // Dismiss demo on back tap. Mark as dismissed so the card
-                        // doesn't re-render. RoundCompleteView's DemoConvertSheet
-                        // path also sets this; back-out before completion is the
-                        // "give up" exit.
-                        DemoRoundController.isDismissed = true
+                        // Back from scorecard - return to Home but KEEP the demo
+                        // card visible. Re-tap resumes (note: each tap rebuilds
+                        // a fresh ViewModel per the spec's reset-on-leave rule,
+                        // so the user starts hole 16 again with fresh seed).
+                        // The card is only permanently dismissed via the
+                        // explicit X on the card or after completing the round
+                        // (DemoConvertSheet path).
                         withAnimation(.spring(response: 0.45, dampingFraction: 0.9)) {
                             demoViewModel = nil
                         }
