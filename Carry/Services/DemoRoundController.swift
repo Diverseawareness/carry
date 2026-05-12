@@ -66,6 +66,11 @@ enum DemoRoundController {
         let vm = RoundViewModel(config: config, currentUserId: DemoSeed.userId)
         vm.scores = DemoSeed.preFilledScores
         _ = vm.calculateSkins()
+        // Init left activeHole = nil because scores were empty. Now that
+        // holes 1-15 are seeded, recompute so the scorecard opens directly
+        // on hole 16 (the first unscored hole) instead of falling back to
+        // hole 1.
+        vm.activeHole = vm.computeActiveHole()
         return vm
     }
 
