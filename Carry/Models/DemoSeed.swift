@@ -7,7 +7,7 @@ import Foundation
 /// for the full feature spec.
 ///
 /// Key design points:
-/// - 4 players: user (slot 1) + 3 fixed fictional opponents (Ryan, Mike, Tom)
+/// - 4 players: user (slot 1) + 3 fixed fictional opponents (Ryan, Mike, Lisa)
 /// - Holes 1-15 pre-filled with hardcoded gross scores
 /// - Holes 13, 14, 15 hand-tuned to all squash → 3 carried skins on the table
 /// - Holes 16, 17 (user plays): forced tie (carry) via opponent reaction
@@ -23,7 +23,7 @@ enum DemoSeed {
     static let userId = 1001
     static let ryanId = 1002
     static let mikeId = 1003
-    static let tomId = 1004
+    static let lisaId = 1004
 
     // MARK: - Opponents (fixed across all users)
 
@@ -58,12 +58,12 @@ enum DemoSeed {
         avatarImageName: "demo_02"
     )
 
-    /// Tom — last place. High handicap, struggles even with the strokes.
+    /// Lisa — last place. High handicap, struggles even with the strokes.
     /// Avatar: demo_03.
-    static let tom = Player(
-        id: tomId,
-        name: "Tom",
-        initials: "T",
+    static let lisa = Player(
+        id: lisaId,
+        name: "Lisa",
+        initials: "L",
         color: "#16A34A",
         handicap: 22.0,
         avatar: "🍻",
@@ -99,9 +99,9 @@ enum DemoSeed {
         )
     }
 
-    /// Full 4-player roster ordered: user, Ryan, Mike, Tom.
+    /// Full 4-player roster ordered: user, Ryan, Mike, Lisa.
     static func roster(displayName: String?, userProfileId: UUID? = nil) -> [Player] {
-        [userPlayer(displayName: displayName, profileId: userProfileId), ryan, mike, tom]
+        [userPlayer(displayName: displayName, profileId: userProfileId), ryan, mike, lisa]
     }
 
     // MARK: - Course + tee box
@@ -122,7 +122,7 @@ enum DemoSeed {
     //   - Ryan ~6 skins won (steady par golf)
     //   - User  ~4 skins won (mid-pack with handful of bright spots)
     //   - Mike  ~3 skins won (occasional good hole, mostly bogeys)
-    //   - Tom    0 skins won (shutout — playing poorly even with strokes)
+    //   - Lisa    0 skins won (shutout — playing poorly even with strokes)
     //   - Holes 13, 14, 15 ALL squashed → 3 carried skins sitting on the table
     //     when the user starts playing hole 16
     //
@@ -135,25 +135,25 @@ enum DemoSeed {
     // intent above, tune individual gross scores here. The carries on 13-15
     // are the load-bearing property; the exact 6/4/3/0 split is aspirational.
     private static let preFilledScoresByHole: [Int: [Int: Int]] = [
-        //  hole : [user, ryan, mike, tom] (gross)
-        1:  [userId: 5, ryanId: 4, mikeId: 6, tomId: 7],   // Ryan wins
-        2:  [userId: 4, ryanId: 4, mikeId: 5, tomId: 6],   // User+Ryan tie low? carries or wins
-        3:  [userId: 4, ryanId: 5, mikeId: 5, tomId: 7],   // User wins
-        4:  [userId: 6, ryanId: 4, mikeId: 6, tomId: 8],   // Ryan wins
-        5:  [userId: 5, ryanId: 5, mikeId: 4, tomId: 7],   // Mike wins
-        6:  [userId: 4, ryanId: 4, mikeId: 5, tomId: 6],   // tie — carries
-        7:  [userId: 5, ryanId: 4, mikeId: 6, tomId: 7],   // Ryan wins
-        8:  [userId: 4, ryanId: 5, mikeId: 6, tomId: 7],   // User wins
-        9:  [userId: 5, ryanId: 4, mikeId: 7, tomId: 8],   // Ryan wins
-        10: [userId: 4, ryanId: 5, mikeId: 5, tomId: 7],   // User wins
-        11: [userId: 5, ryanId: 4, mikeId: 5, tomId: 8],   // Ryan wins
-        12: [userId: 6, ryanId: 5, mikeId: 4, tomId: 7],   // Mike wins
+        //  hole : [user, ryan, mike, lisa] (gross)
+        1:  [userId: 5, ryanId: 4, mikeId: 6, lisaId: 7],   // Ryan wins
+        2:  [userId: 4, ryanId: 4, mikeId: 5, lisaId: 6],   // User+Ryan tie low? carries or wins
+        3:  [userId: 4, ryanId: 5, mikeId: 5, lisaId: 7],   // User wins
+        4:  [userId: 6, ryanId: 4, mikeId: 6, lisaId: 8],   // Ryan wins
+        5:  [userId: 5, ryanId: 5, mikeId: 4, lisaId: 7],   // Mike wins
+        6:  [userId: 4, ryanId: 4, mikeId: 5, lisaId: 6],   // tie — carries
+        7:  [userId: 5, ryanId: 4, mikeId: 6, lisaId: 7],   // Ryan wins
+        8:  [userId: 4, ryanId: 5, mikeId: 6, lisaId: 7],   // User wins
+        9:  [userId: 5, ryanId: 4, mikeId: 7, lisaId: 8],   // Ryan wins
+        10: [userId: 4, ryanId: 5, mikeId: 5, lisaId: 7],   // User wins
+        11: [userId: 5, ryanId: 4, mikeId: 5, lisaId: 8],   // Ryan wins
+        12: [userId: 6, ryanId: 5, mikeId: 4, lisaId: 7],   // Mike wins
         // Holes 13-15: HAND-TUNED FOR SQUASH (all carry)
         // Same gross for all 4 → after handicap strokes, multiple players
         // at the same lowest net → squashed.
-        13: [userId: 5, ryanId: 5, mikeId: 5, tomId: 5],
-        14: [userId: 4, ryanId: 4, mikeId: 4, tomId: 4],
-        15: [userId: 5, ryanId: 5, mikeId: 5, tomId: 5],
+        13: [userId: 5, ryanId: 5, mikeId: 5, lisaId: 5],
+        14: [userId: 4, ryanId: 4, mikeId: 4, lisaId: 4],
+        15: [userId: 5, ryanId: 5, mikeId: 5, lisaId: 5],
     ]
 
     /// Transposed shape for assignment to `RoundViewModel.scores`

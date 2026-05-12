@@ -785,7 +785,7 @@ struct RoundCompleteView: View {
                     }
 
                     // Demo Round: present DemoConvertSheet instead of the
-                    // standard convert-QG-to-SG path. Ryan/Mike/Tom can't be
+                    // standard convert-QG-to-SG path. Ryan/Mike/Lisa can't be
                     // carried into a real group, so the demo gets its own
                     // sheet that offers to start a fresh recurring Skins
                     // Group with the user as solo host. See `demo-round` skill.
