@@ -60,10 +60,10 @@ struct DemoRoundCard: View {
                     // Player pills — pre-state through hole 15
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
-                            playerPill(name: "Sarah", money: 23, isLeader: true)
-                            playerPill(name: displayName ?? "You", money: 8)
-                            playerPill(name: "Mike", money: -12)
-                            playerPill(name: "Tom", money: -19)
+                            playerPill(name: "Sarah", money: 23, avatarAsset: "demo_01", isLeader: true)
+                            playerPill(name: displayName ?? "You", money: 8, avatarAsset: nil)
+                            playerPill(name: "Mike", money: -12, avatarAsset: "demo_02")
+                            playerPill(name: "Tom", money: -19, avatarAsset: "demo_03")
                         }
                     }
                     .padding(.top, 8)
@@ -108,14 +108,25 @@ struct DemoRoundCard: View {
     }
 
     @ViewBuilder
-    private func playerPill(name: String, money: Int, isLeader: Bool = false) -> some View {
+    private func playerPill(name: String, money: Int, avatarAsset: String?, isLeader: Bool = false) -> some View {
         HStack(spacing: 6) {
-            // Initial circle — no avatar assets needed for the card preview
-            Text(String(name.prefix(1)).uppercased())
-                .font(.system(size: 12, weight: .bold))
-                .foregroundColor(.white)
-                .frame(width: 28, height: 28)
-                .background(Circle().fill(isLeader ? Color.pureBlack : Color.textTertiary))
+            // Real face avatar when available; initial circle fallback for
+            // the user's slot (their real avatar gets used inside the
+            // scorecard from RoundViewModel, but the card preview is
+            // rendered before the VM exists).
+            if let asset = avatarAsset, UIImage(named: asset) != nil {
+                Image(asset)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: 28, height: 28)
+                    .clipShape(Circle())
+            } else {
+                Text(String(name.prefix(1)).uppercased())
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(.white)
+                    .frame(width: 28, height: 28)
+                    .background(Circle().fill(isLeader ? Color.pureBlack : Color.textTertiary))
+            }
 
             Text(name)
                 .font(.carry.captionLG)
