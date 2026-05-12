@@ -71,7 +71,10 @@ struct DemoRoundCard: View {
                 }
                 .padding(.top, 8)
 
-                // CTA — match the LIVE Scorecard button style
+                // CTA — matches the Active Round card's "LIVE Scorecard"
+                // button shape (RoundedRectangle 13pt corner radius, 40pt
+                // height), with primary black fill since this is the
+                // call-to-action.
                 HStack(spacing: 6) {
                     Text("Try the Demo")
                         .font(.carry.bodySMBold)
@@ -81,8 +84,8 @@ struct DemoRoundCard: View {
                         .foregroundColor(.white)
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(Capsule().fill(Color.pureBlack))
+                .frame(height: 40)
+                .background(RoundedRectangle(cornerRadius: 13).fill(Color.pureBlack))
                 .padding(.top, 12)
             }
             .padding(16)
