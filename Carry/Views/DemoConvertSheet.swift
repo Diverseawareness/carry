@@ -23,19 +23,25 @@ struct DemoConvertSheet: View {
                 .frame(width: 36, height: 5)
                 .padding(.top, 8)
 
-            // Hero icon
+            // Hero icon — calendar with notification dot (matches mock)
             ZStack {
                 Circle()
                     .fill(Color.successGreen.opacity(0.15))
                     .frame(width: 72, height: 72)
-                Image(systemName: "calendar.badge.plus")
-                    .font(.system(size: 32, weight: .semibold))
-                    .foregroundColor(Color.successGreen)
+                ZStack(alignment: .topTrailing) {
+                    Image(systemName: "calendar")
+                        .font(.system(size: 32, weight: .semibold))
+                        .foregroundColor(Color.successGreen)
+                    Circle()
+                        .fill(Color.successGreen)
+                        .frame(width: 10, height: 10)
+                        .offset(x: 3, y: -2)
+                }
             }
             .padding(.top, 28)
 
             // Title + body
-            Text("Want a weekly game like this?")
+            Text("Set up your weekly game?")
                 .font(.carry.sheetTitle)
                 .foregroundColor(Color.textPrimary)
                 .multilineTextAlignment(.center)
@@ -55,22 +61,17 @@ struct DemoConvertSheet: View {
             // Buttons
             VStack(spacing: 12) {
                 Button(action: onAccept) {
-                    HStack(spacing: 6) {
-                        Text("Yes, set it up")
-                            .font(.carry.bodyLGBold)
-                            .foregroundColor(.white)
-                        Image(systemName: "arrow.right")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(.white)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
-                    .background(Capsule().fill(Color.pureBlack))
+                    Text("Yes, Set my group up")
+                        .font(.carry.bodyLGBold)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .background(Capsule().fill(Color.pureBlack))
                 }
                 .buttonStyle(.plain)
 
                 Button(action: onDecline) {
-                    Text("No thanks")
+                    Text("No, thanks")
                         .font(.carry.bodyLG)
                         .foregroundColor(Color.textSecondary)
                         .frame(maxWidth: .infinity)
