@@ -343,17 +343,21 @@ struct RoundCompleteView: View {
                 }
                 .frame(maxWidth: .infinity)
 
-                // Share button (top-right) — always visible
-                Button {
-                    generateAndShareCard()
-                } label: {
-                    Image(systemName: "square.and.arrow.up")
-                        .font(Font.system(size: 16, weight: .semibold))
-                        .foregroundColor(Color.textSecondary)
-                        .frame(width: 43, height: 43)
-                        .background(Circle().fill(Color.bgSecondary))
+                // Share button (top-right) — hidden for the Demo Round
+                // because the share card renders empty (no real player
+                // photos fetched, fictional opponents).
+                if !viewModel.config.isDemo {
+                    Button {
+                        generateAndShareCard()
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(Font.system(size: 16, weight: .semibold))
+                            .foregroundColor(Color.textSecondary)
+                            .frame(width: 43, height: 43)
+                            .background(Circle().fill(Color.bgSecondary))
+                    }
+                    .padding(.trailing, 24)
                 }
-                .padding(.trailing, 24)
             }
             .padding(.bottom, 14)
             .background(Color.white)
