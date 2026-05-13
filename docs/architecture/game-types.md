@@ -251,6 +251,7 @@ This is current code state; if you ever want a "Split into 2 groups" button for 
 |---|---|
 | Skins Groups are Carry-only | `convert_quick_game_to_group` (guest wipe step); `loadSingleGroup` filters wiped-guest UUIDs |
 | Quick Game scorer-only | ScorecardView tap gate; `RoundConfig.scorerPlayerIds` |
+| **Every Quick Game tee group MUST have a Carry user (`canScore == true`) as the scorer in slot 0.** Guests, pending invites, and SMS invitees CANNOT be scorers — only confirmed app-account holders. | `canSave` validation in [QuickStartSheet.swift:116](../../Carry/Views/QuickStartSheet.swift:116) (`hasPlayers && slots[g][0].existingProfileId == nil && !slots[g][0].isPendingInvite` → blocks Create); `syncScorerIDs` rule 4 wipes permanent-guest scorer assignments |
 | Conversion is one-way | No reverse RPC exists |
 
 ## Common bugs / gotchas
