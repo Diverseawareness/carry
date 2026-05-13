@@ -782,6 +782,9 @@ struct GroupsListView: View {
                 // docs/sms-invite-scorer-plan.md.
                 for member in updatedMembers where member.isPendingInvite {
                     if let phone = member.phoneNumber, !phone.isEmpty {
+                        #if DEBUG
+                        print("[SMS-invite] member.group=\(member.group) inviteMemberId=\(member.inviteMemberId?.uuidString ?? "nil") phone=\(phone)")
+                        #endif
                         if let inviteId = member.inviteMemberId {
                             _ = try? await groupService.reservePhoneInvite(
                                 id: inviteId,

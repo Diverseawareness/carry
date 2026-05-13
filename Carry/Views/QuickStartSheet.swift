@@ -1460,6 +1460,11 @@ struct QuickGameSheet: View {
                     profileId: profileId,
                     inviteMemberId: slot.inviteMemberId
                 )
+                #if DEBUG
+                if slot.isPendingInvite {
+                    print("[QuickStart.createQuickGame] SMS slot at slots[\(groupIndex)][\(slotIndex)] → Player.group=\(player.group) inviteMemberId=\(player.inviteMemberId?.uuidString ?? "nil")")
+                }
+                #endif
                 players.append(player)
             }
         }
