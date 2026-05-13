@@ -727,20 +727,44 @@ final class GroupService {
     }
 
     /// Save group_num assignments for all members (Quick Games).
-    /// Scoped to exclude phone-invite rows (invited_phone non-empty) so
-    /// the creator's UUID acting as the placeholder player_id on SMS
-    /// invite rows doesn't accidentally stomp the SMS-invite's group_num
-    /// when the creator is in another group. SMS-invite rows carry their
-    /// own group_num from reservePhoneInvite at creation; phone-invitee
-    /// group placement only changes via explicit assignment.
-    func saveGroupNums(groupId: UUID, assignments: [(playerId: UUID, groupNum: Int)]) async throws {
+    ///
+    /// Phone-invite rows have `player_id = inviter UUID` (placeholder)
+    /// until the recipient onboards. A naive UPDATE keyed on
+    /// (group_id, player_id) would therefore match BOTH the inviter's
+    /// regular member row AND every phone-invite row the inviter created,
+    /// clobbering the latter's group_num back to whatever the inviter's
+    /// group is — which then breaks the Group 2+ SMS-invite scorer flow.
+    ///
+    /// The original protection was a PostgREST OR filter
+    /// (`invited_phone.is.null,invited_phone.eq.`) but the empty-value
+    /// `eq.` term wasn't being respected in practice — the UPDATE still
+    /// matched phone-invite rows. Switched to a two-step
+    /// SELECT-then-UPDATE-by-id pattern: fetch all rows matching
+    /// (group_id, player_id), filter client-side to skip rows where
+    /// `invited_phone` is non-empty (= active phone invite), then UPDATE
+    /// each surviving row by its primary key. The id-keyed UPDATE has no
+    /// ambiguous filter syntax to misinterpret.
+    func saveGroupNums(
+        groupId: UUID,
+        assignments: [(playerId: UUID, groupNum: Int)]
+    ) async throws {
         for item in assignments {
-            try await client.from("group_members")
-                .update(["group_num": item.groupNum])
+            let rows: [GroupMemberDTO] = try await client.from("group_members")
+                .select()
                 .eq("group_id", value: groupId.uuidString)
                 .eq("player_id", value: item.playerId.uuidString)
-                .or("invited_phone.is.null,invited_phone.eq.")
                 .execute()
+                .value
+            for row in rows {
+                // Skip active phone-invite rows — those carry their own
+                // group_num via reservePhoneInvite at creation time and
+                // are independent of regular saveGroupNums assignments.
+                if !(row.invitedPhone ?? "").isEmpty { continue }
+                try await client.from("group_members")
+                    .update(["group_num": item.groupNum])
+                    .eq("id", value: row.id.uuidString)
+                    .execute()
+            }
         }
     }
 
