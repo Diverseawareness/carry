@@ -935,10 +935,41 @@ struct GroupManagerView: View {
                 // valid in local @State. Re-merge them here so the 3s
                 // post-appear refresh doesn't wipe them. Skins Groups skip
                 // this branch (Carry-only invariant from 2026-05-01).
+                //
+                // Cross-device guard (1.0.9): also drop any local guest
+                // that's NOT in the server's `guest_roster_json`
+                // snapshot. Without this, a creator removing a guest on
+                // Device A wouldn't propagate to Device B — Device B's
+                // local allMembers still has the guest, freshFroup.members
+                // doesn't, so the filter (`!freshIds.contains`) would
+                // resurrect the removed guest on every refresh.
                 let preservedGuests: [Player]
                 if isQuickGame {
                     let freshIds = Set(filteredFreshMembers.map(\.id))
-                    preservedGuests = allMembers.filter { $0.isGuest && !freshIds.contains($0.id) }
+                    // Decode the server's guest_roster_json (if present)
+                    // into the set of profile ids the server still
+                    // considers part of the group. nil/empty snapshot ⇒
+                    // skip the cross-check (transient gap right after
+                    // creation before the first save lands).
+                    let serverGuestProfileIds: Set<UUID>? = {
+                        guard let json = freshGroup.guestRosterJson,
+                              let data = json.data(using: .utf8),
+                              let snapshots = try? JSONDecoder().decode([QuickGameGuestStorage.GuestSnapshot].self, from: data),
+                              !snapshots.isEmpty
+                        else { return nil }
+                        return Set(snapshots.compactMap(\.profileId))
+                    }()
+                    preservedGuests = allMembers.filter { player in
+                        guard player.isGuest, !freshIds.contains(player.id) else { return false }
+                        // If we have a server snapshot, only preserve
+                        // guests that are still in it. If not, fall back
+                        // to the legacy "preserve any local guest" rule.
+                        if let serverIds = serverGuestProfileIds,
+                           let pid = player.profileId {
+                            return serverIds.contains(pid)
+                        }
+                        return true
+                    }
                 } else {
                     preservedGuests = []
                 }
