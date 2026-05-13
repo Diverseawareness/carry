@@ -476,7 +476,12 @@ final class GroupService {
                 "p_group_id": AnyJSON.string(groupId.uuidString),
                 "p_phone": AnyJSON.string(phone),
                 "p_invited_by": AnyJSON.string(invitedBy.uuidString),
-                "p_group_num": AnyJSON.integer(groupNum)
+                // Pass as text; RPC casts inside. Previously used
+                // AnyJSON.integer but it was being silently coerced on
+                // the iOS wire (same root-cause class as the direct-INSERT
+                // group_num drop). Sticking to strings end-to-end keeps
+                // the param transit predictable.
+                "p_group_num": AnyJSON.string(String(groupNum))
             ]
         ).execute().value
         return resultId

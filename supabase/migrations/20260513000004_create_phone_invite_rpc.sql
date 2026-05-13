@@ -25,12 +25,20 @@
 -- so all Stage 3 reconciliation logic continues to operate correctly.
 -- ============================================================================
 
+-- Drop the old int-typed signature if present (idempotent — first deploy
+-- doesn't have it). The new signature accepts p_group_num as text so the
+-- iOS client can pass it via AnyJSON.string and we cast inside the
+-- function, sidestepping a Supabase-swift / PostgREST handling quirk
+-- where AnyJSON.integer was being silently coerced to the column default
+-- on the wire.
+DROP FUNCTION IF EXISTS public.create_phone_invite(uuid, uuid, text, uuid, int);
+
 CREATE OR REPLACE FUNCTION public.create_phone_invite(
     p_id uuid,
     p_group_id uuid,
     p_phone text,
     p_invited_by uuid,
-    p_group_num int
+    p_group_num text
 )
 RETURNS uuid
 LANGUAGE plpgsql
@@ -39,12 +47,15 @@ SET search_path = public
 AS $$
 DECLARE
     _existing_id uuid;
+    _group_num int;
 BEGIN
     -- Caller must be authenticated. Matches RLS gate for direct INSERT
     -- ("Authenticated users can insert members": auth.uid() IS NOT NULL).
     IF auth.uid() IS NULL THEN
         RAISE EXCEPTION 'Authentication required';
     END IF;
+
+    _group_num := coalesce(p_group_num, '1')::int;
 
     -- Dedup by phone within this group, mirroring the iOS-side check that
     -- was in GroupService.reservePhoneInvite before this RPC existed. If
@@ -64,20 +75,20 @@ BEGIN
     -- reverse trigger reconcile_phone_invite_at_insert fires BEFORE INSERT
     -- and may mutate NEW.player_id / invited_phone / status if the phone
     -- matches an existing profile. NEW.id stays p_id. NEW.group_num stays
-    -- p_group_num.
+    -- the cast _group_num.
     INSERT INTO public.group_members (
         id, group_id, player_id, role, status, invited_phone, group_num
     ) VALUES (
-        p_id, p_group_id, p_invited_by, 'member', 'invited', p_phone, p_group_num
+        p_id, p_group_id, p_invited_by, 'member', 'invited', p_phone, _group_num
     );
 
     RETURN p_id;
 END;
 $$;
 
-COMMENT ON FUNCTION public.create_phone_invite(uuid, uuid, text, uuid, int) IS
-    'SECURITY DEFINER insert path for phone-invite group_members rows. Called by GroupService.reservePhoneInvite via RPC to bypass a PostgREST quirk that silently drops group_num from JSON INSERT bodies. Mirrors the dedup-by-phone behavior the iOS code previously did pre-insert. See migration body for full context.';
+COMMENT ON FUNCTION public.create_phone_invite(uuid, uuid, text, uuid, text) IS
+    'SECURITY DEFINER insert path for phone-invite group_members rows. Called by GroupService.reservePhoneInvite via RPC to bypass a PostgREST quirk that silently drops group_num from JSON INSERT bodies. p_group_num is passed as text (cast inside) because AnyJSON.integer was being silently coerced on the iOS wire. See migration body for full context.';
 
-GRANT EXECUTE ON FUNCTION public.create_phone_invite(uuid, uuid, text, uuid, int) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.create_phone_invite(uuid, uuid, text, uuid, text) TO authenticated;
 
 NOTIFY pgrst, 'reload schema';
