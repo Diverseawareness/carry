@@ -183,7 +183,7 @@ iOS entry: [GroupsListView.swift:260-289 `convertQuickGame`](../../Carry/Views/G
 | Restart Round flow | Wipes scores + `delete_quick_game_guests` | Wipes scores only |
 | Scorer drag (tee-sheet) | **Blocked** ([GroupDropDelegate:5328-5334](../../Carry/Views/GroupManagerView.swift:5328)) — must move scorers via PlayerGroupsSheet | Allowed (everyone-scores mode) |
 | Full-group drop on target | Opens swap picker | Rejects with toast |
-| Drag-to-create-new-tee-group | Same dotted drop zone — appears below the last group card during a drag when `groups.count < 5 && groups[src].count > 1 && isCreator && !isLiveRound` ([:3850-3877](../../Carry/Views/GroupManagerView.swift:3850)). 1.0.9. | Same. Closes the 2026-05-10 gap where SG with ≤4 players couldn't get a 2nd tee group. |
+| Drag-to-create-new-tee-group | Same dotted drop zone — appears below the last group card during a drag when `groups.count < 5 && groups[src].count > 1 && isCreator && !isLiveRound` ([:3795-3818](../../Carry/Views/GroupManagerView.swift:3795)). 1.0.9. Cancelled-drag safety reset 3s after `.onDrag` ensures the zone hides even when user lifts outside any target ([:4089-4110](../../Carry/Views/GroupManagerView.swift:4089), commit `cc2a6c6`). | Same. Closes the 2026-05-10 gap where SG with ≤4 players couldn't get a 2nd tee group. |
 | Missing-scorer affordance | Bottom CTA only — label "Group N needs scorer", tap opens PlayerGroupsSheet ([:1791](../../Carry/Views/GroupManagerView.swift:1791)). `canStartRound` blocks round-start until fixed. See [scorer-rules.md §"Missing scorer behavior (Quick Game)"](scorer-rules.md) | N/A — `.everyone` mode has no scorers. The dormant `.single`-mode banner gated `scoringMode != .everyone && !isQuickGame` is unreachable in v1. See [scorer-rules.md §"SG single-scorer toggle dormant"](scorer-rules.md) |
 
 ## Auto-grouping rules
@@ -267,4 +267,4 @@ This is current code state; if you ever want a "Split into 2 groups" button for 
 
 ## Last verified
 
-2026-05-12 — added missing-scorer rows in Round behavior + UI differences tables, reflecting commits `733b4e2` + `37695e8` on `feature/sms-scorer-reconciliation`.
+2026-05-13 — refreshed line citations on drag-to-create-new-tee-group row + added `cc2a6c6` cancelled-drag safety-reset reference. Missing-scorer + drag rules unchanged.

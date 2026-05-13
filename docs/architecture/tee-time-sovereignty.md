@@ -2,17 +2,34 @@
 
 **TL;DR:** Only the per-group tee-time picker writes `teeTimes`. Game Options Save and date/recurrence picker do NOT. Server: `tee_times_json` on `skins_groups`. NULL → refresh recomputes from `scheduledDate + interval`. Race-guarded by `teeTimesLastSavedAt`. Default interval: 8 min.
 
-## Single-writer rule (1.0.6 fix, commit `f70b6d6`)
+## Single-writer rule (1.0.6 fix, commit `f70b6d6`) + Game-Options time propagation (1.0.9, commit `5e29368`)
 
-Per-group tee-time picker ([TeeTimePickerSheet](../../TeeTimePickerSheet.swift)) is the only writer of `teeTimes: [Date?]?`.
+Per-group tee-time picker ([TeeTimePickerSheet](../../TeeTimePickerSheet.swift)) is the primary writer of `teeTimes: [Date?]?`. As of 1.0.9, Game Options Save propagates a time change to `teeTimes[0]` (and shifts the staggered groups by the same interval) — see "Game Options propagation" below.
 
 | UI | Writes `teeTimes` | Writes side-channel |
 |---|---|---|
-| TeeTimePickerSheet | **Yes** | — |
-| Game Options sheet Save | No | `handicapPercentage`, `winningsDisplay`, etc. — date returned via result, picker owns mutation |
+| TeeTimePickerSheet (per-group) | **Yes** — any index | — |
+| Game Options sheet Save (round time) | **`teeTimes[0]` + staggered shift for `[1..N]`** (1.0.9) | `handicapPercentage`, `winningsDisplay`, etc. |
 | Date / recurrence picker | No | `scheduledDate`, `recurrence` |
 
-Pre-1.0.6: three UIs mutated `teeTimes` independently; saves stomped each other. Fix collapsed write authority to one path.
+Pre-1.0.6: three UIs mutated `teeTimes` independently; saves stomped each other. 1.0.6 collapsed write authority to TeeTimePickerSheet alone.
+
+### Game Options propagation (1.0.9, commit `5e29368`)
+
+[GroupManagerView.swift:2221-2261](../../Carry/Views/GroupManagerView.swift:2221) — when GroupOptionsSheet's onSave returns a new `teeTime`:
+
+| # | Action |
+|---|---|
+| 1 | `roundDate = t` (scheduled date) |
+| 2 | Derive existing stagger interval: `(teeTimes[1] ?? t).timeIntervalSince(teeTimes[0] ?? t)` |
+| 3 | `teeTimes[0] = t` |
+| 4 | For each `i in 1..<teeTimes.count`: `teeTimes[i] = t.addingTimeInterval(Double(i) * interval)` |
+| 5 | Stamp `teeTimesLastSavedAt = Date()` (refresh recompute branch defers for 8s) |
+| 6 | `onTeeTimeChanged?(t)` |
+
+**Why this is still single-writer per index:** Game Options writes the ROUND start time. The per-group picker is the only UI that writes a SPECIFIC group's tee time independent of the round start. Game Options shifting all groups by a fixed interval is "moving the round to 9 AM" not "editing group 3's individual tee time" — it doesn't conflict with the per-group picker.
+
+**Pre-1.0.9:** Game Options changed `roundDate` only. The header clock icon reads `teeTimes.first`, which stayed at the old value because the refresh recompute fallback only fires when `tee_times_json` is NULL on the server (any previous edit blocks it). Net: user changed time in Game Options, headline time didn't update until a Quick Game create or first per-group edit.
 
 ## Array structure
 
@@ -73,7 +90,7 @@ See [refresh-race-guards.md](refresh-race-guards.md) §2.
 |---|---|---|
 | User picks per-group time | `teeTimes[idx] = date` + stamp `teeTimesLastSavedAt` ([:2401](../../Carry/Views/GroupManagerView.swift:2401)) | After 0.8s debounce: `syncTeeTimesToSupabase` |
 | Other device receives | `loadSingleGroup` returns updated `teeTimes` | Realtime / 30s poll |
-| Game Options Save | NO mutation | `handicapPercentage` etc. saved |
+| Game Options Save (round time change) | `teeTimes[0] = t`, shifts `[1..N]` by existing interval, stamps `teeTimesLastSavedAt` ([:2240-2257](../../Carry/Views/GroupManagerView.swift:2240)) | `handicapPercentage` etc. saved; tee-times sync via the standard `.onChange(of: teeTimes)` debounce path |
 | Quick Game create | NULL server-side | `tee_times_json` NULL until first edit |
 
 ## Common bugs / gotchas
@@ -87,4 +104,4 @@ See [refresh-race-guards.md](refresh-race-guards.md) §2.
 
 ## Last verified
 
-2026-05-10 — converted to machine-readable format. Sovereignty + race guard intact since `f70b6d6`.
+2026-05-13 — patched for commit `5e29368`: Game Options time change now writes `teeTimes[0]` and shifts staggered `[1..N]` by the existing interval. Per-group picker is still the only writer of an individual group's tee time independent of round start. Race guard intact.

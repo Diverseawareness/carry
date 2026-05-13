@@ -84,17 +84,21 @@ Single source of truth for scorer eligibility. See [player-flags.md](player-flag
 
 | Surface | When | Where |
 |---|---|---|
-| `PlayerGroupsSheet` scorer slot | QG creator opens "Edit Players" from QG details | [PlayerGroupsSheet.swift:417-427](../../Carry/Views/PlayerGroupsSheet.swift:417) — per-group scorer slot via `ScorerAssignmentView`, drag-to-rearrange row above |
-| `scorerPickerSheet` | QG creator taps a "Scorer" pill on a non-creator group's row | [GroupManagerView.swift:3380-3462](../../Carry/Views/GroupManagerView.swift:3380) — flat list of in-group Carry users to pick from |
+| `PlayerGroupsSheet` scorer slot | QG creator opens "Edit Players" from QG details | [PlayerGroupsSheet.swift:462](../../Carry/Views/PlayerGroupsSheet.swift:462) — per-group scorer slot via `ScorerAssignmentView` (search Carry users globally + SMS invite, with X-clear and self-invite block), drag-to-rearrange row above |
+| `scorerPickerSheet` | QG creator taps a "Scorer" pill on a non-creator group's row | [GroupManagerView.swift:3480-3573](../../Carry/Views/GroupManagerView.swift:3480) — flat list of in-group Carry users (`.canScore` filtered) to pick from. **No SMS-invite path** — this picker assigns from the existing roster only. To SMS-invite a new scorer, use PlayerGroupsSheet's ScorerAssignmentView slot instead |
 
 | State | Trigger | UI |
 |---|---|---|
-| `readOnly = true` | `groups[groupIndex].contains { $0.id == creatorId }` ([PlayerGroupsSheet:424](../../Carry/Views/PlayerGroupsSheet.swift:424)) | Lock icon, no X button |
+| `readOnly = true` | `groups[groupIndex].contains { $0.id == creatorId }` ([PlayerGroupsSheet:471](../../Carry/Views/PlayerGroupsSheet.swift:471)) | Lock icon, no X button |
 | `readOnly = false` | Otherwise | X button to clear, search field to assign |
 
 X button behavior: clears scorer slot, demotes player to non-scorer slot in same group. Does NOT remove player from group.
 
-**SG has no Score Keeper UI** in `.everyone` mode (v1 default). Pills are hidden ([:3910](../../Carry/Views/GroupManagerView.swift:3910)), the missing-scorer banner is gated `scoringMode != .everyone` so it never fires for SG, and ManageMembersSheet handles all SG member roster ops. The dormant `.single`-mode SG path keeps the old scorerPickerSheet behavior in code, but the UI gate is `if false`.
+**SG has no Score Keeper UI** in `.everyone` mode (v1 default). Pills are hidden ([:4038](../../Carry/Views/GroupManagerView.swift:4038)), the missing-scorer banner is gated `scoringMode != .everyone` so it never fires for SG, and ManageMembersSheet handles all SG member roster ops. The dormant `.single`-mode SG path keeps the old scorerPickerSheet behavior in code, but the UI gate is `if false`.
+
+### Revert history — SG scorer picker upgrade
+
+Mid-session 2026-05-13 we shipped `bdeca98` (upgrade `scorerPickerSheet` to use `ScorerAssignmentView` for SG SMS-invite parity) and `8a45db3` (refreshGroupData filter relax to let SMS-invite scorers through for SG). Both reverted in `af0a84d` + `8e4ce5e`. Reason: **SG has no designated scorers in `.everyone` mode (the only v1 mode)** — the picker upgrade + filter relax were wrong scope. SG SMS invites stay in ManageMembersSheet's Pending section until they accept and reconcile. Current code is the pre-`bdeca98` shape: flat candidate list, no SMS-invite UI in `scorerPickerSheet`.
 
 ## `scoringMode`
 
@@ -161,10 +165,10 @@ scorerAnchored: isQuickGame || scoringMode != .everyone
 
 | Drop delegate | Line | Behavior |
 |---|---|---|
-| `GroupDropDelegate.performDrop` (drag onto an existing group card) | [5947-5953](../../Carry/Views/GroupManagerView.swift:5947) | Rejects with toast + early-return when `scorerAnchored && scorerIDs[sourceGroup] == player.id` |
-| `AddTeeGroupDropDelegate.performDrop` (drag onto the new-group dotted zone — 1.0.9) | [6063-6069](../../Carry/Views/GroupManagerView.swift:6063) | Same guard. Without it, a creator could drag a locked QG scorer to a new group and silently bypass the invariant. |
+| `GroupDropDelegate.performDrop` (drag onto an existing group card) | [:5905-5914](../../Carry/Views/GroupManagerView.swift:5905) | Rejects with toast + early-return when `scorerAnchored && scorerIDs[sourceGroup] == player.id` |
+| `AddTeeGroupDropDelegate.performDrop` (drag onto the new-group dotted zone — 1.0.9) | [:6021-6027](../../Carry/Views/GroupManagerView.swift:6021) | Same guard. Without it, a creator could drag a locked QG scorer to a new group and silently bypass the invariant. |
 
-Both call sites pass the same `scorerAnchored: isQuickGame || scoringMode != .everyone` at [3808](../../Carry/Views/GroupManagerView.swift:3808) and [3858](../../Carry/Views/GroupManagerView.swift:3858).
+Both call sites pass the same `scorerAnchored: isQuickGame || scoringMode != .everyone` at [:3754](../../Carry/Views/GroupManagerView.swift:3754) (GroupDropDelegate) and [:3804](../../Carry/Views/GroupManagerView.swift:3804) (AddTeeGroupDropDelegate).
 
 ### Implication for QG
 
@@ -176,7 +180,7 @@ Dragging is blocked because in single-scorer mode the scorer is structurally mea
 
 ### Implication for SG v1
 
-No scorer anchoring → no per-group "designated keeper" concept. Every player can move freely between groups via drag, and a SG round-start writes everyone into `round_players` regardless of group_num (scoring mode is `.everyone`, so any player can score any hole). The SG creator can ASSIGN a scorer via the 1.0.9 `scorerPickerSheet` upgrade (for SMS-invite-as-scorer or initial Carry user designation), but the assignment is a hint, not a lock — the assigned player can still be dragged to another group.
+No scorer anchoring → no per-group "designated keeper" concept. Every player can move freely between groups via drag, and a SG round-start writes everyone into `round_players` regardless of group_num (scoring mode is `.everyone`, so any player can score any hole). `scorerIDs` is still tracked in the model but unused on the SG tee sheet (pills hidden, banner gated `!isQuickGame && scoringMode != .everyone` so it's dormant). The post-revert `scorerPickerSheet` exists only for the unreachable `.single`-mode SG path.
 
 **The full-group swap-picker behavior**: SG with a full destination group → all players in destination are swap candidates (none are "locked"). QG with full destination → swap-out list excludes the anchored scorer ([scorerAnchored gate inside SwapPickerSheet](../../Carry/Views/GroupManagerView.swift:5961-5970)).
 
@@ -192,7 +196,7 @@ The anchoring rule cascades through many systems:
 | Add-tee-group drop | Same rejection (1.0.9) |
 | Missing-scorer banner routing | QG→PlayerGroupsSheet, SG→scorerPickerSheet ([:3703-3707](../../Carry/Views/GroupManagerView.swift:3703)) |
 | Scorer pill rendering | Hidden for SG when `.everyone` (pill implies a restriction that doesn't exist) ([:3910](../../Carry/Views/GroupManagerView.swift:3910)) |
-| Pre-reconciliation roster filter | QG includes all pending invites; SG only includes pending invites assigned as scorers via `assignedScorerIds` union (1.0.9 — see refresh-race-guards.md) |
+| Pre-reconciliation roster filter | QG includes all pending invites (they may be scorers); SG drops all pending invites from the tee sheet — they stay in ManageMembersSheet's Pending section until they reconcile (revert of 1.0.9 `bdeca98`/`8a45db3` — SG has no designated scorers in `.everyone` mode) |
 
 **Any new feature touching scorer / group / drag behavior MUST consult this table first.** Treating SG the same as QG (or vice-versa) is the single most common source of regression bugs in this codebase.
 
@@ -304,4 +308,4 @@ The post-mutation reconciler at `.onChange(of: groups)` ([GroupManagerView.swift
 
 ## Last verified
 
-2026-05-12 — added §"Missing scorer behavior (Quick Game)" reflecting commits `733b4e2` + `37695e8` on `feature/sms-scorer-reconciliation`. Updated `scoringMode` section with dormant-pair clarification.
+2026-05-13 — patched Score Keeper UI section for the `af0a84d`/`8e4ce5e` reverts (SG scorer picker reverted to flat-list, no SMS-invite path). Refreshed line citations for hotfix/1.0.9 code layout. Scorer-anchored rule + enforcement points unchanged.

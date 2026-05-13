@@ -129,19 +129,19 @@ Without patch: parent's `groups[idx].handicapPercentage` stays stale during repl
 
 ## `refreshGroupData` flow
 
-[GroupManagerView.swift:807-1210](../../Carry/Views/GroupManagerView.swift:807):
+[GroupManagerView.swift:869-1400](../../Carry/Views/GroupManagerView.swift:869):
 
 | # | Step |
 |---|---|
-| 1 | Fetch via `loadSingleGroup` ([:814](../../Carry/Views/GroupManagerView.swift:814)) |
-| 2 | Filter `recentlyRemovedIds` ([:840](../../Carry/Views/GroupManagerView.swift:840)) |
-| 3 | Quick Game guest preservation ([:850-855](../../Carry/Views/GroupManagerView.swift:850)) |
+| 1 | Fetch via `loadSingleGroup` |
+| 2 | Filter `recentlyRemovedIds` ([:902](../../Carry/Views/GroupManagerView.swift:902)) |
+| 3 | Quick Game guest preservation with `guest_roster_json` cross-check ([:955-985](../../Carry/Views/GroupManagerView.swift:955)) |
 | 4 | Filter `newlyActiveMemberIds`: drop pending-accept always, drop pending-invite for non-QG (SG Carry-only invariant — phone invites stay in ManageMembersSheet's Pending section until they accept and reconcile) |
-| 5 | Rebuild `groups[][]` from server `group_num`, gated by `groupNumLastSavedAt` ([:898-967](../../Carry/Views/GroupManagerView.swift:898)) |
-| 6 | Check `scorerIdsLastSavedAt` ([:1033](../../Carry/Views/GroupManagerView.swift:1033)) → maybe skip scorer sync |
-| 7 | Check `teeTimesLastSavedAt` ([:1099](../../Carry/Views/GroupManagerView.swift:1099)) → maybe skip tee-time recompute |
-| 8 | Check `handicapPercentageLastSavedAt` ([:1160](../../Carry/Views/GroupManagerView.swift:1160)) → maybe skip handicap sync |
-| 9 | Localize freshGroup (patch handicap + per-member `group` if recent saves) + `onGroupRefreshed?(localized)` ([:1175-1209](../../Carry/Views/GroupManagerView.swift:1175)) |
+| 5 | Rebuild `groups[][]` from server `group_num`, gated by `groupNumLastSavedAt` |
+| 6 | Check `scorerIdsLastSavedAt` → maybe skip scorer sync |
+| 7 | Check `teeTimesLastSavedAt` → maybe skip tee-time recompute |
+| 8 | Check `handicapPercentageLastSavedAt` → maybe skip handicap sync |
+| 9 | Localize freshGroup (patch handicap + per-member `group` if recent saves) + `onGroupRefreshed?(localized)` |
 
 ## Refresh trigger sources
 
@@ -155,12 +155,38 @@ Without patch: parent's `groups[idx].handicapPercentage` stays stale during repl
 
 ## Quick Game guest preservation
 
-[GroupManagerView.swift:850-855](../../Carry/Views/GroupManagerView.swift:850):
+[GroupManagerView.swift:955-985](../../Carry/Views/GroupManagerView.swift:955):
 ```swift
 let preservedGuests: [Player]
 if isQuickGame {
     let freshIds = Set(filteredFreshMembers.map(\.id))
-    preservedGuests = allMembers.filter { $0.isGuest && !freshIds.contains($0.id) }
+    // Decode the server's guest_roster_json snapshot — the
+    // canonical "who's still in this QG" cross-device record.
+    let serverGuestProfileIds: Set<UUID>? = {
+        guard let json = freshGroup.guestRosterJson,
+              let data = json.data(using: .utf8),
+              let snapshots = try? JSONDecoder().decode([QuickGameGuestStorage.GuestSnapshot].self, from: data),
+              !snapshots.isEmpty
+        else { return nil }
+        return Set(snapshots.compactMap(\.profileId))
+    }()
+    preservedGuests = allMembers.filter { player in
+        guard player.isGuest, !freshIds.contains(player.id) else { return false }
+        // Cross-device guard (1.0.9): if a server snapshot
+        // exists, only preserve guests still in it. Without
+        // this, a creator removing a guest on Device A
+        // wouldn't propagate — Device B's local allMembers
+        // still has them, freshGroup.members doesn't, so
+        // the legacy filter resurrected them on every refresh.
+        if let serverIds = serverGuestProfileIds,
+           let pid = player.profileId {
+            return serverIds.contains(pid)
+        }
+        // nil/empty snapshot → fall back to legacy
+        // preserve-any-local-guest (transient gap right after
+        // creation before the first save lands).
+        return true
+    }
 } else {
     preservedGuests = []
 }
@@ -168,6 +194,10 @@ allMembers = filteredFreshMembers + preservedGuests
 ```
 
 QG guests live in `round_players` only when round is active. Server's `loadSingleGroup` excludes them between rounds. Preserve filter keeps them across 3s post-appear + 30s polling refreshes.
+
+**Pre-1.0.9 (`386b6d0`):** the filter was just `allMembers.filter { $0.isGuest && !freshIds.contains($0.id) }` — preserved every local guest not in `freshGroup.members`. Side effect: a creator removing a guest on Device A had no way to propagate to Device B. Device B's `allMembers` cache resurrected the removed guest on every refresh. Fix: cross-check `freshGroup.guestRosterJson` (the server-authoritative QG roster snapshot, written by `QuickGameGuestStorage.save` retry-with-backoff path).
+
+**Why both freshIds and serverIds checks:** `freshIds` = active-round `round_players` (only populated mid-round); `serverIds` = `guest_roster_json` (populated continuously). A QG between rounds has empty `round_players` but non-empty `guest_roster_json`, so the filter needs both.
 
 ## Bug pattern history (refresh-clobbers-edit)
 
@@ -178,6 +208,7 @@ QG guests live in `round_players` only when round is active. Server's `loadSingl
 | 3 | Scorer wedge | assigned scorer reverts to default |
 | 4 | Drag-and-drop tee group (2026-05-09) | dragged player snapped back to original group on next 30s refresh AND navigate-out + back |
 | 5 | Quick Game guest roster (2026-05-10) | server hydrate clobbered just-added guests when navigating out + back during debounce/replication window |
+| 6 | Cross-device guest resurrection (2026-05-13, commit `386b6d0`) | Creator removed guest on Device A; Device B's local cache had the guest, freshGroup.members didn't, legacy preserveGuests filter resurrected on every refresh. Fix: cross-check `freshGroup.guestRosterJson` |
 
 ## Adding a new race-guarded field
 
@@ -220,4 +251,4 @@ For any new user-editable field that persists to the server:
 
 ## Last verified
 
-2026-05-10 — converted to machine-readable format. 5th instance + retry pattern complete.
+2026-05-13 — patched preservedGuests block to reflect `guest_roster_json` cross-check (commit `386b6d0`). Step list line citations refreshed for hotfix/1.0.9 code layout. 5th-7th instances + retry pattern unchanged.

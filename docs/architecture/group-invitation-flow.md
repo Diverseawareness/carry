@@ -57,15 +57,42 @@ Distinct from phone-invite: SMS-invited users have no app yet, must go through `
 
 ## SMS phone invite
 
-[GroupService.swift:415-435](../../Carry/Services/GroupService.swift:415) `inviteMemberByPhone(groupId:phone:)`:
+Two server-side write paths exist:
+
+| Caller | Server entry | Notes |
+|---|---|---|
+| ManageMembersSheet `sendInvite` (1.0.9), PlayerGroupsSheet step 3c, ScorerAssignmentView | [GroupService.swift:460-479](../../Carry/Services/GroupService.swift:460) `reservePhoneInvite(id:groupId:phone:invitedBy:groupNum:inviteeName:)` → RPC `create_phone_invite` | Caller mints the row UUID + passes typed `inviteeName`. Returned id may differ from supplied id on dedup hit (callers re-anchor — see below) |
+| Legacy direct INSERT path | [GroupService.swift:415-435](../../Carry/Services/GroupService.swift:415) `inviteMemberByPhone` | Still present but no longer called from the three SMS-composer surfaces |
+
+Both paths produce the same row shape:
 ```sql
 INSERT INTO group_members
-  (group_id, player_id, invited_phone, status, joined_at)
+  (group_id, player_id, invited_phone, status, joined_at, invitee_name, group_num)
 VALUES
-  (<group>, <inviter UUID placeholder>, <digits-only phone>, 'invited', now())
+  (<group>, <inviter UUID placeholder>, <digits-only phone>, 'invited', now(),
+   <typed name or null>, <group_num or 1>)
 ```
 
 `player_id` is a placeholder until reconciliation. Real signal: `invited_phone` + `status = 'invited'`.
+
+### `create_phone_invite` RPC dedup behavior (1.0.9, migration `20260513000006`)
+
+[20260513000006_create_phone_invite_update_on_dedup.sql:22-76](../../supabase/migrations/20260513000006_create_phone_invite_update_on_dedup.sql:22). On dedup hit (existing row with same `group_id` + `invited_phone`):
+
+| # | Action |
+|---|---|
+| 1 | UPDATE `group_num` to caller-supplied value |
+| 2 | UPDATE `invitee_name` to caller-supplied value (preserves prior name if caller passed null) |
+| 3 | Re-arm `status = 'invited'` (covers the case where prior row was 'removed' or auto-collapsed to 'active' by a stale reconciliation) |
+| 4 | RETURN the existing row's id (NOT the supplied id) |
+
+**iOS callers re-anchor on the returned id** when it differs from the supplied UUID:
+- ManageMembersSheet.sendInvite at [ManageMembersSheet.swift:779-785](../../Carry/Views/ManageMembersSheet.swift:779) — patches `localGuests[idx].inviteMemberId = returnedId`
+- PlayerGroupsSheet step 3c — same pattern
+
+Without re-anchor, the local stub's `inviteMemberId` stays the freshly-minted UUID while the server row's id is the old one. `localAllAvailable` dedup-by-`inviteMemberId` (introduced commit `198ad40`) would treat them as different invites and the Pending chip would render twice until force-quit.
+
+Pre-`aa4da69`/migration `20260513000006`: dedup returned the existing id without updating any fields. Stale `group_num` from a 1.0.8 race + stale typo'd `invitee_name` survived re-invites indefinitely.
 
 ### Forward reconciliation — receiver adds phone
 
@@ -97,6 +124,37 @@ Net result of either direction: row ends identical. `player_id = real profile UU
 ### 30-day staleness guard
 
 [20260502000002:98](../../supabase/migrations/20260502000002_phone_on_profile.sql:98) — `AND gm.joined_at > now() - interval '30 days'`. Prevents recycled phone numbers from auto-claiming stale invites. Stale invites need explicit `claim_phone_invite` RPC.
+
+### Long-press delete on pending phone-invite chip (1.0.9)
+
+[ManageMembersSheet.swift:553-561](../../Carry/Views/ManageMembersSheet.swift:553) `requestRemoval(of:)` accepts both confirmed Carry members AND pending SMS-invite rows. Phone-invite branch deletes by `inviteMemberId` (the row's `group_members.id`) rather than `(group_id, player_id)`:
+
+```swift
+if player.isPendingInvite, let inviteMemberId = player.inviteMemberId {
+    try await client.from("group_members")
+        .delete()
+        .eq("id", value: inviteMemberId.uuidString)
+        .execute()
+}
+```
+
+A `(group_id, player_id)` delete would either miss (placeholder UUID) or accidentally hit the inviter's regular row. The per-id delete is exact.
+
+Self-removal block at [:556-559](../../Carry/Views/ManageMembersSheet.swift:556) — long-press on a row whose `profileId == currentUser.id` toasts "use Leave/Delete Group" and returns early. Mirrors the self-invite block.
+
+### Clipboard-detection invite path removed (1.0.9, commit `42b2e99`)
+
+Pre-1.0.9 HomeView checked the system clipboard on `.onAppear` for a `carryapp.site/invite?group=...` URL and showed an "Open your invite?" alert. Removed in 1.0.9 because:
+
+| Reason | Detail |
+|---|---|
+| Phone-on-profile (1.0.3+) supersedes it | Reverse-reconcile trigger handles the install-bridge case server-side — no clipboard hand-off needed |
+| iOS 16+ paste-permission prompt UX | The clipboard read triggered a confusing system prompt unrelated to the user's intent |
+| Privacy-noise in App Privacy report | Removed clipboard read narrows the privacy surface |
+
+Removed: HomeView's `clipboardInviteAvailable` state, `checkClipboardForInvite()`, `markClipboardInviteAcknowledged()`, `consumeClipboardInvite()`, the alert, the .onAppear clipboard check, two AppRouter `@Published` flags, two DebugMenuView action rows, the DEBUG sheet for PhoneInviteFinderSheet (162 lines total).
+
+**Kept** as a safety net for pre-1.0.3 users without a phone on profile: ProfileSheetView's manual "Find an Invite" entry → PhoneInviteFinderSheet (calls `claim_phone_invite` RPC).
 
 ## Quick Game → Skins Group conversion
 
@@ -166,4 +224,4 @@ See [push-trigger-chain.md](push-trigger-chain.md).
 
 ## Last verified
 
-2026-05-10 — converted to machine-readable format. Forward + reverse triggers stable.
+2026-05-13 — added `create_phone_invite` RPC dedup-UPDATE behavior (migration `20260513000006`), long-press delete on pending phone-invite chips, clipboard-detection removal callout. Forward + reverse triggers + SMS body encoding stable.

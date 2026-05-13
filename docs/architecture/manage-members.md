@@ -27,35 +27,69 @@ Auto-accept rule (locked 2026-05-01): Carry users via search go directly to `sta
 
 | Step | Code |
 |---|---|
-| Inline TextField | [:221-254](../../Carry/Views/ManageMembersSheet.swift:221) |
-| Send invite | [:643-690](../../Carry/Views/ManageMembersSheet.swift:643) `sendInvite()` builds Player with `isPendingInvite = true` |
-| Server INSERT | [GroupService.swift:415-435](../../Carry/Services/GroupService.swift:415) `inviteMemberByPhone()` — writes `group_members` with `invited_phone = <digits>`, `player_id = inviter UUID placeholder`, `status = 'invited'` |
+| Inline TextField | [:248-264](../../Carry/Views/ManageMembersSheet.swift:248) |
+| Send invite | [:711-820](../../Carry/Views/ManageMembersSheet.swift:711) `sendInvite()` builds Player with `isPendingInvite = true` + `inviteMemberId = UUID()` (mints stable row id client-side) |
+| Server INSERT | [GroupService.swift:460-479](../../Carry/Services/GroupService.swift:460) `reservePhoneInvite(id:groupId:phone:invitedBy:groupNum:inviteeName:)` → RPC `create_phone_invite`. 1.0.9 switch (commit `d6a50f6`) — was `inviteMemberByPhone` which didn't persist `invitee_name` |
+| Re-anchor on dedup | RPC may return a different id when `(group_id, invited_phone)` already exists. iOS patches `localGuests[idx].inviteMemberId = returnedId` at [:779-785](../../Carry/Views/ManageMembersSheet.swift:779). See [group-invitation-flow.md §"create_phone_invite RPC dedup behavior"](group-invitation-flow.md) |
+| Typed name plumbing | `memberSearchText` (the search field) is captured at [:733](../../Carry/Views/ManageMembersSheet.swift:733) and passed to the RPC as `inviteeName`. Server persists to `invitee_name` column. Pending chip + tee row render the typed name instead of "Invited" / digits |
 | Reconciliation | Forward (recipient adds phone) OR reverse (BEFORE INSERT trigger) — see [group-invitation-flow.md](group-invitation-flow.md) |
+
+### Self-invite block
+
+[ManageMembersSheet.swift:720-725](../../Carry/Views/ManageMembersSheet.swift:720) — typed digits checked against `authService.currentUser?.phone` (last-10-digit comparison). Toast + early return on match. Mirrors ScorerAssignmentView's existing guard. Without it, the reverse-reconcile trigger collapses the new row immediately into the inviter's profile → silent double-add.
+
+### SMS body encoding
+
+Same `?&=#`-stripped `urlQueryAllowed` pattern as the other two SMS-composer call sites at [:796-799](../../Carry/Views/ManageMembersSheet.swift:796). See [group-invitation-flow.md §"SMS body encoding"](group-invitation-flow.md) for the load-bearing rule.
 
 ## Remove member
 
 | Step | Code |
 |---|---|
-| Long-press → request | [:512-516](../../Carry/Views/ManageMembersSheet.swift:512) `requestRemoval()` (guards `profileId != nil`) |
-| Confirm alert | [:490-502](../../Carry/Views/ManageMembersSheet.swift:490) |
-| Confirm action | [:524-548](../../Carry/Views/ManageMembersSheet.swift:524) `confirmRemoval()` + `inFlightRemovalTasks` |
-| Server DELETE | [GroupService.swift:653-672](../../Carry/Services/GroupService.swift:653) — **hard DELETE**, not soft `'removed'` |
-| Local mutation | `locallyRemovedIds` updated immediately to suppress sheet UI |
+| Long-press → request | [:553-561](../../Carry/Views/ManageMembersSheet.swift:553) `requestRemoval()` — accepts `profileId != nil` OR `inviteMemberId != nil`. Self-removal blocked at [:556-559](../../Carry/Views/ManageMembersSheet.swift:556) (toast: "use Leave/Delete Group") |
+| Confirm alert | iOS-native confirm |
+| Confirm action | [:569-605](../../Carry/Views/ManageMembersSheet.swift:569) `confirmRemoval()` + `inFlightRemovalTasks` |
+| Server DELETE — confirmed Carry member | [GroupService.swift `removeMember`](../../Carry/Services/GroupService.swift) — **hard DELETE** by `(group_id, player_id)` |
+| Server DELETE — pending phone-invite (1.0.9) | Direct delete by row id at [:585-589](../../Carry/Views/ManageMembersSheet.swift:585) — `(group_id, player_id)` would either miss (placeholder UUID) or hit the inviter's regular row, so use `eq("id", inviteMemberId)` |
+| Local mutation | `locallyRemovedIds` updated immediately to suppress sheet UI; rolled back on server error |
 
 Hard DELETE: `'removed'` status was historically used but leaked rows visible to members. DELETE removes `group_members` row entirely.
 
+### Self-removal block (1.0.9, commit `1991f8d`)
+
+Long-press on the logged-in user's own row toasts "You can't remove yourself — use Leave/Delete Group." and early-returns. Without this guard, a creator could long-press themselves and leave the group in a creator-less state. The Member-side "Leave Group" path (separate UI) is the canonical self-removal route.
+
 ## Pending section
 
-[:416](../../Carry/Views/ManageMembersSheet.swift:416) — filter shows BOTH:
+[:443-507](../../Carry/Views/ManageMembersSheet.swift:443) — filter shows BOTH:
 
 | Flag | Visual |
 |---|---|
-| `isPendingInvite = true` (SMS, no app) | phone icon at [:444-451](../../Carry/Views/ManageMembersSheet.swift:444) |
-| `isPendingAccept = true` (Carry user, awaiting accept) | at [:454](../../Carry/Views/ManageMembersSheet.swift:454) |
+| `isPendingInvite = true` (SMS, no app) | phone icon at [:471-482](../../Carry/Views/ManageMembersSheet.swift:471) |
+| `isPendingAccept = true` (Carry user, awaiting accept) | avatar at [:480-481](../../Carry/Views/ManageMembersSheet.swift:480) |
 
-Both long-pressable for removal at [:466-468](../../Carry/Views/ManageMembersSheet.swift:466).
+Both long-pressable for removal at [:500-502](../../Carry/Views/ManageMembersSheet.swift:500).
+
+Chip label uses `pendingChipLabel(for:)` — prefers the typed `invitee_name` (carried via `Player.name` from `loadSingleGroup`), falls back to formatted phone for legacy pre-`invitee_name` rows or chips where the inviter didn't type a name. Truncated to 8 chars + ellipsis (commit `7c5c927`) to match scorecard truncation.
 
 See [player-flags.md](player-flags.md).
+
+## Search-result hide-already-added (1.0.9, commit `de2cde1`)
+
+[ManageMembersSheet.swift:230-231](../../Carry/Views/ManageMembersSheet.swift:230) — Carry-user search results filtered against `Set(localAllAvailable.compactMap(\.profileId))`. Anyone already in the group (any status) is hidden from the result list entirely. They appear in All Members above; surfacing them as disabled rows below was clutter that confused users searching themselves.
+
+The remaining `isAlreadyAdded` check at [:647-648](../../Carry/Views/ManageMembersSheet.swift:647) is defensive — handles the rare race where a member appears in `localAllAvailable` between filter compute and tap. If hit, the row renders with a state pill (`Added` / `Pending` / `Invited`) per [:653-658](../../Carry/Views/ManageMembersSheet.swift:653) and the tap is a no-op.
+
+## Pending chip dedup rule (1.0.9, commit `198ad40`)
+
+[ManageMembersSheet.swift:67-89](../../Carry/Views/ManageMembersSheet.swift:67) `localAllAvailable` computed property. Two collision cases when merging `localGuests` (sheet-local stubs) with `allAvailable` (server-loaded Players):
+
+| Case | Local id | Server id | Match key |
+|---|---|---|---|
+| SMS invite | `nextGuestID` (small int) + `inviteMemberId` set | `Player.stableId(inviteMemberId)` (huge int) — different from local | `inviteMemberId` UUID |
+| Search-added Carry user | `Player.stableId(profile.id)` | Same — `Player.stableId(profile.id)` | `Player.id` (set-union dedups naturally) |
+
+Without the inviteMemberId match, the SMS-invite case rendered double pending chips (one from localGuests, one from allAvailable) until force-quit. The dedup keeps the local stub visible until the server version arrives, then drops it.
 
 ## SwiftUI state-propagation race (locked 2026-05-02)
 
@@ -131,10 +165,12 @@ If the rejoin-fires-toast case ever becomes important, fix at the remove site: c
 | Bug | Notes |
 |---|---|
 | Optimistic-remove + immediate re-invite race | Sheet stays open after remove; immediate re-invite may not have propagated DELETE. `onRefresh` + `inFlightRemovalTasks.await` handle it |
-| Removing self | Guard with `profileId != currentUserId` upstream of long-press. Member-side "Leave Group" uses different path |
+| Removing self | Blocked at [:556-559](../../Carry/Views/ManageMembersSheet.swift:556) (1.0.9). Member-side "Leave Group" uses different path |
+| Self-SMS-invite | Blocked at [:720-725](../../Carry/Views/ManageMembersSheet.swift:720) (1.0.9). Without it, reverse-reconcile collapses the row into the inviter's own profile → silent double-add |
 | Phone invite that becomes Carry user later | Handled by forward-direction trigger. Don't manual-flip `status` from client |
 | `isPendingInvite` AND `isPendingAccept` both true | Should not happen. SMS-invite has no profileId; search-add has profileId. Both true → server promotion partial. Investigate via [push-trigger-chain.md](push-trigger-chain.md) |
+| Double pending chip after re-invite to same phone | Pre-1.0.9. Server's `create_phone_invite` RPC dedup'd to existing row id but iOS local stub kept the freshly-minted UUID → `localAllAvailable` saw two distinct invites. Fixed by inviteMemberId-based dedup ([:67-89](../../Carry/Views/ManageMembersSheet.swift:67), commit `198ad40`) + RPC-returned-id re-anchor ([:779-785](../../Carry/Views/ManageMembersSheet.swift:779), commit `aa4da69`) |
 
 ## Last verified
 
-2026-05-10 — added "Toast baselines" section codifying the playerId-UUID rule for cross-session new-member toasts (see [bug-archive 2026-05-10 "X joined toast refires"](bug-archive.md)).
+2026-05-13 — patched for 1.0.9 commits: switched SMS path from `inviteMemberByPhone` to `reservePhoneInvite` with typed `invitee_name`, long-press delete handles phone-invite rows by id, self-invite + self-removal blocks, search hides already-added members, pending chip dedup-by-inviteMemberId. SwiftUI race + toast baselines unchanged.
