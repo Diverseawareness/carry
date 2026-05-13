@@ -97,6 +97,18 @@ struct QuickGameSheet: View {
 
     @FocusState private var focusedField: SlotField?
 
+    /// Bumped whenever a ScorerAssignmentView's internal search/phone
+    /// field gains focus. The ScrollView observes this and scrolls the
+    /// group's scorer slot into view above the keyboard. `tick`
+    /// re-triggers the scroll on subsequent focuses of the same group
+    /// (Equatable would otherwise no-op).
+    private struct ScorerScrollSignal: Equatable {
+        let groupIndex: Int
+        let tick: Int
+    }
+    @State private var scorerScrollSignal: ScorerScrollSignal? = nil
+    @State private var scorerScrollTick: Int = 0
+
     @Environment(\.dismiss) private var dismiss
 
     private enum SlotField: Hashable {
@@ -225,6 +237,16 @@ struct QuickGameSheet: View {
                     case .handicap:
                         break // HC uses picker sheet, not keyboard focus
                     }
+                }
+            }
+            .onChange(of: scorerScrollSignal) { _, newValue in
+                // ScorerAssignmentView's internal search/phone field
+                // gained focus → scroll the group's scorer slot into
+                // view above the keyboard. Slot 0 of each group is
+                // the scorer (see playerGroupsSection .id wiring).
+                guard let sig = newValue else { return }
+                withAnimation(.easeOut(duration: 0.25)) {
+                    scrollProxy.scrollTo("slot-\(sig.groupIndex)-0", anchor: .center)
                 }
             }
             }
@@ -947,6 +969,18 @@ struct QuickGameSheet: View {
                             }
                             let groupId = draftQuickGameId!.uuidString
                             return "Score our skins game on Carry! https://carryapp.site/invite?group=\(groupId)"
+                        },
+                        onFocusChanged: { isFocused in
+                            // Trigger scroll only on focus-gain (not blur).
+                            // The ScrollViewReader handler at the top of
+                            // the ScrollView observes scorerScrollSignal
+                            // and scrolls slot-\(g)-0 into view.
+                            guard isFocused else { return }
+                            scorerScrollTick += 1
+                            scorerScrollSignal = ScorerScrollSignal(
+                                groupIndex: groupIndex,
+                                tick: scorerScrollTick
+                            )
                         }
                     )
                     .id("slot-\(groupIndex)-0")

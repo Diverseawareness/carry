@@ -47,6 +47,12 @@ struct ScorerAssignmentView: View {
     /// into the right group (matches the Skins Group invite UX).
     var smsBodyBuilder: ((String) -> String)? = nil
 
+    /// Fires when the internal search/phone field gains or loses focus.
+    /// The parent uses this to auto-scroll the slot into view above the
+    /// keyboard — without it, the user has to manually scroll because
+    /// the scorer slot often sits below the keyboard's top edge.
+    var onFocusChanged: ((Bool) -> Void)? = nil
+
     // MARK: - Internal State
 
     @State private var searchText = ""
@@ -75,6 +81,9 @@ struct ScorerAssignmentView: View {
             case .invited:
                 invitedRow
             }
+        }
+        .onChange(of: focused) { _, newValue in
+            onFocusChanged?(newValue != nil)
         }
     }
 
