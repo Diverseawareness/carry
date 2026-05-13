@@ -1815,6 +1815,33 @@ struct GroupManagerView: View {
                                 .padding(.horizontal, 20)
                                 .padding(.bottom, 12)
                         }
+                        // Drag-to-create-new-tee-group affordance.
+                        // Appears as a dotted drop target ONLY while
+                        // the user is dragging a player, when:
+                        //   - Creator is editing (members can't reshape)
+                        //   - Pre-round (live rounds lock the roster)
+                        //   - groups.count < 5 (matches the existing
+                        //     PlayerGroupsSheet QG cap)
+                        //   - Source group has >1 player (dragging the
+                        //     only player out leaves an empty source
+                        //     that gets stripped — net effect is just
+                        //     a rename, confusing UX. Gate it out.)
+                        // Drop creates groups[N] = [draggedPlayer] and
+                        // syncs the parallel arrays. Closes the
+                        // 2026-05-10 SG gap where SG with ≤4 players
+                        // couldn't get a second tee group at all
+                        // because autoGroup forced n=1.
+                        if isCreator,
+                           !isLiveRound,
+                           dragPlayer != nil,
+                           let src = dragSourceGroup,
+                           src < groups.count,
+                           groups[src].count > 1,
+                           groups.count < 5 {
+                            addTeeGroupDropTarget
+                                .padding(.horizontal, 20)
+                                .padding(.bottom, 12)
+                        }
                     } else {
                         Text("Add players above to create groups & tee times")
                             .font(.system(size: 15, weight: .medium))
@@ -3796,6 +3823,51 @@ struct GroupManagerView: View {
                 syncSelectedTees: syncSelectedTees
             ))
         }
+    }
+
+    // MARK: - Add Tee Group Drop Target
+    //
+    // Dotted drop zone that appears below the last tee group only
+    // during an active drag (gate at call site). Drop creates a new
+    // group with the dragged player. Matches the existing intra-
+    // group drag-drop affordance so the UX is consistent.
+    private var addTeeGroupDropTarget: some View {
+        let isHighlighted = dropTargetGroup == groups.count
+        return HStack(spacing: 8) {
+            Image(systemName: "plus")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(isHighlighted ? Color.successGreen : Color.textTertiary)
+            Text("Add Tee Group")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundColor(isHighlighted ? Color.successGreen : Color.textTertiary)
+        }
+        .frame(maxWidth: .infinity, minHeight: 70)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(isHighlighted ? Color.successGreen.opacity(0.08) : Color.clear)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(
+                    isHighlighted ? Color.successGreen : Color.borderMedium,
+                    style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])
+                )
+        )
+        .contentShape(Rectangle())
+        .onDrop(of: [.text], delegate: AddTeeGroupDropDelegate(
+            dragSourceGroup: $dragSourceGroup,
+            dragPlayer: $dragPlayer,
+            dropTargetGroup: $dropTargetGroup,
+            dropTargetIndex: $dropTargetIndex,
+            groups: $groups,
+            startingSides: $startingSides,
+            scorerIDs: $scorerIDs,
+            teeTimes: $teeTimes,
+            syncTeeTimes: syncTeeTimes,
+            syncScorerIDs: syncScorerIDs,
+            syncSelectedTees: syncSelectedTees,
+            currentTargetIndex: { groups.count }
+        ))
     }
 
     // MARK: - Missing Scorer Banner
@@ -5905,6 +5977,89 @@ struct GroupDropDelegate: DropDelegate {
             groups.removeAll { $0.isEmpty }
 
             // Sync arrays
+            while startingSides.count < groups.count {
+                startingSides.append(startingSides.count % 2 == 0 ? "front" : "back")
+            }
+            while startingSides.count > groups.count {
+                startingSides.removeLast()
+            }
+            syncTeeTimes()
+            syncScorerIDs()
+            syncSelectedTees()
+        }
+        resetDrag()
+        return true
+    }
+
+    private func resetDrag() {
+        dragPlayer = nil
+        dragSourceGroup = nil
+        dropTargetGroup = nil
+        dropTargetIndex = nil
+    }
+}
+
+// MARK: - Add Tee Group Drop Delegate
+//
+// Drop target rendered below the existing groups during a drag.
+// Removes the player from their source group and appends a new
+// groups[N] = [player]. Parallel arrays (startingSides, teeTimes,
+// scorerIDs) get extended via the parent's sync helpers.
+//
+// `currentTargetIndex` is a closure so the delegate always reads
+// the CURRENT groups.count when computing the highlight key —
+// without it, the captured target index would go stale if the
+// user dropped a player into a different group first then
+// re-grabbed and dragged toward the "+ Add" zone.
+private struct AddTeeGroupDropDelegate: DropDelegate {
+    @Binding var dragSourceGroup: Int?
+    @Binding var dragPlayer: Player?
+    @Binding var dropTargetGroup: Int?
+    @Binding var dropTargetIndex: Int?
+    @Binding var groups: [[Player]]
+    @Binding var startingSides: [String]
+    @Binding var scorerIDs: [Int]
+    @Binding var teeTimes: [Date?]
+    let syncTeeTimes: () -> Void
+    let syncScorerIDs: () -> Void
+    let syncSelectedTees: () -> Void
+    let currentTargetIndex: () -> Int
+
+    func dropEntered(info: DropInfo) {
+        withAnimation(.easeOut(duration: 0.15)) {
+            dropTargetGroup = currentTargetIndex()
+        }
+    }
+
+    func dropExited(info: DropInfo) {
+        withAnimation(.easeOut(duration: 0.15)) {
+            if dropTargetGroup == currentTargetIndex() {
+                dropTargetGroup = nil
+            }
+        }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        guard let player = dragPlayer, let sourceGroup = dragSourceGroup else {
+            resetDrag()
+            return false
+        }
+        // Source single-player guard happens at the view level via the
+        // `groups[src].count > 1` gate before this delegate is wired,
+        // so we can trust source has spare players here.
+        withAnimation(.easeOut(duration: 0.2)) {
+            groups[sourceGroup].removeAll { $0.id == player.id }
+            groups.append([player])
+            // Empty-source strip — keeps the array contiguous when the
+            // drag emptied the source group (defensive; the view gate
+            // shouldn't allow it, but a race with another mutation
+            // could).
+            groups.removeAll { $0.isEmpty }
+            // Sync parallel arrays
             while startingSides.count < groups.count {
                 startingSides.append(startingSides.count % 2 == 0 ? "front" : "back")
             }
