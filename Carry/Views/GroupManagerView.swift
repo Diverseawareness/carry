@@ -4161,6 +4161,24 @@ struct GroupManagerView: View {
                         if leaderboardTab == 0, let lastRound = roundHistory.last {
                             leaderboardStatsSection(lastRound: lastRound)
                         }
+
+                        // Carry-only footnote for converted groups (SG that
+                        // originated as a QG with guests). The leaderboard
+                        // only ranks Carry users — guests who scored during
+                        // the QG phase don't carry forward into the SG
+                        // recurring leaderboard unless they onboard. Shown
+                        // for any Skins Group so users understand why some
+                        // players from a past round don't appear here.
+                        if !isQuickGame {
+                            Text("*only members on Carry are part of the leaderboard")
+                                .font(.system(size: 12))
+                                .foregroundColor(Color.textTertiary)
+                                .multilineTextAlignment(.center)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                                .padding(.horizontal, 24)
+                                .padding(.top, 20)
+                                .padding(.bottom, 16)
+                        }
                     }
                 }
 
