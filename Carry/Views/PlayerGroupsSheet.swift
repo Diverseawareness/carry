@@ -1533,7 +1533,7 @@ struct PlayerGroupsSheet: View {
                     guard let inviteId = player.inviteMemberId,
                           let phone = player.phoneNumber, !phone.isEmpty else { continue }
                     do {
-                        _ = try await GroupService().reservePhoneInvite(
+                        let returnedId = try await GroupService().reservePhoneInvite(
                             id: inviteId,
                             groupId: groupId,
                             phone: phone,
@@ -1541,6 +1541,53 @@ struct PlayerGroupsSheet: View {
                             groupNum: gi + 1,
                             inviteeName: player.name
                         )
+                        // Re-anchor the local scorer slot when the RPC
+                        // dedup'd to an existing row (same group_id +
+                        // invited_phone). Without this, scorerIDs[gi]
+                        // = stableId(freshUUID) but server row id =
+                        // existing oldUUID → mismatch → next refresh
+                        // wipes the slot.
+                        if returnedId != inviteId {
+                            await MainActor.run {
+                                let oldStable = Player.stableId(from: inviteId)
+                                let newStable = Player.stableId(from: returnedId)
+                                if let pIdx = groups[gi].firstIndex(where: { $0.id == oldStable }) {
+                                    groups[gi][pIdx].inviteMemberId = returnedId
+                                    var moved = groups[gi][pIdx]
+                                    moved = Player(
+                                        id: newStable,
+                                        name: moved.name,
+                                        initials: moved.initials,
+                                        color: moved.color,
+                                        handicap: moved.handicap,
+                                        avatar: moved.avatar,
+                                        group: moved.group,
+                                        ghinNumber: moved.ghinNumber,
+                                        venmoUsername: moved.venmoUsername,
+                                        avatarImageName: moved.avatarImageName,
+                                        avatarUrl: moved.avatarUrl,
+                                        phoneNumber: moved.phoneNumber,
+                                        isPendingInvite: moved.isPendingInvite,
+                                        isPendingAccept: moved.isPendingAccept,
+                                        isGuest: moved.isGuest,
+                                        profileId: moved.profileId,
+                                        homeClub: moved.homeClub,
+                                        inviteMemberId: returnedId
+                                    )
+                                    groups[gi][pIdx] = moved
+                                }
+                                if gi < scorerIDs.count, scorerIDs[gi] == oldStable {
+                                    scorerIDs[gi] = newStable
+                                }
+                                if let aIdx = allMembers.firstIndex(where: { $0.id == oldStable }) {
+                                    allMembers[aIdx].inviteMemberId = returnedId
+                                }
+                                if selectedIDs.contains(oldStable) {
+                                    selectedIDs.remove(oldStable)
+                                    selectedIDs.insert(newStable)
+                                }
+                            }
+                        }
                     } catch {
                         #if DEBUG
                         print("[PlayerGroupsSheet] reservePhoneInvite failed for \(player.shortName): \(error)")

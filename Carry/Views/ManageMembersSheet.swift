@@ -759,7 +759,7 @@ struct ManageMembersSheet: View {
                 guard let userId = try? await SupabaseManager.shared.client.auth.session.user.id else { return }
                 let groupService = GroupService()
                 do {
-                    _ = try await groupService.reservePhoneInvite(
+                    let returnedId = try await groupService.reservePhoneInvite(
                         id: inviteId,
                         groupId: groupId,
                         phone: digits,
@@ -767,6 +767,22 @@ struct ManageMembersSheet: View {
                         groupNum: 1,
                         inviteeName: typedName.isEmpty ? nil : typedName
                     )
+                    // Re-anchor the local stub on the server's returned
+                    // id when the RPC dedup'd to an existing row (same
+                    // group_id + invited_phone). Without re-anchor, the
+                    // local Player.inviteMemberId stays the freshly-
+                    // minted UUID while the server row's id is the OLD
+                    // one — `localAllAvailable` dedup-by-inviteMemberId
+                    // (introduced 198ad40) would treat them as different
+                    // invites and the Pending chip would render twice
+                    // until force-quit.
+                    if returnedId != inviteId {
+                        await MainActor.run {
+                            if let idx = localGuests.firstIndex(where: { $0.inviteMemberId == inviteId }) {
+                                localGuests[idx].inviteMemberId = returnedId
+                            }
+                        }
+                    }
                     // Open native SMS with deep link. The body's
                     // own `?group=` query was being chewed up by the
                     // sms URL parser because `.urlQueryAllowed`
