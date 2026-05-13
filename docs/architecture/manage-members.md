@@ -2,7 +2,7 @@
 
 **TL;DR:** Add Carry users (search → active row), invite by phone (`invited_phone`, status `'invited'`), remove via long-press confirm (hard DELETE). `onRefresh` callback handles SwiftUI `let allAvailable` state-propagation race (locked 2026-05-02). Dedup via partial unique index `group_members_unique_real_player`.
 
-> **Scorer assignment moved out of this sheet in 1.0.9.** Pre-1.0.9 the SG missing-scorer banner routed here, but ManageMembersSheet had no scorer UI — the CTA was a trap. The 1.0.9 `scorerPickerSheet` upgrade (with `ScorerAssignmentView` for search + SMS invite) is now the canonical SG scorer-assignment surface. See [scorer-rules.md §"Score Keeper UI"](scorer-rules.md). ManageMembersSheet stays for member roster management only (add active members / pending phone invites / long-press remove).
+> **Scope reminder:** ManageMembersSheet is the ONLY member-management surface for Skins Groups. SG has no scorer concept in `.everyone` mode (v1 default), so there's no scorer-assignment UI here — just add Carry users via search, invite phones via SMS, remove via long-press. See [scorer-rules.md §"Foundational premise"](scorer-rules.md) for the Carry-only invariant that makes pending-phone-invites stay here (not on the tee sheet) until they accept.
 
 ## Sheet entry point
 

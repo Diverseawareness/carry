@@ -9,7 +9,7 @@ Universal rule across game types: a tee group's scorer slot **must be filled by 
 | Slot 0 eligibility | Allowed? | Why |
 |---|---|---|
 | Confirmed Carry user (`profileId != nil`, not pending) | ✅ | Can `canScore` immediately |
-| Pending SMS invitee (`isPendingInvite == true`, no profileId yet) | ✅ in QG and SG (1.0.9) | The assignment IS the "playing today" signal — they finish onboarding before round-start and become a real scorer. SG used to advance past via `syncScorerIDs` rule 5 but the 1.0.9 `scorerPickerSheet` upgrade now lets the SG creator assign a pending SMS invitee directly. Pre-reconciliation visibility is gated by [`refreshGroupData` L985-1001](../../Carry/Views/GroupManagerView.swift:985) which lets pending invites through `selectedIDs` ONLY when they're in `assignedScorerIds = union(local scorerIDs, server freshGroup.scorerIds)`. Non-scorer phone invites still hidden — Carry-only invariant preserved for the rest of SG roster |
+| Pending SMS invitee (`isPendingInvite == true`, no profileId yet) | ✅ in QG | The assignment IS the "playing today" signal — they finish onboarding before round-start and become a real scorer. SG has no scorer concept in `.everyone` mode (v1's only mode), so this row doesn't apply to SG — SG SMS-invitees stay in ManageMembersSheet's Pending section until they accept and reconcile. SG advances past via `syncScorerIDs` rule 5 only matters in the dormant `.single` mode |
 | Pending-accept Carry user (has `profileId`, `isPendingAccept == true`) | ✅ in QG | Same as above; they tap accept and become canScore-eligible |
 | Permanent guest (name + handicap only, no profileId, no pending invite) | ❌ | Never has an app account, can't authenticate, can't write scores |
 
@@ -82,23 +82,19 @@ Single source of truth for scorer eligibility. See [player-flags.md](player-flag
 
 ## Score Keeper UI
 
-Two parallel surfaces (1.0.9):
-
 | Surface | When | Where |
 |---|---|---|
-| `PlayerGroupsSheet` scorer slot | QG creator opens "Edit Players" from QG details | [PlayerGroupsSheet.swift:417-427](../../Carry/Views/PlayerGroupsSheet.swift:417) — per-group scorer slot, drag-to-rearrange row above |
-| `scorerPickerSheet` | SG creator taps "Tee time needs scorer" banner OR taps a "Scorer" pill on a non-creator group's row | [GroupManagerView.swift:3486-3552](../../Carry/Views/GroupManagerView.swift:3486) — uses `ScorerAssignmentView`, search Carry users globally + SMS invite (1.0.9 upgrade — was a flat list of group members) |
-
-Both wrap `ScorerAssignmentView`. State transitions identical:
+| `PlayerGroupsSheet` scorer slot | QG creator opens "Edit Players" from QG details | [PlayerGroupsSheet.swift:417-427](../../Carry/Views/PlayerGroupsSheet.swift:417) — per-group scorer slot via `ScorerAssignmentView`, drag-to-rearrange row above |
+| `scorerPickerSheet` | QG creator taps a "Scorer" pill on a non-creator group's row | [GroupManagerView.swift:3380-3462](../../Carry/Views/GroupManagerView.swift:3380) — flat list of in-group Carry users to pick from |
 
 | State | Trigger | UI |
 |---|---|---|
 | `readOnly = true` | `groups[groupIndex].contains { $0.id == creatorId }` ([PlayerGroupsSheet:424](../../Carry/Views/PlayerGroupsSheet.swift:424)) | Lock icon, no X button |
 | `readOnly = false` | Otherwise | X button to clear, search field to assign |
 
-X button behavior:
-- Pending SMS invite → cleared slot + server `group_members` row hard-deleted via `inviteMemberId`
-- Confirmed Carry user → unassigned from scorer slot, **stays in group as a regular member** (PlayerGroupsSheet historically demoted to non-scorer; `scorerPickerSheet` matches)
+X button behavior: clears scorer slot, demotes player to non-scorer slot in same group. Does NOT remove player from group.
+
+**SG has no Score Keeper UI** in `.everyone` mode (v1 default). Pills are hidden ([:3910](../../Carry/Views/GroupManagerView.swift:3910)), the missing-scorer banner is gated `scoringMode != .everyone` so it never fires for SG, and ManageMembersSheet handles all SG member roster ops. The dormant `.single`-mode SG path keeps the old scorerPickerSheet behavior in code, but the UI gate is `if false`.
 
 ## `scoringMode`
 

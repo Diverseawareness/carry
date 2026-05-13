@@ -136,13 +136,12 @@ Without patch: parent's `groups[idx].handicapPercentage` stays stale during repl
 | 1 | Fetch via `loadSingleGroup` ([:814](../../Carry/Views/GroupManagerView.swift:814)) |
 | 2 | Filter `recentlyRemovedIds` ([:840](../../Carry/Views/GroupManagerView.swift:840)) |
 | 3 | Quick Game guest preservation ([:850-855](../../Carry/Views/GroupManagerView.swift:850)) |
-| 4 | Compute `assignedScorerIds = union(local scorerIDs, server freshGroup.scorerIds)` ([:985-1001](../../Carry/Views/GroupManagerView.swift:985)) — used by filter at step 5 |
-| 5 | Filter `newlyActiveMemberIds`: drop pending-accept always, drop pending-invite IF non-QG AND NOT in `assignedScorerIds` ([:1003-1010](../../Carry/Views/GroupManagerView.swift:1003)). SG SMS-invite-as-scorer (1.0.9) needs pre-reconciliation tee-sheet visibility; non-scorer phone invites still hidden under Carry-only invariant |
-| 6 | Rebuild `groups[][]` from server `group_num`, gated by `groupNumLastSavedAt` ([:898-967](../../Carry/Views/GroupManagerView.swift:898)) |
-| 7 | Check `scorerIdsLastSavedAt` ([:1033](../../Carry/Views/GroupManagerView.swift:1033)) → maybe skip scorer sync |
-| 8 | Check `teeTimesLastSavedAt` ([:1099](../../Carry/Views/GroupManagerView.swift:1099)) → maybe skip tee-time recompute |
-| 9 | Check `handicapPercentageLastSavedAt` ([:1160](../../Carry/Views/GroupManagerView.swift:1160)) → maybe skip handicap sync |
-| 10 | Localize freshGroup (patch handicap + per-member `group` if recent saves) + `onGroupRefreshed?(localized)` ([:1175-1209](../../Carry/Views/GroupManagerView.swift:1175)) |
+| 4 | Filter `newlyActiveMemberIds`: drop pending-accept always, drop pending-invite for non-QG (SG Carry-only invariant — phone invites stay in ManageMembersSheet's Pending section until they accept and reconcile) |
+| 5 | Rebuild `groups[][]` from server `group_num`, gated by `groupNumLastSavedAt` ([:898-967](../../Carry/Views/GroupManagerView.swift:898)) |
+| 6 | Check `scorerIdsLastSavedAt` ([:1033](../../Carry/Views/GroupManagerView.swift:1033)) → maybe skip scorer sync |
+| 7 | Check `teeTimesLastSavedAt` ([:1099](../../Carry/Views/GroupManagerView.swift:1099)) → maybe skip tee-time recompute |
+| 8 | Check `handicapPercentageLastSavedAt` ([:1160](../../Carry/Views/GroupManagerView.swift:1160)) → maybe skip handicap sync |
+| 9 | Localize freshGroup (patch handicap + per-member `group` if recent saves) + `onGroupRefreshed?(localized)` ([:1175-1209](../../Carry/Views/GroupManagerView.swift:1175)) |
 
 ## Refresh trigger sources
 
