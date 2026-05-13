@@ -458,43 +458,28 @@ final class GroupService {
     /// via the regular member path (Player.id = stableId(profile.id)) and the
     /// reconciliation trigger extension keeps scorer_ids in sync.
     func reservePhoneInvite(id: UUID, groupId: UUID, phone: String, invitedBy: UUID, groupNum: Int = 1) async throws -> UUID {
-        #if DEBUG
-        print("[reservePhoneInvite] entry: id=\(id.uuidString) groupNum=\(groupNum) phone=\(phone)")
-        #endif
-        // Dedup by phone — same shape as inviteMemberByPhone. If a row with
-        // this phone already exists in this group, return its id so the
-        // caller can re-anchor.
-        let existing: [GroupMemberDTO] = try await client.from("group_members")
-            .select()
-            .eq("group_id", value: groupId.uuidString)
-            .eq("invited_phone", value: phone)
-            .execute()
-            .value
-        if let existingRow = existing.first {
-            #if DEBUG
-            print("[reservePhoneInvite] dedup: returning existing row id=\(existingRow.id)")
-            #endif
-            return existingRow.id
-        }
-
-        let payload = GroupMemberInsert(
-            id: id,
-            groupId: groupId,
-            playerId: invitedBy,
-            role: "member",
-            status: "invited",
-            invitedPhone: phone,
-            groupNum: groupNum
-        )
-        #if DEBUG
-        if let data = try? JSONEncoder().encode(payload), let json = String(data: data, encoding: .utf8) {
-            print("[reservePhoneInvite] insert payload JSON: \(json)")
-        }
-        #endif
-        try await client.from("group_members")
-            .insert(payload)
-            .execute()
-        return id
+        // Calls the SECURITY DEFINER RPC create_phone_invite() instead of a
+        // direct REST insert. Background: PostgREST silently drops
+        // group_num from the JSON INSERT body for this table — direct SQL
+        // preserves it, so the RPC body INSERTs in plain SQL where the
+        // column write isn't broken. Dedup-by-phone is handled inside the
+        // RPC. Reverse trigger reconcile_phone_invite_at_insert continues
+        // to fire BEFORE INSERT and may rewrite NEW.player_id / status /
+        // invited_phone if the phone matches an existing profile; NEW.id
+        // and NEW.group_num are preserved, so the scorer slot's anchor
+        // UUID stays intact. See migration
+        // 20260513000004_create_phone_invite_rpc.sql.
+        let resultId: UUID = try await client.rpc(
+            "create_phone_invite",
+            params: [
+                "p_id": AnyJSON.string(id.uuidString),
+                "p_group_id": AnyJSON.string(groupId.uuidString),
+                "p_phone": AnyJSON.string(phone),
+                "p_invited_by": AnyJSON.string(invitedBy.uuidString),
+                "p_group_num": AnyJSON.integer(groupNum)
+            ]
+        ).execute().value
+        return resultId
     }
 
     /// Check if a phone number has pending group invites (called on sign-up/sign-in).
