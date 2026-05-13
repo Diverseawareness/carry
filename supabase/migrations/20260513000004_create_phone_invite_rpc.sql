@@ -77,14 +77,24 @@ BEGIN
     -- and may mutate NEW.player_id / invited_phone / status if the phone
     -- matches an existing profile. NEW.id stays p_id. NEW.group_num stays
     -- the cast _group_num.
-    -- TEMP DIAGNOSTIC (commit version): still hardcode 99 but let the
-    -- transaction commit. Confirmed earlier that INSERT preserves 99
-    -- inside the transaction. If the final stored value is != 99,
-    -- something post-commit is mutating the column.
+    -- INSERT in plain SQL. group_num is preserved here (verified). The
+    -- reverse trigger reconcile_phone_invite_at_insert fires BEFORE
+    -- INSERT and may mutate NEW.player_id / invited_phone / status if
+    -- the phone matches an existing profile; NEW.id and NEW.group_num
+    -- are preserved.
+    --
+    -- Critical: post-creation, iOS's syncGroupNumsToSupabase fires
+    -- saveGroupNums which UPDATEs group_members by (group_id,
+    -- player_id). The SMS-invite row carries player_id = invitedBy
+    -- (placeholder) until reconciliation, so a naive saveGroupNums
+    -- UPDATE would match this row and stomp its group_num back to the
+    -- inviter's group. GroupService.saveGroupNums is scoped with an OR
+    -- on invited_phone IS NULL / empty to exclude phone-invite rows
+    -- from that UPDATE — see GroupService.swift.
     INSERT INTO public.group_members (
         id, group_id, player_id, role, status, invited_phone, group_num
     ) VALUES (
-        p_id, p_group_id, p_invited_by, 'member', 'invited', p_phone, 99
+        p_id, p_group_id, p_invited_by, 'member', 'invited', p_phone, _group_num
     );
 
     RETURN p_id;

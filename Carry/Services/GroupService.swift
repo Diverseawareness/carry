@@ -748,12 +748,19 @@ final class GroupService {
     }
 
     /// Save group_num assignments for all members (Quick Games).
+    /// Scoped to exclude phone-invite rows (invited_phone non-empty) so
+    /// the creator's UUID acting as the placeholder player_id on SMS
+    /// invite rows doesn't accidentally stomp the SMS-invite's group_num
+    /// when the creator is in another group. SMS-invite rows carry their
+    /// own group_num from reservePhoneInvite at creation; phone-invitee
+    /// group placement only changes via explicit assignment.
     func saveGroupNums(groupId: UUID, assignments: [(playerId: UUID, groupNum: Int)]) async throws {
         for item in assignments {
             try await client.from("group_members")
                 .update(["group_num": item.groupNum])
                 .eq("group_id", value: groupId.uuidString)
                 .eq("player_id", value: item.playerId.uuidString)
+                .or("invited_phone.is.null,invited_phone.eq.")
                 .execute()
         }
     }
