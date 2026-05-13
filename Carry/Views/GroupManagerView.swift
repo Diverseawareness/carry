@@ -969,32 +969,13 @@ struct GroupManagerView: View {
                 // UserDefaults are still preserved, because those deselected
                 // members were already in `prevActiveMemberIds` — so they
                 // don't show up as "newly active" and aren't re-added.
-                // Mirror init's default-sel filter:
-                //  - QG includes ALL pending-invite (SMS-invited scorers
-                //    + pending guest claims — both belong on the tee
-                //    sheet pre-reconciliation).
-                //  - SG excludes pending-invite EXCEPT for those
-                //    assigned as a scorer for some group. SMS-invite-as-
-                //    scorer (1.0.9) needs pre-reconciliation visibility
-                //    in SG too — the inviter should see "Waiting for
-                //    Scorer to Join" with the typed name + phone in the
-                //    relevant tee group. Non-scorer phone invites stay
-                //    hidden under the Carry-only invariant until they
-                //    accept and reconcile.
-                let assignedScorerIds: Set<Int> = {
-                    var ids = Set(scorerIDs)
-                    if let server = freshGroup.scorerIds {
-                        ids.formUnion(server)
-                    }
-                    return ids
-                }()
+                // Mirror init's default-sel filter: QG includes pending-
+                // invite (SMS-invited scorer), SG excludes them.
                 let newlyActiveMemberIds = Set(
                     filteredFreshMembers
                         .filter { player in
                             if player.isPendingAccept { return false }
-                            if !isQuickGame && player.isPendingInvite && !assignedScorerIds.contains(player.id) {
-                                return false
-                            }
+                            if !isQuickGame && player.isPendingInvite { return false }
                             return !prevActiveMemberIds.contains(player.id)
                         }
                         .map(\.id)
