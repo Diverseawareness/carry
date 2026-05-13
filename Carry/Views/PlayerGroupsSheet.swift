@@ -300,7 +300,9 @@ struct PlayerGroupsSheet: View {
             selectedIDs = initialSelectedIDs
             nextGuestID = initialNextGuestID
 
-            // Build scorer slots from current state
+            // Build scorer slots from current state. Preserve inviteMemberId
+            // so SMS-invite scorer slots round-trip through the sheet
+            // without losing their server-anchor UUID.
             scorerSlots = groups.enumerated().map { (gi, group) in
                 let sid = gi < scorerIDs.count ? scorerIDs[gi] : 0
                 guard let scorer = group.first(where: { $0.id == sid }) else { return ScorerSlot() }
@@ -312,7 +314,8 @@ struct PlayerGroupsSheet: View {
                     isPendingInvite: scorer.isPendingInvite,
                     phoneNumber: scorer.phoneNumber,
                     avatarUrl: scorer.avatarUrl,
-                    homeClub: scorer.homeClub
+                    homeClub: scorer.homeClub,
+                    inviteMemberId: scorer.inviteMemberId
                 )
             }
 
@@ -1381,6 +1384,36 @@ struct PlayerGroupsSheet: View {
                     .eq("group_id", value: groupId.uuidString)
                     .eq("player_id", value: profileId.uuidString)
                     .execute()
+            }
+        }
+
+        // 3c. Persist SMS-invite-as-scorer rows via reservePhoneInvite.
+        // The slot anchored on a UUID at sendInvite time (Stage 4a) — we
+        // pass that UUID as the explicit group_members.id so the row's PK
+        // matches what scorerIDs already references via Player.stableId
+        // (Stage 4a). Closes the gap where saveAndDismiss previously made
+        // ZERO server calls for pending-invite scorer slots, leaving the
+        // slot referencing a placeholder int that no row would ever match.
+        // See migration 20260513000003 + docs/sms-invite-scorer-plan.md.
+        if let userId = try? await SupabaseManager.shared.client.auth.session.user.id {
+            for group in cleanResult.groups {
+                for player in group where player.isPendingInvite {
+                    guard let inviteId = player.inviteMemberId,
+                          let phone = player.phoneNumber, !phone.isEmpty else { continue }
+                    do {
+                        _ = try await GroupService().reservePhoneInvite(
+                            id: inviteId,
+                            groupId: groupId,
+                            phone: phone,
+                            invitedBy: userId,
+                            groupNum: player.group
+                        )
+                    } catch {
+                        #if DEBUG
+                        print("[PlayerGroupsSheet] reservePhoneInvite failed for \(player.shortName): \(error)")
+                        #endif
+                    }
+                }
             }
         }
 
