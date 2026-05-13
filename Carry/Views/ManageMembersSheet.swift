@@ -3,6 +3,7 @@ import SwiftUI
 // MARK: - Manage Members Sheet (extracted for performance — no @Binding to parent)
 
 struct ManageMembersSheet: View {
+    @EnvironmentObject var authService: AuthService
     let allAvailable: [Player]
     let initialSelectedIDs: Set<Int>
     let initialNextGuestID: Int
@@ -683,6 +684,18 @@ struct ManageMembersSheet: View {
     private func sendInvite() {
         let digits = invitePhone.filter { $0.isNumber }
         guard digits.count >= 10 else { return }
+        // Self-invite block — match ScorerAssignmentView's pattern.
+        // Without this, an inviter typing their own phone here would
+        // create a phone-invite row that the reverse-reconcile trigger
+        // would immediately collapse into their own profile → silent
+        // double-add into group_members with the inviter as both
+        // creator and pending-invite.
+        if let selfDigits = authService.currentUser?.phone?.filter({ $0.isNumber }),
+           selfDigits.suffix(10) == digits.suffix(10),
+           !selfDigits.isEmpty {
+            ToastManager.shared.error("You can't invite yourself — you're already a member.")
+            return
+        }
         let guestColors = ["#E67E22", "#9B59B6", "#1ABC9C", "#C0392B", "#2980B9", "#27AE60"]
         let colorIdx = (nextGuestID - 100) % guestColors.count
         // Capture the typed name from the search field (the "Send
