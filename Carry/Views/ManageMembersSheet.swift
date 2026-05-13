@@ -267,7 +267,7 @@ struct ManageMembersSheet: View {
                         if showMembersTip {
                             VStack(spacing: 0) {
                                 HStack(alignment: .top, spacing: 8) {
-                                    Text("Tap on players in the All Members section to add/remove them from playing in today's round.")
+                                    Text("Tap on players in the All Members section to add/remove them from playing in today's round. Long press to delete member permanently.")
                                         .font(.carry.bodySM)
                                         .foregroundColor(Color.successGreen)
                                         .lineSpacing(2)
