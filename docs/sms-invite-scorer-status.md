@@ -82,6 +82,7 @@ After temporarily clearing the recipient's `profile.phone` via SQL, Daniel creat
 | Issue | Notes |
 |---|---|
 | **"user4 x 2" duplicate guest row** in Group 2 details (observed mid-session) | Daniel reported the typed Group 2 slot-1 guest ("user4") appeared duplicated in QG details. Root cause not investigated — could be iOS rendering, or the `allMembers = filteredFreshMembers + preservedGuests` merge introducing dups when ids match between local + server. **Repro + diagnose before ship.** Start with the diagnostic SQL in this doc and compare local-side and server-side member counts. |
+| **Swipe-to-delete on pending-invite player in QG tee sheet leaves a server-side orphan** | `GroupManagerView.removePlayer` (line ~2978-3006) for QG hard-deletes by `(group_id, player_id)` but gates on `if let profileId = player.profileId`. Phone-invite Players have `profileId = nil`, so the server delete is skipped. Local state updates (removed from `groups[]`, `allMembers`, `selectedIDs`), but the next refresh re-fetches the row via `loadSingleGroup`'s phone-invites loop → the player reappears. Fix shape: (1) `loadSingleGroup` phone-invite Player needs `inviteMemberId: invite.id` so the row id reaches `removePlayer`, (2) `removePlayer` QG branch handles phone-invite by deleting `WHERE id = inviteMemberId` instead of `WHERE player_id = ...`. Required for the "remove a mistakenly-invited scorer" UX Daniel asked about — the X-button / swipe affordance has nothing to delete server-side currently. |
 | Pre-reconciliation scorer-slot styling shows raw phone digits, not the typed name | Daniel asked: "have the orange state, with invited in the scorer slot, until I auto join so the invite feels like it was successful". Today's phone-invite Player has `name = phone_digits`, no typed name stored. Fix: add `invitee_name text` column to `group_members`, plumb the typed name from `ScorerAssignmentView.sendInvite` through `reservePhoneInvite` → RPC. `loadSingleGroup` phone-invite Player uses `invitee_name` when present. Queued for 1.0.10. |
 | Debug prints left in code | `[QuickStart.createQuickGame] SMS slot`, `[SMS-invite] member.group`, `[reservePhoneInvite] RPC call`, `[reservePhoneInvite] RPC success`, `[reservePhoneInvite] RPC FAILED` — all in DEBUG blocks. Strip before ship OR leave for one more release cycle to aid any post-ship debugging. |
 | Migration `20260513000004` still has `RAISE LOG` line | Useful for PostgreSQL log debugging, low overhead. Can stay. |
@@ -101,8 +102,9 @@ Apply via Supabase Studio SQL Editor on prod (`seeitehizboxjbnccnyd`). Dev branc
 ## Final ship steps (in order)
 
 1. ⏳ **Rebuild on Ziggy** (Cmd+R) and verify the `31d220b` pending-state UX live: greyed-out button + "Waiting for Scorer to Join" label
-2. ⏳ Repro the "user4 x 2" duplicate guest bug and either fix or document as known issue
-3. ⏳ Decide on debug-print stripping (recommend: leave for now, strip in 1.0.10)
+2. ⏳ Fix the swipe-to-delete orphan for pending-invite players (see Known issues — Daniel wants this so a mistakenly-invited scorer can be removed)
+3. ⏳ Repro the "user4 x 2" duplicate guest bug and either fix or document as known issue
+4. ⏳ Decide on debug-print stripping (recommend: leave for now, strip in 1.0.10)
 4. ⏳ Apply migrations 1–5 above on prod
 5. ⏳ Bump `CURRENT_PROJECT_VERSION` from 82 → 83 (or leave at 82 if no new prod build was archived yet on 1.0.9)
 6. ⏳ Archive in Xcode (Release config → prod Supabase) → upload to ASC
