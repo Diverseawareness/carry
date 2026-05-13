@@ -146,34 +146,59 @@ The pink `missingScorerBanner` ([:3574](../../Carry/Views/GroupManagerView.swift
 
 Same shape as the existing tee-times-missing CTA route ([:1799-1809](../../Carry/Views/GroupManagerView.swift:1799)): warning copy + tap opens fix sheet + `canStartRound` stays false. Reuse this pattern for any future "block-but-route-to-fix" CTA wiring.
 
-## Scorer anchoring (drag rules)
+## 🔒 Scorer anchoring (drag rules) — load-bearing architectural rule
 
-[GroupManagerView.swift:3284](../../Carry/Views/GroupManagerView.swift:3284) computes `scorerAnchored` per `GroupDropDelegate`:
+This is the single most important QG vs SG behavioral difference. Every drag-drop / swap / move path branches on this flag.
+
+| Game type | scoringMode | scorerAnchored | Drag a scorer to another group? |
+|---|---|---|---|
+| Quick Game | `.single` (default + only) | **true** | **Blocked** — toast: "Scorers are anchored — change scorers in Manage Members." Move scorers only via `PlayerGroupsSheet`. |
+| Skins Group v1 | `.everyone` (default + only — `.single` toggle dormant) | **false** | Allowed — every player is interchangeable. Full-group target → swap UI (no scorer protection). |
+| Skins Group legacy `.single` | `.single` | true | Theoretical only — UI to set `.everyone → .single` is gated `if false` ([:5385](../../Carry/Views/GroupManagerView.swift:5385)). Unreachable in production. |
+
+`scorerAnchored` formula (both QG and SG paths compute it identically):
 ```swift
 scorerAnchored: isQuickGame || scoringMode != .everyone
 ```
 
-| Game type | scoringMode | scorerAnchored | Drag a scorer? |
-|---|---|---|---|
-| Quick Game | `.single` (default) | true | **Blocked** — toast: "Scorers are anchored — change scorers in Manage Members." |
-| Skins Group v1 | `.everyone` (default) | false | Allowed — every player is interchangeable |
-| Skins Group legacy `.single` | `.single` | true | Blocked, same as QG |
+### Enforcement points
 
-[GroupDropDelegate.performDrop:5328-5334](../../Carry/Views/GroupManagerView.swift:5328):
-```swift
-if scorerAnchored,
-   sourceGroup < scorerIDs.count,
-   scorerIDs[sourceGroup] == player.id {
-    ToastManager.shared.error("Scorers are anchored — change scorers in Manage Members.")
-    return false
-}
-```
+| Drop delegate | Line | Behavior |
+|---|---|---|
+| `GroupDropDelegate.performDrop` (drag onto an existing group card) | [5947-5953](../../Carry/Views/GroupManagerView.swift:5947) | Rejects with toast + early-return when `scorerAnchored && scorerIDs[sourceGroup] == player.id` |
+| `AddTeeGroupDropDelegate.performDrop` (drag onto the new-group dotted zone — 1.0.9) | [6063-6069](../../Carry/Views/GroupManagerView.swift:6063) | Same guard. Without it, a creator could drag a locked QG scorer to a new group and silently bypass the invariant. |
 
-**Implication:** when scorer-anchoring is on, the only way to move a scorer to a different group is via `PlayerGroupsSheet` (the Manage Members sheet for QGs). The picker's setter handles the slot reassignment + creator-lock invariant + sync. See `PlayerGroupsSheet.scorerSlotBinding` rules above.
+Both call sites pass the same `scorerAnchored: isQuickGame || scoringMode != .everyone` at [3808](../../Carry/Views/GroupManagerView.swift:3808) and [3858](../../Carry/Views/GroupManagerView.swift:3858).
 
-**Why anchoring exists in QG:** in single-scorer mode, the scorer is structurally meaningful — they're the designated keeper for that group. Dragging them elsewhere mid-setup would orphan the group's scorer slot. Forcing the explicit picker path keeps the user in the right mental model.
+### Implication for QG
 
-**Why SG v1 does NOT anchor:** everyone-scores mode means every player has equal scoring authority. No slot to anchor.
+When anchoring is on, the ONLY way to reassign a scorer is through:
+- `PlayerGroupsSheet.scorerSlotBinding` (Edit Players sheet — per-group scorer slots with `ScorerAssignmentView`)
+- The picker's setter handles slot reassignment + creator-lock invariant + immediate `saveScorerIds` sync
+
+Dragging is blocked because in single-scorer mode the scorer is structurally meaningful — they're the designated keeper for that group. Silent drag would orphan the slot mid-setup.
+
+### Implication for SG v1
+
+No scorer anchoring → no per-group "designated keeper" concept. Every player can move freely between groups via drag, and a SG round-start writes everyone into `round_players` regardless of group_num (scoring mode is `.everyone`, so any player can score any hole). The SG creator can ASSIGN a scorer via the 1.0.9 `scorerPickerSheet` upgrade (for SMS-invite-as-scorer or initial Carry user designation), but the assignment is a hint, not a lock — the assigned player can still be dragged to another group.
+
+**The full-group swap-picker behavior**: SG with a full destination group → all players in destination are swap candidates (none are "locked"). QG with full destination → swap-out list excludes the anchored scorer ([scorerAnchored gate inside SwapPickerSheet](../../Carry/Views/GroupManagerView.swift:5961-5970)).
+
+### Why this rule has wide reach
+
+The anchoring rule cascades through many systems:
+
+| Surface | How it branches |
+|---|---|
+| `scoringMode` default | QG=`.single`, SG=`.everyone` ([RoundConfig](../../Carry/Models/RoundConfig.swift:50)) |
+| Scorecard tap gate | QG enforces `isCurrentUserScorerForOwnGroup`, SG has no gate ([ScorecardView:724](../../Carry/Views/ScorecardView.swift:724)) |
+| Group drag drop | `scorerAnchored` rejects locked-scorer drags |
+| Add-tee-group drop | Same rejection (1.0.9) |
+| Missing-scorer banner routing | QG→PlayerGroupsSheet, SG→scorerPickerSheet ([:3703-3707](../../Carry/Views/GroupManagerView.swift:3703)) |
+| Scorer pill rendering | Hidden for SG when `.everyone` (pill implies a restriction that doesn't exist) ([:3910](../../Carry/Views/GroupManagerView.swift:3910)) |
+| Pre-reconciliation roster filter | QG includes all pending invites; SG only includes pending invites assigned as scorers via `assignedScorerIds` union (1.0.9 — see refresh-race-guards.md) |
+
+**Any new feature touching scorer / group / drag behavior MUST consult this table first.** Treating SG the same as QG (or vice-versa) is the single most common source of regression bugs in this codebase.
 
 ## Full-group drop behavior
 
