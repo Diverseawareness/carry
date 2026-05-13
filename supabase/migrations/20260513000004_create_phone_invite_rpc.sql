@@ -77,21 +77,15 @@ BEGIN
     -- and may mutate NEW.player_id / invited_phone / status if the phone
     -- matches an existing profile. NEW.id stays p_id. NEW.group_num stays
     -- the cast _group_num.
-    -- TEMP DIAGNOSTIC: hardcode 99 + SELECT back + RAISE so we see
-    -- whether the INSERT preserves the value inside the same
-    -- transaction. The error message reaches iOS via the RPC FAILED
-    -- catch block.
+    -- TEMP DIAGNOSTIC (commit version): still hardcode 99 but let the
+    -- transaction commit. Confirmed earlier that INSERT preserves 99
+    -- inside the transaction. If the final stored value is != 99,
+    -- something post-commit is mutating the column.
     INSERT INTO public.group_members (
         id, group_id, player_id, role, status, invited_phone, group_num
     ) VALUES (
         p_id, p_group_id, p_invited_by, 'member', 'invited', p_phone, 99
     );
-
-    DECLARE _stored int;
-    BEGIN
-        SELECT group_num INTO _stored FROM public.group_members WHERE id = p_id;
-        RAISE EXCEPTION '[diagnostic] tried to INSERT group_num=99, SELECT-back shows group_num=%', _stored;
-    END;
 
     RETURN p_id;
 END;
