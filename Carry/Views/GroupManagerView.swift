@@ -1354,6 +1354,41 @@ struct GroupManagerView: View {
     }
 
     var body: some View {
+        rootBody
+            // Root-level overlay so the coach mark escapes any parent clipping
+            // (header HStack, ScrollView, etc). The QR Button publishes its
+            // bounds via QRButtonAnchorKey; we read here and position the
+            // CoachMark relative to the rect.
+            .overlayPreferenceValue(QRButtonAnchorKey.self) { anchor in
+                GeometryReader { geo in
+                    if let anchor, !hasSeenFirstGroupQRCoachMark {
+                        let rect = geo[anchor]
+                        CoachMark(
+                            text: "Reveal QR code for players to scan and join group directly",
+                            pointerSide: .trailing,
+                            pointerInset: 12,
+                            onDismiss: {
+                                withAnimation(.easeOut(duration: 0.2)) {
+                                    hasSeenFirstGroupQRCoachMark = true
+                                }
+                            }
+                        )
+                        // Position the coach mark so its top-right corner is
+                        // ~8pt right of QR button's right edge, ~12pt below.
+                        // Using .position() centers the view on (x, y); we
+                        // offset by half the bubble's outer dims (208 wide,
+                        // ~80 tall) to get top-right alignment.
+                        .position(
+                            x: rect.maxX - (208 / 2) + 8 - 20,
+                            y: rect.maxY + 12 + (80 / 2)
+                        )
+                    }
+                }
+                .allowsHitTesting(!hasSeenFirstGroupQRCoachMark)
+            }
+    }
+
+    private var rootBody: some View {
         ZStack {
             Color.bgPrimary.ignoresSafeArea()
 
@@ -1414,28 +1449,7 @@ struct GroupManagerView: View {
                         }
                         .accessibilityLabel("QR invite")
                         .accessibilityHint("Shows a scannable QR code to invite players")
-                        .overlay(alignment: .topTrailing) {
-                            // First-group coach mark — anchored to QR button's
-                            // top-trailing so the bubble extends LEFT (avoids
-                            // clipping past the screen's right edge, since QR
-                            // button sits near the right side of the header).
-                            // Pointer is on the trailing side of the bubble,
-                            // sitting just under the QR button.
-                            if !hasSeenFirstGroupQRCoachMark {
-                                CoachMark(
-                                    text: "Reveal QR code for players to scan and join group directly",
-                                    pointerSide: .trailing,
-                                    pointerInset: 12,
-                                    onDismiss: {
-                                        withAnimation(.easeOut(duration: 0.2)) {
-                                            hasSeenFirstGroupQRCoachMark = true
-                                        }
-                                    }
-                                )
-                                .offset(x: -8, y: 44)
-                                .zIndex(100)
-                            }
-                        }
+                        .anchorPreference(key: QRButtonAnchorKey.self, value: .bounds) { $0 }
                     }
 
                     // Group options button. Three flavors:

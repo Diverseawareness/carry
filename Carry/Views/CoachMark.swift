@@ -72,6 +72,18 @@ struct CoachMark: View {
     }
 }
 
+/// Preference key that publishes the QR button's bounds rect from the
+/// header up to the GroupManagerView's root, where the coach mark is
+/// rendered as an overlay (escapes header HStack clipping). See
+/// GroupManagerView's `.anchorPreference` on the QR Button + the
+/// `.overlayPreferenceValue` on the root body.
+struct QRButtonAnchorKey: PreferenceKey {
+    static var defaultValue: Anchor<CGRect>? = nil
+    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
+        value = nextValue() ?? value
+    }
+}
+
 /// Upward-pointing triangle for the CoachMark pointer.
 private struct Triangle: Shape {
     func path(in rect: CGRect) -> Path {
