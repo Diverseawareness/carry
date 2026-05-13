@@ -96,9 +96,46 @@ X button behavior: clears scorer slot, demotes player to non-scorer slot in same
 | Mode | Default for | Behavior |
 |---|---|---|
 | `.single` | Quick Game | One scorer per group. ScorecardView tap-gate at [:724](../../Carry/Views/ScorecardView.swift:724) blocks non-scorers |
-| `.everyone` | Skins Group | All players score in parallel. No tap-gate |
+| `.everyone` | Skins Group v1 | All players score in parallel. No tap-gate |
 
 Stored at `RoundConfig.scoringMode` ([RoundConfig.swift:50](../../Carry/Models/RoundConfig.swift:50)).
+
+### SG single-scorer toggle dormant
+
+The UI to flip a Skins Group from `.everyone` to `.single` is hidden behind `if false` at [GroupManagerView.swift:5385](../../Carry/Views/GroupManagerView.swift:5385) with the explicit comment: *"hidden for launch — we're shipping with 'everyone can score' as the only Skins Group model. Quick Games still use single-scorer structurally. Leaving the underlying enum + state in place so the toggle can return later without a migration, but the UI is gone for v1."*
+
+Implication: `scoringMode == .single` is unreachable for SG in production. The paired `missingScorerBanner` ([:3574](../../Carry/Views/GroupManagerView.swift:3574)) — gated `scoringMode != .everyone && !isQuickGame` — is therefore dormant for SG, and explicitly suppressed for QG (see "Missing scorer behavior (Quick Game)" below).
+
+**Both are kept as a matched dormant pair.** Removing one would require rewriting it when single-scorer SG returns. Plumbing stays warm: `RoundConfig` default `.single` at [:50](../../Carry/Models/RoundConfig.swift:50); server load fallback `.single` at [GroupService.swift:1730, :1918](../../Carry/Services/GroupService.swift:1730); `localScoringMode` round-trips through GameOptionsSheet.
+
+## Missing scorer behavior (Quick Game)
+
+When a QG has a populated group with no Carry-user scorer assigned — i.e. `scorerIDs[i] == 0`, the assigned player isn't in the group, OR the assigned player is a guest (`profileId == nil`) — the bottom CTA is the single fix surface.
+
+### Detection predicates
+
+| Predicate | Where |
+|---|---|
+| `groupHasValidScorer(index:) -> Bool` | [GroupManagerView.swift:3605](../../Carry/Views/GroupManagerView.swift:3605). Requires `scorerIDs[i] != 0` AND assigned player exists in the group AND has `profileId != nil` |
+| `missingScorerGroupIndex: Int?` — first 0-indexed group missing a valid scorer | [GroupManagerView.swift:667](../../Carry/Views/GroupManagerView.swift:667). Gated `isQuickGame, isCreator, !isLiveRound, !roundStarted` |
+
+### CTA contract
+
+| Aspect | Behavior | Cite |
+|---|---|---|
+| `startButtonLabel` | Returns "Group N needs scorer" when `missingScorerGroupIndex != nil` | [:690](../../Carry/Views/GroupManagerView.swift:690) |
+| `canStartRound` | Stays `false` — actual start-round path is blocked. QG branch ANDs `missingScorerGroupIndex == nil` | [:643](../../Carry/Views/GroupManagerView.swift:643) |
+| `buttonEnabled` | Stays `true` so the tap fires. ORs `missingScorerGroupIndex != nil` | [:653](../../Carry/Views/GroupManagerView.swift:653) |
+| Tap action | `showPlayerGroups = true` — opens PlayerGroupsSheet (the fix surface). Branch precedes the start-round path | [:1791](../../Carry/Views/GroupManagerView.swift:1791) |
+| `flag.fill` icon | Hidden — opacity bound to `canStartRound \|\| isLiveRound` | [:1831](../../Carry/Views/GroupManagerView.swift:1831) |
+
+### Banner suppressed for QG
+
+The pink `missingScorerBanner` ([:3574](../../Carry/Views/GroupManagerView.swift:3574)) is gated `&& !isQuickGame` at the call site ([:3477](../../Carry/Views/GroupManagerView.swift:3477)). Single-CTA chosen over banner+button pair to avoid redundant signals. The CTA label + tap routing carry the full fix UX.
+
+### Mirrors `needsTeeTimesSet` pattern
+
+Same shape as the existing tee-times-missing CTA route ([:1799-1809](../../Carry/Views/GroupManagerView.swift:1799)): warning copy + tap opens fix sheet + `canStartRound` stays false. Reuse this pattern for any future "block-but-route-to-fix" CTA wiring.
 
 ## Scorer anchoring (drag rules)
 
@@ -237,4 +274,4 @@ The post-mutation reconciler at `.onChange(of: groups)` ([GroupManagerView.swift
 
 ## Last verified
 
-2026-05-10 — converted to machine-readable format.
+2026-05-12 — added §"Missing scorer behavior (Quick Game)" reflecting commits `733b4e2` + `37695e8` on `feature/sms-scorer-reconciliation`. Updated `scoringMode` section with dormant-pair clarification.

@@ -98,8 +98,9 @@ These are hard-locked rules. Breaking one is always a bug. **Enforced by** lists
 | 6 | **8-second race guard** — every user-editable field that persists must have a `<field>LastSavedAt` stamp + skip-window in `refreshGroupData` | [refresh-race-guards.md](refresh-race-guards.md) | 🚧 coverage gap — add Swift test injecting `Date()` to verify guard window suppresses the relevant sync line |
 | 7 | **Verify JWT for push triggers** — Vault-backed; helpers `_push_notification_url()` + `_push_notification_anon_key()` are the only auth path | [push-trigger-chain.md](push-trigger-chain.md) | ✅ [supabase/tests/db/notify_push_helpers_test.sql](../../supabase/tests/db/notify_push_helpers_test.sql) — 17 tests covering helper resolution + JWT shape + per-function helper usage |
 | 8 | **Auth-v2 quarantine** — Google/Email/account-linking never merge into `main` or `release/*` until linking is built+tested AND a separate dev DB exists | [onboarding-and-auth.md](onboarding-and-auth.md) + project memory | 🚧 coverage gap — add CI guard: fail PR check if `GoogleSignInService.swift` or `EmailAuthSheet.swift` is present in `main` |
+| 9 | **QG missing-scorer CTA must (a) keep `canStartRound = false` so the round can't start AND (b) tap-route to PlayerGroupsSheet so the user has a fix path** — pair guards against either "label-lying button starts an unscorable round" or "warning with no tap target" bugs | [scorer-rules.md](scorer-rules.md) §"Missing scorer behavior (Quick Game)" | 🚧 coverage gap — UI test: assert "Group N needs scorer" CTA does NOT start a round AND tap presents PlayerGroupsSheet |
 
-**6 of 8 invariants currently have no automated enforcement.** Each "coverage gap" is a candidate test to add. Treat the gap as a real liability — the recurring race-guard regressions (4 instances of the same pattern before it was documented) happened in part because nothing was failing CI.
+**7 of 9 invariants currently have no automated enforcement.** Each "coverage gap" is a candidate test to add. Treat the gap as a real liability — the recurring race-guard regressions (4 instances of the same pattern before it was documented) happened in part because nothing was failing CI.
 
 Adjacent test coverage that defends related code paths:
 
@@ -168,6 +169,7 @@ Walk the questions for your area. If you can't answer one, you haven't read enou
 | "Couldn't connect" toast on transition | [phase-transitions.md](phase-transitions.md) — order-of-mutations rule |
 | Quick Game convert sheet doesn't appear | [game-types.md](game-types.md) — `onCreateGroup` plumbing through `RoundCoordinatorView` |
 | Scorer reverts to default mid-round | [scorer-rules.md](scorer-rules.md), [refresh-race-guards.md](refresh-race-guards.md) |
+| QG "Group N needs scorer" CTA starts the round when tapped, OR has no effect, OR no in-card warning | [scorer-rules.md](scorer-rules.md) §"Missing scorer behavior (Quick Game)" — both legs of invariant #9 |
 | 42703 PL/pgSQL error | [push-trigger-chain.md](push-trigger-chain.md) — per-table dispatch rule |
 | Pending invite never reconciles | group-invitation-flow.md *(planned)*, [push-trigger-chain.md](push-trigger-chain.md) |
 | Creator can't play, member sees wrong roster | [player-flags.md](player-flags.md), [scorer-rules.md](scorer-rules.md) |
@@ -178,4 +180,4 @@ If you followed the playbook and still hit a regression, the playbook missed a d
 
 ## Last verified
 
-2026-05-09 — initial playbook + 18-doc blueprint set in flight.
+2026-05-12 — added invariant #9 (QG missing-scorer CTA contract) + symptom-map row, reflecting commits `733b4e2` + `37695e8` on `feature/sms-scorer-reconciliation`.

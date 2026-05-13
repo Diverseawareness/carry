@@ -183,6 +183,7 @@ iOS entry: [GroupsListView.swift:260-289 `convertQuickGame`](../../Carry/Views/G
 | Restart Round flow | Wipes scores + `delete_quick_game_guests` | Wipes scores only |
 | Scorer drag (tee-sheet) | **Blocked** ([GroupDropDelegate:5328-5334](../../Carry/Views/GroupManagerView.swift:5328)) — must move scorers via PlayerGroupsSheet | Allowed (everyone-scores mode) |
 | Full-group drop on target | Opens swap picker | Rejects with toast |
+| Missing-scorer affordance | Bottom CTA only — label "Group N needs scorer", tap opens PlayerGroupsSheet ([:1791](../../Carry/Views/GroupManagerView.swift:1791)). `canStartRound` blocks round-start until fixed. See [scorer-rules.md §"Missing scorer behavior (Quick Game)"](scorer-rules.md) | Pink banner inside group card ([:3477](../../Carry/Views/GroupManagerView.swift:3477)) — gated on `.single` mode which is dormant in v1. See [scorer-rules.md §"SG single-scorer toggle dormant"](scorer-rules.md) |
 
 ## Auto-grouping rules
 
@@ -244,6 +245,7 @@ This is current code state; if you ever want a "Split into 2 groups" button for 
 | Active-round card | "Quick Game · Today · 8:24 AM" | Group name + recurrence indicator |
 | End/Delete affordances | "Delete Game" (creator pre-round) — hard-deletes group + round | "Delete Group" (only if no round history) |
 | "Convert to Recurring" button | Visible iff `isCreator && !isLiveRound && !roundStarted` ([GroupManagerView.swift:640](../../Carry/Views/GroupManagerView.swift:640)) | Never |
+| Missing-scorer warning | Bottom CTA only ("Group N needs scorer", taps to fix) — banner suppressed | Banner inside group card (dormant — gated on hidden `.single` toggle) |
 
 ## Invariants
 
@@ -264,4 +266,4 @@ This is current code state; if you ever want a "Split into 2 groups" button for 
 
 ## Last verified
 
-2026-05-10 — converted to machine-readable format.
+2026-05-12 — added missing-scorer rows in Round behavior + UI differences tables, reflecting commits `733b4e2` + `37695e8` on `feature/sms-scorer-reconciliation`.
