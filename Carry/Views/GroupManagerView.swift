@@ -200,9 +200,17 @@ struct GroupManagerView: View {
         self.scheduledLabel = scheduledLabel
         self.onGroupRefreshed = onGroupRefreshed
         self._groupName = State(initialValue: groupName)
-        // Exclude pending invites from the default Playing roster — they don't
-        // belong on the tee sheet until they accept. Creator adds them
-        // deliberately via Manage Members → All Members after they join.
+        // Default Playing roster filter:
+        //  - Always exclude isPendingAccept (SG state where a search-added
+        //    Carry user hasn't tapped accept yet; they don't belong on the
+        //    tee sheet until they accept).
+        //  - Quick Games: INCLUDE isPendingInvite. The SMS-invited scorer
+        //    needs to appear in the tee sheet (as the assigned Group N
+        //    scorer with an "Invited" pill) so the creator gets visual
+        //    confirmation the invite was sent and can see who's joining.
+        //  - Skins Groups: EXCLUDE isPendingInvite — Carry-only invariant,
+        //    pending invitees shouldn't appear on the tee sheet until they
+        //    onboard + accept.
         //
         // Persisted deselections survive nav away + back: swipe-off-today writes
         // the deselected id into UserDefaults keyed by group UUID, so reopening
@@ -210,7 +218,11 @@ struct GroupManagerView: View {
         // the user deliberately adds them back via Manage Members.
         let defaultSel = Set(
             allMembers
-                .filter { !$0.isPendingInvite && !$0.isPendingAccept }
+                .filter { player in
+                    if player.isPendingAccept { return false }
+                    if !isQuickGame && player.isPendingInvite { return false }
+                    return true
+                }
                 .map(\.id)
         )
         let deselected: Set<Int> = {
@@ -957,9 +969,15 @@ struct GroupManagerView: View {
                 // UserDefaults are still preserved, because those deselected
                 // members were already in `prevActiveMemberIds` — so they
                 // don't show up as "newly active" and aren't re-added.
+                // Mirror init's default-sel filter: QG includes pending-
+                // invite (SMS-invited scorer), SG excludes them.
                 let newlyActiveMemberIds = Set(
                     filteredFreshMembers
-                        .filter { !$0.isPendingInvite && !$0.isPendingAccept && !prevActiveMemberIds.contains($0.id) }
+                        .filter { player in
+                            if player.isPendingAccept { return false }
+                            if !isQuickGame && player.isPendingInvite { return false }
+                            return !prevActiveMemberIds.contains(player.id)
+                        }
                         .map(\.id)
                 )
                 let persistedDeselectedIds: Set<Int> = {
