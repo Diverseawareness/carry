@@ -458,6 +458,9 @@ final class GroupService {
     /// via the regular member path (Player.id = stableId(profile.id)) and the
     /// reconciliation trigger extension keeps scorer_ids in sync.
     func reservePhoneInvite(id: UUID, groupId: UUID, phone: String, invitedBy: UUID, groupNum: Int = 1) async throws -> UUID {
+        #if DEBUG
+        print("[reservePhoneInvite] entry: id=\(id.uuidString) groupNum=\(groupNum) phone=\(phone)")
+        #endif
         // Dedup by phone — same shape as inviteMemberByPhone. If a row with
         // this phone already exists in this group, return its id so the
         // caller can re-anchor.
@@ -468,19 +471,28 @@ final class GroupService {
             .execute()
             .value
         if let existingRow = existing.first {
+            #if DEBUG
+            print("[reservePhoneInvite] dedup: returning existing row id=\(existingRow.id)")
+            #endif
             return existingRow.id
         }
 
+        let payload = GroupMemberInsert(
+            id: id,
+            groupId: groupId,
+            playerId: invitedBy,
+            role: "member",
+            status: "invited",
+            invitedPhone: phone,
+            groupNum: groupNum
+        )
+        #if DEBUG
+        if let data = try? JSONEncoder().encode(payload), let json = String(data: data, encoding: .utf8) {
+            print("[reservePhoneInvite] insert payload JSON: \(json)")
+        }
+        #endif
         try await client.from("group_members")
-            .insert(GroupMemberInsert(
-                id: id,
-                groupId: groupId,
-                playerId: invitedBy,
-                role: "member",
-                status: "invited",
-                invitedPhone: phone,
-                groupNum: groupNum
-            ))
+            .insert(payload)
             .execute()
         return id
     }
