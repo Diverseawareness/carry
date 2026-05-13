@@ -1,8 +1,8 @@
 # SMS-Invite-as-Scorer — Status Checkpoint
 
-**Branch:** `hotfix/1.0.9` @ `7211817`
-**Captured:** 2026-05-13 (late session, mid re-invite verification)
-**Goal:** Ship the SMS-invite-as-scorer reconciliation fix as part of 1.0.9.
+**Branch:** `hotfix/1.0.9` @ `bdeca98`
+**Captured:** 2026-05-13 (late session, post SG parity insert)
+**Goal:** Ship the SMS-invite-as-scorer reconciliation fix as part of 1.0.9, with parity between Quick Games and Skins Groups.
 
 ---
 
@@ -30,6 +30,10 @@
 | `64f1bef` | `saveAndDismiss` step 3c derives `groupNum` from outer enumerate index, not from `Player.group` (which `asPlayer` hardcodes to 1) |
 | `322d0fb` | 350ms delay on scrollTo so iOS keyboard safe-area inset lands first |
 | `7211817` | `saveGroupNums` switched to SELECT-then-UPDATE-by-id (PostgREST `.or("invited_phone.is.null,invited_phone.eq.")` empty-value term wasn't being respected → was clobbering phone-invite row group_num) |
+| `779ec20` | Scorecard player labels cap at 8 chars + `…` |
+| `867faaf` | Carry-only footnote on SG leaderboard sheet |
+| `8a45db3` | SG `refreshGroupData` filter relax — lets pending-invite scorers through when assigned (rest of Carry-only invariant preserved) |
+| `bdeca98` | **SG scorer picker upgrade** — `scorerPickerSheet` now uses `ScorerAssignmentView` so SG creator has parity with QG (search Carry users globally + SMS invite, with X-clear and self-invite block). Missing-scorer banner for SG re-routes to this picker (was sending users to ManageMembersSheet which had no scorer UI). |
 
 ---
 
@@ -66,11 +70,21 @@
 | Block self-SMS-invite with toast | ✅ |
 | QuickStartSheet + PlayerGroupsSheet scorer slot auto-scrolls above keyboard | ✅ (newer devices); needs verification on Ziggy's older device after `322d0fb` |
 
-## Unverified — Daniel's next test step
+## QG re-invite path — VERIFIED (post `7211817`)
 
-- Re-invite flow in **PlayerGroupsSheet** (Edit Players) for **Group 2+** scorer slot: verify the row holds in Group 2 with typed name + formatted phone through a full 30-60s refresh cycle.
-- Latest test (before `7211817`) showed the row still disappearing — but the test re-used phone `5555555555` which triggered the RPC dedup path (#5 above), not the new saveGroupNums code path. Daniel asked for a different phone to retest properly.
-- **Next test:** rebuild → Edit Players → Group 2 scorer → invite with phone `5550001234` (or any unused number) + typed name "Test" → Save → wait 60s.
+Daniel ran the test with a fresh phone (`5550001234`) on PlayerGroupsSheet's Group 2 scorer slot. Row held through the 30s refresh tick. Then X-cleared + re-invited a different number — also held. RPC dedup case wasn't triggered (swipe-delete cleaned the prior row first), so the underlying create_phone_invite-doesn't-update-on-dedup bug is still unfixed but didn't surface in this test.
+
+## SG SMS-invite-as-scorer parity — UNVERIFIED (post `bdeca98`)
+
+Just landed. Daniel hasn't tested yet. To test:
+1. Rebuild
+2. Open an existing SG (or QG → convert to SG)
+3. Should see "Tee time needs scorer" banner on a group without a Carry-user scorer
+4. Tap → opens the new `scorerPickerSheet` with ScorerAssignmentView
+5. Send SMS invite with typed name + fake phone (e.g. `5550009876`)
+6. Wait 60s on the tee table → row should hold with name + formatted phone in the assigned group
+
+Watch for: row landing in wrong group (groupNum bug variant), or row disappearing (selectedIDs / refresh filter still incomplete on SG path).
 
 ---
 
