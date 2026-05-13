@@ -39,13 +39,13 @@ BEGIN
         ('existing_member', _existing_member_uuid);
 
     -- Fixture: creator profile (the inviter; placeholder member.player_id)
-    INSERT INTO public.profiles (id, first_name, last_name, display_name, color, avatar)
-    VALUES (_creator_uuid, 'Creator', 'Test', 'Creator Test', '#000000', '👤');
+    INSERT INTO public.profiles (id, first_name, last_name, display_name, initials, color, avatar)
+    VALUES (_creator_uuid, 'Creator', 'Test', 'Creator Test', 'CT', '#000000', '👤');
 
     -- Fixture: invitee profile (will be the reconciled scorer). Phone NOT
     -- yet set — we'll set it later to fire the forward trigger.
-    INSERT INTO public.profiles (id, first_name, last_name, display_name, color, avatar)
-    VALUES (_invitee_uuid, 'Invitee', 'Test', 'Invitee Test', '#000000', '👤');
+    INSERT INTO public.profiles (id, first_name, last_name, display_name, initials, color, avatar)
+    VALUES (_invitee_uuid, 'Invitee', 'Test', 'Invitee Test', 'IT', '#000000', '👤');
 
     -- Fixture: skins_groups row with scorer_ids containing the placeholder
     -- membership UUID at index 1 (Group 2 scorer slot).

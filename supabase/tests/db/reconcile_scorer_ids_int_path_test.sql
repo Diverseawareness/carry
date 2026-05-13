@@ -37,11 +37,11 @@ BEGIN
     _membership_int := public.player_stable_id(_membership_uuid);
     _creator_int    := public.player_stable_id(_creator_uuid);
 
-    INSERT INTO public.profiles (id, first_name, last_name, display_name, color, avatar)
-    VALUES (_creator_uuid, 'Creator', 'Test', 'Creator Test', '#000000', '👤');
+    INSERT INTO public.profiles (id, first_name, last_name, display_name, initials, color, avatar)
+    VALUES (_creator_uuid, 'Creator', 'Test', 'Creator Test', 'CT', '#000000', '👤');
 
-    INSERT INTO public.profiles (id, first_name, last_name, display_name, color, avatar)
-    VALUES (_invitee_uuid, 'Invitee', 'Test', 'Invitee Test', '#000000', '👤');
+    INSERT INTO public.profiles (id, first_name, last_name, display_name, initials, color, avatar)
+    VALUES (_invitee_uuid, 'Invitee', 'Test', 'Invitee Test', 'IT', '#000000', '👤');
 
     -- Seed scorer_ids: [creator_int, membership_int] — Group 2's scorer
     -- slot anchored on the placeholder membership UUID via stable-int.
