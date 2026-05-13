@@ -2180,10 +2180,43 @@ struct GroupManagerView: View {
                     }
                     if let t = result.teeTime {
                         roundDate = t
-                        // Tee times are sovereign — only the per-group
-                        // tee-time picker should mutate them. Game Options
-                        // changes the scheduled date alone; tee_times_json
-                        // is untouched here.
+                        // Game Options is the canonical way to set the
+                        // scheduled round date+time. The header row
+                        // reads `teeTimes.first` for the time icon, so
+                        // we MUST update teeTimes[0] alongside
+                        // roundDate or the displayed time stays stale
+                        // until a refresh recomputes from
+                        // scheduledDate (and even then only if
+                        // teeTimes_json is null on the server).
+                        //
+                        // For multi-group games with a teeTimeInterval
+                        // we also propagate the stagger to teeTimes[1..N]
+                        // so all groups shift together when the round
+                        // start time changes. Per-group picker (if
+                        // exposed elsewhere) can still mutate
+                        // individual entries afterwards. Stamps
+                        // teeTimesLastSavedAt so the refresh recompute
+                        // branch defers to local for 8s.
+                        if !teeTimes.isEmpty {
+                            let originalFirst = teeTimes.first.flatMap { $0 }
+                            // Preserve any nil-trailing entries; only
+                            // shift the populated ones by the same delta
+                            // OR rewrite teeTimes[0] = t and re-derive
+                            // teeTimes[1..N] from t + i*interval when
+                            // every existing entry was previously
+                            // sequential (the common case).
+                            let interval = teeTimes.count > 1
+                                ? (teeTimes[1] ?? t).timeIntervalSince(teeTimes[0] ?? t)
+                                : 0
+                            teeTimes[0] = t
+                            if teeTimes.count > 1, interval > 0 {
+                                for i in 1..<teeTimes.count {
+                                    teeTimes[i] = t.addingTimeInterval(Double(i) * interval)
+                                }
+                            }
+                            teeTimesLastSavedAt = Date()
+                            _ = originalFirst  // silence "unused" — kept for future diff-based logic
+                        }
                         onTeeTimeChanged?(t)
                     }
                     if let course = result.changedCourse {
