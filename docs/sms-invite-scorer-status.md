@@ -59,17 +59,29 @@
 | Post-reconciliation: Daniel's iPhone sees QG on Home + can score Group 2 | ✅ |
 | `scorer_ids` round-trip aligned between client + server stable-ints | ✅ Verified `[1316978173, 533855954]` = `[stableId(Ziggy.profileId), stableId(SMS_row.id)]` |
 
-## Untested live
+## Pre-reconciliation visibility — VERIFIED live (Session 2 evening)
 
-| Path | Why |
-|---|---|
-| Pre-reconciliation visibility on Ziggy (SMS-invite slot shows phone + Invited pill before recipient joins) | Daniel already had phone-on-profile so reverse trigger fired immediately. The `966e048` fix is in code but not exercised live. To test: temporarily `UPDATE profiles SET phone = NULL WHERE id = <Daniel-profile>`, then re-test |
+After temporarily clearing the recipient's `profile.phone` via SQL, Daniel created a fresh QG with SMS invite. Observed on Ziggy:
+- Group 2 Score Keeper slot rendered with **orange avatar + phone number, both dimmed** ✅
+- "Invited" state visually distinct from the missing-scorer state ✅
+- (Untested live but committed: button label `"Waiting for Scorer to Join"` + greyed/inactive — commit `31d220b`. See below.)
 
-## Known issues / follow-ups (not blocking 1.0.9 but observed)
+## Final fix landed late session — pending live verify
+
+`31d220b` updates `groupHasValidScorer` to count pending-invite slots as filled (not missing). Effect on the CTA:
+- Before: button said "Group N needs scorer" + tappable (wrong — there IS a scorer, just pending)
+- After: button says **"Waiting for Scorer to Join"** + greyed out / not tappable
+
+**Not verified live yet.** Daniel asked to leave it as-committed and verify tomorrow. To test:
+1. Cmd+R on Ziggy to rebuild with `31d220b`
+2. Either re-test the pre-reconciliation scenario (clear phone again, create fresh QG with SMS invite) OR find the existing pending QG in this state
+3. Confirm: orange dimmed scorer slot, button = "Waiting for Scorer to Join", button is greyed and not tappable
+
+## Known issues / follow-ups
 
 | Issue | Notes |
 |---|---|
-| **"user4 x 2" duplicate guest row** in Group 2 details (observed mid-session) | Daniel reported the typed Group 2 slot-1 guest ("user4") appeared duplicated in QG details. Root cause not investigated — could be iOS rendering, or the `allMembers = filteredFreshMembers + preservedGuests` merge introducing dups when ids match between local + server. **Need to repro + diagnose before ship.** |
+| **"user4 x 2" duplicate guest row** in Group 2 details (observed mid-session) | Daniel reported the typed Group 2 slot-1 guest ("user4") appeared duplicated in QG details. Root cause not investigated — could be iOS rendering, or the `allMembers = filteredFreshMembers + preservedGuests` merge introducing dups when ids match between local + server. **Repro + diagnose before ship.** Start with the diagnostic SQL in this doc and compare local-side and server-side member counts. |
 | Pre-reconciliation scorer-slot styling shows raw phone digits, not the typed name | Daniel asked: "have the orange state, with invited in the scorer slot, until I auto join so the invite feels like it was successful". Today's phone-invite Player has `name = phone_digits`, no typed name stored. Fix: add `invitee_name text` column to `group_members`, plumb the typed name from `ScorerAssignmentView.sendInvite` through `reservePhoneInvite` → RPC. `loadSingleGroup` phone-invite Player uses `invitee_name` when present. Queued for 1.0.10. |
 | Debug prints left in code | `[QuickStart.createQuickGame] SMS slot`, `[SMS-invite] member.group`, `[reservePhoneInvite] RPC call`, `[reservePhoneInvite] RPC success`, `[reservePhoneInvite] RPC FAILED` — all in DEBUG blocks. Strip before ship OR leave for one more release cycle to aid any post-ship debugging. |
 | Migration `20260513000004` still has `RAISE LOG` line | Useful for PostgreSQL log debugging, low overhead. Can stay. |
@@ -88,22 +100,24 @@ Apply via Supabase Studio SQL Editor on prod (`seeitehizboxjbnccnyd`). Dev branc
 
 ## Final ship steps (in order)
 
-1. ⏳ Repro the "user4 x 2" duplicate guest bug and either fix or document as known issue
-2. ⏳ Decide on debug-print stripping (recommend: leave for now, strip in 1.0.10)
-3. ⏳ Apply migrations 1–5 above on prod
-4. ⏳ Bump `CURRENT_PROJECT_VERSION` from 82 → 83 (or leave at 82 if no new prod build was archived yet on 1.0.9)
-5. ⏳ Archive in Xcode (Release config → prod Supabase) → upload to ASC
-6. ⏳ ASC: fill "What's New" — note: still need to add Leaderboards & Stats + Share Your Round to App Description (memory says this is pending from 1.0.4)
-7. ⏳ Submit for review
+1. ⏳ **Rebuild on Ziggy** (Cmd+R) and verify the `31d220b` pending-state UX live: greyed-out button + "Waiting for Scorer to Join" label
+2. ⏳ Repro the "user4 x 2" duplicate guest bug and either fix or document as known issue
+3. ⏳ Decide on debug-print stripping (recommend: leave for now, strip in 1.0.10)
+4. ⏳ Apply migrations 1–5 above on prod
+5. ⏳ Bump `CURRENT_PROJECT_VERSION` from 82 → 83 (or leave at 82 if no new prod build was archived yet on 1.0.9)
+6. ⏳ Archive in Xcode (Release config → prod Supabase) → upload to ASC
+7. ⏳ ASC: fill "What's New" — note: still need to add Leaderboards & Stats + Share Your Round to App Description (memory says this is pending from 1.0.4)
+8. ⏳ Submit for review
 
-## Resume instructions for a fresh session
+## Resume instructions for tomorrow
 
-1. Read this file end-to-end.
-2. `git log hotfix/1.0.7..hotfix/1.0.9 --oneline` for the full commit list.
-3. Check that dev DB has migrations 20260513000000–20260513000004 applied (per the table above).
-4. If picking up the "user4 x 2" bug: start by `GroupManagerView.swift:933` (`allMembers = filteredFreshMembers + preservedGuests`) — likely dup-merge issue. Run the diagnostic query in this doc's "Untested live" section to compare local-side and server-side member counts.
-5. If picking up the pre-reconciliation visibility test: clear Daniel's phone via `UPDATE profiles SET phone = NULL WHERE id = '4a7f79cd-40c1-4631-b1a8-a1d31a2cf5f7'`, then create a fresh QG with SMS-invite to that phone.
+1. **Read this file end-to-end.** Especially "Final fix landed late session" and "Known issues" — that's where you stopped.
+2. `git log hotfix/1.0.7..hotfix/1.0.9 --oneline` — should show ~28 commits ending at `31d220b`.
+3. Check that dev DB has migrations 20260513000000–20260513000004 applied (per the migrations table above). Also confirm: Daniel's iPhone profile's phone is currently NULL on dev (cleared during late session for the pre-reconciliation test — re-add if needed).
+4. **First action:** Cmd+R on Ziggy and verify the `31d220b` UX change (pending scorer = "Waiting for Scorer to Join" + greyed button). If broken, dig into `groupHasValidScorer` + `startButtonLabel` interaction.
+5. **Second action:** Repro the "user4 x 2" bug. Diagnostic SQL is the one earlier in this doc — counts and lists group_members for the latest QG. If the DB has 1 row for user4 but iOS shows 2, it's an iOS dup-merge issue; if DB has 2, it's a server-side issue.
+6. Once both issues are clean, ship per the "Final ship steps" list above.
 
 ## Last updated
 
-2026-05-13 — mid-session status checkpoint.
+2026-05-13 — end-of-session checkpoint. Pre-reconciliation visibility verified live (orange avatar + dimmed phone number). `31d220b` (pending-state button) committed but not verified — tomorrow's first step.
