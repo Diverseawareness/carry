@@ -1064,10 +1064,18 @@ struct QuickGameSheet: View {
                         )
                 )
 
-                // HC field — tappable to open picker
+                // HC field — tappable to open picker. If another field
+                // has focus (Score Keeper search, Player name, etc.),
+                // first tap only dismisses focus — doesn't open the
+                // picker. Prevents the "tap a guest's HC while still
+                // typing in Score Keeper" stray-action bug. Second tap
+                // (now unfocused) opens the picker normally.
                 Button {
                     guard !isReadOnly, !isCarryUser else { return }
-                    focusedField = nil
+                    if focusedField != nil {
+                        focusedField = nil
+                        return
+                    }
                     let hcStr = slots[groupIndex][slotIndex].handicap
                     let val: Double = hcStr.hasPrefix("+") ? -(Double(String(hcStr.dropFirst())) ?? 0) : Double(hcStr) ?? 0
                     hcPickerValue = val

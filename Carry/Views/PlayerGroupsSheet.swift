@@ -761,6 +761,20 @@ struct PlayerGroupsSheet: View {
     private func hcButton(value: Double, disabled: Bool, isPlaceholder: Bool = false, onTap: @escaping () -> Void) -> some View {
         Button {
             guard !disabled else { return }
+            // If a text field is active (empty-slot name/HC, Score Keeper
+            // search), the first tap dismisses focus only — doesn't open
+            // the picker. Prevents stray-action on HC boxes while the user
+            // is still typing in a nearby field.
+            if focusedEmptySlot != nil {
+                focusedEmptySlot = nil
+                return
+            }
+            // Resign any remaining first responder (e.g. ScorerAssignmentView's
+            // search field, whose @FocusState is internal). If something was
+            // focused, this tap dismisses it AND opens the picker — best
+            // effort since PlayerGroupsSheet can't directly observe that
+            // child's focus state.
+            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
             onTap()
         } label: {
             Text(isPlaceholder ? "HC" : formatHandicap(value))
