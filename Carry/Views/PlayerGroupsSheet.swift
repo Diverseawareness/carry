@@ -138,6 +138,17 @@ struct PlayerGroupsSheet: View {
     /// Used to trigger search typeahead on text changes.
     @State private var focusedEmptySlot: (group: Int, slot: Int)? = nil
 
+    /// ScorerAssignmentView focus → trigger the ScrollViewReader to
+    /// scroll the scorer slot above the keyboard. Same pattern as
+    /// QuickStartSheet: signal carries (groupIndex, tick) so repeat
+    /// focuses on the same group re-fire the scroll.
+    private struct ScorerScrollSignal: Equatable {
+        let groupIndex: Int
+        let tick: Int
+    }
+    @State private var scorerScrollSignal: ScorerScrollSignal? = nil
+    @State private var scorerScrollTick: Int = 0
+
     @State private var didInit = false
 
     private let maxGroupSize = 4
@@ -197,6 +208,7 @@ struct PlayerGroupsSheet: View {
             .padding(.bottom, 20)
             .background(.white)
 
+            ScrollViewReader { scrollProxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     // Premium banner — surfaces when a non-premium creator
@@ -268,6 +280,19 @@ struct PlayerGroupsSheet: View {
                 .padding(.horizontal, 24)
                 .padding(.top, 8)
                 .padding(.bottom, 40)
+            }
+            .onChange(of: scorerScrollSignal) { _, newValue in
+                // ScorerAssignmentView focus-gain → scroll the scorer
+                // block above the keyboard. Anchor .bottom so the
+                // phone field + Send button (which live at the bottom
+                // of the expanded scorer container) land just above
+                // the keyboard's top edge. Matches QuickStartSheet
+                // behavior.
+                guard let sig = newValue else { return }
+                withAnimation(.easeOut(duration: 0.25)) {
+                    scrollProxy.scrollTo("scorer-\(sig.groupIndex)", anchor: .bottom)
+                }
+            }
             }
         }
         .background(.white)
@@ -432,8 +457,17 @@ struct PlayerGroupsSheet: View {
                             groupLabel: "Group \(groupIndex + 1)",
                             defaultColor: scorerColors[(groupIndex * 4) % scorerColors.count],
                             readOnly: groups[groupIndex].contains(where: { $0.id == creatorId }),
-                            selfPhoneDigits: authService.currentUser?.phone
+                            selfPhoneDigits: authService.currentUser?.phone,
+                            onFocusChanged: { isFocused in
+                                guard isFocused else { return }
+                                scorerScrollTick += 1
+                                scorerScrollSignal = ScorerScrollSignal(
+                                    groupIndex: groupIndex,
+                                    tick: scorerScrollTick
+                                )
+                            }
                         )
+                        .id("scorer-\(groupIndex)")
                     }
                 }
 
