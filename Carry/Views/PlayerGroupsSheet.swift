@@ -1512,8 +1512,16 @@ struct PlayerGroupsSheet: View {
         // ZERO server calls for pending-invite scorer slots, leaving the
         // slot referencing a placeholder int that no row would ever match.
         // See migration 20260513000003 + docs/sms-invite-scorer-plan.md.
+        //
+        // groupNum derives from the OUTER enumerate index (gi + 1), not
+        // from `player.group`. ScorerSlot.asPlayer hardcodes group=1, so
+        // a Group 2+ SMS invite was previously persisted with
+        // group_num=1 → next refresh placed the phone-invite Player into
+        // Group 1's roster (visible in a guest slot, not as the Group 2
+        // scorer), then syncScorerIDs wiped Group 2's scorer because the
+        // assigned id wasn't in groups[1] anymore.
         if let userId = try? await SupabaseManager.shared.client.auth.session.user.id {
-            for group in cleanResult.groups {
+            for (gi, group) in cleanResult.groups.enumerated() {
                 for player in group where player.isPendingInvite {
                     guard let inviteId = player.inviteMemberId,
                           let phone = player.phoneNumber, !phone.isEmpty else { continue }
@@ -1523,7 +1531,7 @@ struct PlayerGroupsSheet: View {
                             groupId: groupId,
                             phone: phone,
                             invitedBy: userId,
-                            groupNum: player.group,
+                            groupNum: gi + 1,
                             inviteeName: player.name
                         )
                     } catch {
