@@ -707,7 +707,7 @@ struct QuickGameSheet: View {
                     .foregroundColor(Color.textPrimary)
                     .padding(.leading, 4)
                 Spacer()
-                Text("*Per round buy-in can be changed anytime")
+                Text("Per round, change anytime.")
                     .font(.carry.caption)
                     .foregroundColor(Color.textDisabled)
             }
