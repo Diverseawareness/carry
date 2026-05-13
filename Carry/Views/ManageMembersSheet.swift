@@ -711,9 +711,16 @@ struct ManageMembersSheet: View {
                         groupNum: 1,
                         inviteeName: typedName.isEmpty ? nil : typedName
                     )
-                    // Open native SMS with deep link
-                    let encodedLink = "https://carryapp.site/invite?group=\(groupId.uuidString)"
-                    if let smsURL = URL(string: "sms:\(digits)&body=Join%20my%20skins%20game%20on%20Carry!%20\(encodedLink)") {
+                    // Open native SMS with deep link. The full body
+                    // (including the deep link's `?group=` query)
+                    // MUST be percent-encoded as a single unit —
+                    // otherwise the `?` inside the body terminates
+                    // the sms URL's query string early and Messages
+                    // drops everything after `/invite`. Matches the
+                    // ScorerAssignmentView pattern.
+                    let body = "Join my skins game on Carry! https://carryapp.site/invite?group=\(groupId.uuidString)"
+                    let encoded = body.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+                    if let smsURL = URL(string: "sms:\(digits)&body=\(encoded)") {
                         await MainActor.run { UIApplication.shared.open(smsURL) }
                     }
                 } catch {
