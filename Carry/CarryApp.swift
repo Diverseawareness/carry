@@ -196,6 +196,10 @@ struct CarryApp: App {
         // visual without manually toggling UserDefaults every iteration.
         // Production builds preserve show-once behavior.
         DemoRoundController.isDismissed = false
+        // Same idea for the first-group QR coach mark: reset every cold
+        // launch so we can verify rendering + dismiss behavior without
+        // manually wiping UserDefaults.
+        UserDefaults.standard.removeObject(forKey: "hasSeenFirstGroupQRCoachMark")
         #endif
 
         // PostHog setup runs on a detached background task. Its setup() kicks
