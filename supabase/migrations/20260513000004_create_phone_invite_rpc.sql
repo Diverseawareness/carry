@@ -56,6 +56,7 @@ BEGIN
     END IF;
 
     _group_num := coalesce(p_group_num, '1')::int;
+    RAISE LOG '[create_phone_invite] p_id=% p_group_num text=% _group_num int=%', p_id, p_group_num, _group_num;
 
     -- Dedup by phone within this group, mirroring the iOS-side check that
     -- was in GroupService.reservePhoneInvite before this RPC existed. If

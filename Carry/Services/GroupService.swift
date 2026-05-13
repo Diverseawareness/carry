@@ -469,22 +469,34 @@ final class GroupService {
         // and NEW.group_num are preserved, so the scorer slot's anchor
         // UUID stays intact. See migration
         // 20260513000004_create_phone_invite_rpc.sql.
-        let resultId: UUID = try await client.rpc(
-            "create_phone_invite",
-            params: [
-                "p_id": AnyJSON.string(id.uuidString),
-                "p_group_id": AnyJSON.string(groupId.uuidString),
-                "p_phone": AnyJSON.string(phone),
-                "p_invited_by": AnyJSON.string(invitedBy.uuidString),
-                // Pass as text; RPC casts inside. Previously used
-                // AnyJSON.integer but it was being silently coerced on
-                // the iOS wire (same root-cause class as the direct-INSERT
-                // group_num drop). Sticking to strings end-to-end keeps
-                // the param transit predictable.
-                "p_group_num": AnyJSON.string(String(groupNum))
-            ]
-        ).execute().value
-        return resultId
+        #if DEBUG
+        print("[reservePhoneInvite] RPC call: id=\(id.uuidString) p_group_num='\(String(groupNum))' phone=\(phone)")
+        #endif
+        do {
+            let resultId: UUID = try await client.rpc(
+                "create_phone_invite",
+                params: [
+                    "p_id": AnyJSON.string(id.uuidString),
+                    "p_group_id": AnyJSON.string(groupId.uuidString),
+                    "p_phone": AnyJSON.string(phone),
+                    "p_invited_by": AnyJSON.string(invitedBy.uuidString),
+                    // Pass as text; RPC casts inside. Previously used
+                    // AnyJSON.integer but it was being silently coerced on
+                    // the iOS wire. Sticking to strings end-to-end keeps
+                    // the param transit predictable.
+                    "p_group_num": AnyJSON.string(String(groupNum))
+                ]
+            ).execute().value
+            #if DEBUG
+            print("[reservePhoneInvite] RPC success: returned id=\(resultId.uuidString)")
+            #endif
+            return resultId
+        } catch {
+            #if DEBUG
+            print("[reservePhoneInvite] RPC FAILED: \(error)")
+            #endif
+            throw error
+        }
     }
 
     /// Check if a phone number has pending group invites (called on sign-up/sign-in).
