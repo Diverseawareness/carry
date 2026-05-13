@@ -1,16 +1,19 @@
 # SMS-Invite-as-Scorer — Status Checkpoint
 
-**Branch:** `hotfix/1.0.9` @ `bdeca98`
-**Captured:** 2026-05-13 (late session, post SG parity insert)
+**Branch:** `hotfix/1.0.9` @ `7d7a041`
+**Captured:** 2026-05-13 (very late session, mid SG verification + UX polish)
 **Goal:** Ship the SMS-invite-as-scorer reconciliation fix as part of 1.0.9, with parity between Quick Games and Skins Groups.
 
 ---
 
 ## Where we are right now
 
-- **Most of the SMS-invite plumbing is in.** The forward + reverse triggers, `player_stable_id` int path, `create_phone_invite` RPC, `inviteMemberId` threading through `ScorerSlot`/`Player`/`PlayerSlot`, and the X-clear + swipe-delete paths are all landed and verified.
-- **The 2026-05-13 re-invite bug surfaced a layered set of issues** in `PlayerGroupsSheet` (Edit Players flow) for Group 2+ SMS-invite scorers. Each layer was fixed; latest unverified fix is `7211817`.
-- **Currently waiting on Daniel to retest** after cleaning the broken server row.
+- **All the SMS-invite plumbing is in.** Forward + reverse triggers, `player_stable_id` int path, `create_phone_invite` RPC, `inviteMemberId` threading through `ScorerSlot`/`Player`/`PlayerSlot`, X-clear + swipe-delete, self-invite block, auto-scroll above keyboard (with results + SMS section re-reveal on layout grow).
+- **QG re-invite path** VERIFIED end-to-end post `7211817`.
+- **SG SMS-invite-as-scorer parity** landed in `bdeca98` + filter relax `8a45db3`. Initial testing surfaced 6+ UX issues that have all been patched (chips, search pills, game card sort, time picker, etc.) — but the underlying "send invite, wait 60s, row holds in correct group" hasn't been clean-room verified yet on a fresh group.
+- **Two pre-existing bugs** surfaced in testing that we deferred:
+  - `preservedGuests` resurrects removed guests across devices (logic at GroupManagerView L939-944 doesn't cross-check `guest_roster_json`).
+  - `create_phone_invite` RPC dedup doesn't UPDATE on hit → stale state survives a re-invite with the same phone.
 
 ## Latest commit chain (since `31d220b`)
 
@@ -34,6 +37,13 @@
 | `867faaf` | Carry-only footnote on SG leaderboard sheet |
 | `8a45db3` | SG `refreshGroupData` filter relax — lets pending-invite scorers through when assigned (rest of Carry-only invariant preserved) |
 | `bdeca98` | **SG scorer picker upgrade** — `scorerPickerSheet` now uses `ScorerAssignmentView` so SG creator has parity with QG (search Carry users globally + SMS invite, with X-clear and self-invite block). Missing-scorer banner for SG re-routes to this picker (was sending users to ManageMembersSheet which had no scorer UI). |
+| `12661ac` | ManageMembersSheet pending-chip prefers typed name over "(333) 333-..." truncated phone |
+| `0143f0b` | ManageMembersSheet search-result pill reflects actual member state (Pending / Invited / Added) instead of always "Pending" |
+| `de2cde1` | ManageMembersSheet hides already-added members from search results entirely (clutter — they're in All Members above) |
+| `7c5c927` | Pending chip caps at 8 chars + ellipsis to match scorecard truncation rule |
+| `9cf8957` | Game cards (Home + Games tab) push pending members to the END of the player pill list — preserves leader-first sort for confirmed players |
+| `dedb90c` | TeeTimePickerSheet wheel frame bumped 120→180pt — time columns were getting clipped, only date column was interactable |
+| `7d7a041` | ScorerAssignmentView re-fires the scroll signal when search results / SMS section appear → both stay above keyboard as user types |
 
 ---
 
@@ -74,17 +84,23 @@
 
 Daniel ran the test with a fresh phone (`5550001234`) on PlayerGroupsSheet's Group 2 scorer slot. Row held through the 30s refresh tick. Then X-cleared + re-invited a different number — also held. RPC dedup case wasn't triggered (swipe-delete cleaned the prior row first), so the underlying create_phone_invite-doesn't-update-on-dedup bug is still unfixed but didn't surface in this test.
 
-## SG SMS-invite-as-scorer parity — UNVERIFIED (post `bdeca98`)
+## SG SMS-invite-as-scorer parity — PARTIALLY VERIFIED + UX POLISHED
 
-Just landed. Daniel hasn't tested yet. To test:
-1. Rebuild
-2. Open an existing SG (or QG → convert to SG)
-3. Should see "Tee time needs scorer" banner on a group without a Carry-user scorer
-4. Tap → opens the new `scorerPickerSheet` with ScorerAssignmentView
-5. Send SMS invite with typed name + fake phone (e.g. `5550009876`)
-6. Wait 60s on the tee table → row should hold with name + formatted phone in the assigned group
+Initial wiring landed in `bdeca98`. Daniel started testing it. During the test pass we surfaced + fixed multiple UX issues:
 
-Watch for: row landing in wrong group (groupNum bug variant), or row disappearing (selectedIDs / refresh filter still incomplete on SG path).
+- **Tee row roster mismatch across devices** — Daniel's Daniel-device showed phantom members (Fgggg1111, Ggggg222) that the creator had removed. Root cause is the `preservedGuests` logic at `GroupManagerView.refreshGroupData` L939-944 — it resurrects local guests that aren't in the server snapshot, but doesn't cross-check against `guest_roster_json`. Worked around for the test by SQL-marking the phantoms `status='removed'` + clearing `guest_roster_json`. Not patched in code — flagged below as a follow-up.
+- **Time picker not updating** — SG `TeeTimePickerSheet` wheel was clipped at 120pt; only the date column was visible. Fixed in `dedb90c` (180pt).
+- **Pending chip showing truncated phone** — fixed in `12661ac` + `7c5c927` (typed name, 8-char + ellipsis).
+- **Self in search-result still showed "Pending"** — fixed in `0143f0b` (real state) + `de2cde1` (filtered out entirely).
+- **Game card sort interleaved pending with confirmed** — fixed in `9cf8957` (pending at end).
+- **Search results / SMS section dropping behind keyboard** — fixed in `7d7a041` (re-fire scroll on layout grow).
+
+**Still UNVERIFIED end-to-end on a clean group:** the original "SMS invite a scorer on SG, wait 60s, row holds in correct group" test hasn't been clean-run from scratch since all the above bugs landed. Recommend Daniel:
+1. Delete the polluted test group
+2. Create a fresh SG with himself + Ziggy
+3. From the tee sheet, tap the "Tee time needs scorer" banner OR tap a Scorer pill to open `scorerPickerSheet`
+4. Send SMS invite to a fake phone with a typed name
+5. Wait 60s → row stays in the correct group with name + formatted phone
 
 ---
 
@@ -93,6 +109,8 @@ Watch for: row landing in wrong group (groupNum bug variant), or row disappearin
 | Issue | Notes |
 |---|---|
 | **`create_phone_invite` RPC dedup needs to UPDATE on hit** | When a row exists for (group_id, invited_phone), the RPC returns the existing id without updating `group_num` / `invitee_name` / `status`. Stale state from prior bugs sticks. **Fix:** UPDATE the existing row with the new values + reset status to 'invited'. iOS also needs to re-anchor its slot to the returned id when it differs from the locally-minted UUID. **Required for robust re-invite UX.** |
+| **`preservedGuests` resurrects removed guests across devices** | `GroupManagerView.refreshGroupData` L939-944 preserves any local guest not in the server's freshGroup.members. Intent: protect guests during the brief window after Cancel Round when round_players is empty. Side effect: when the creator removes a guest on Device A, Device B's local allMembers still has them → preservedGuests resurrects them on next refresh. **Fix:** check guest membership against server's `guest_roster_json` before preserving — only preserve if present in the server snapshot OR the snapshot is null/empty (transient gap). Requires careful testing because this filter sits on a load-bearing path. |
+| **Roster filter is per-device, not synced** | `selectedIDs` (the "playing today" filter) lives in UserDefaults per-device. Creator-side adjustments don't propagate to other members. A separate spec'd feature (cross-device "playing today" sync), not in scope for 1.0.9. |
 | **Lost guest player on QG creation** | Daniel reported a guest in Group 2 disappeared on create. Not yet diagnosed — could be the local Player not making it through `createQuickGame`'s slot iteration, or a separate server-side dedup hit. Flagged 2026-05-13 mid-session. Repro: create a fresh QG with a guest in Group 2 — does the guest survive the creation round-trip? |
 | **Group 2 scorer auto-scroll on Ziggy's device** | After `322d0fb` (350ms delay) Daniel didn't re-verify on the smaller screen. Re-test once the re-invite flow is signed off. |
 | Debug prints left in code | `[QuickStart.createQuickGame] SMS slot`, `[reservePhoneInvite] RPC...`, `[PlayerGroupsSheet] saveAndDismiss → removing N members...` — all in DEBUG blocks. Strip before ship OR leave one more cycle. |
@@ -117,18 +135,18 @@ Apply via Supabase Studio SQL Editor on prod (`seeitehizboxjbnccnyd`). Dev branc
 ## Resume instructions for new session
 
 1. **Read this file end-to-end** + skim `MEMORY.md` "Active investigation" section for context.
-2. `git log --oneline hotfix/1.0.7..hotfix/1.0.9` — should show ~40 commits ending at `7211817`.
+2. `git log --oneline hotfix/1.0.7..hotfix/1.0.9` — should show ~50 commits ending at `7d7a041`.
 3. **Current state of the server-side test data on dev:**
-   - QG id: `1c04a53b-f357-4f67-b226-e2c612a5b669` ("Quick Game", created by `4a7f79cd-...` = Daniel)
-   - Phone-invite row `99f72f21-...` was DELETED (Daniel ran `DELETE ... RETURNING id` and got the id back). State is clean.
-   - `scorer_ids` may still have stale int from prior tests — Daniel can `UPDATE skins_groups SET scorer_ids = '[]'::jsonb WHERE id = '1c04a53b...'` to fully reset.
-4. **First action:** confirm Daniel's latest retest with a fresh phone number (not `5555555555`) on the PlayerGroupsSheet → Group 2 scorer path. If the row holds through the 30s refresh, the saveGroupNums fix is good and we move to known-issues cleanup.
-5. **Second action (parallel, can be done after #1 passes):** patch `create_phone_invite` RPC to UPDATE on dedup hit (group_num + invitee_name + status='invited'), and patch iOS `reservePhoneInvite` callers to re-anchor the scorer slot to the returned id when it differs from the supplied UUID. Without this, any re-invite to a previously-used phone in the same group will silently revert state.
-6. **Third action:** repro the "lost guest on QG create" bug.
+   - QG id: `1c04a53b-f357-4f67-b226-e2c612a5b669` is heavily polluted from today's testing. Recommend Daniel start fresh — delete this group and create a new SG with himself + Ziggy for clean verification.
+   - Earlier in the session: phantom members `6183cd4c` (Fgggg1111) and `69ecfc7e` (Ggggg222) were SQL-marked `status='removed'` + `guest_roster_json` set NULL on the group. They may still appear cached in iOS @State on either device until a force-quit + relaunch.
+4. **First action:** clean-room SG SMS-invite-as-scorer test on a fresh group. See "SG SMS-invite-as-scorer parity" section above for repro steps. If the row holds through 60s + reads in the assigned group, SG parity is fully verified.
+5. **Second action (parallel):** patch `create_phone_invite` RPC to UPDATE on dedup hit + iOS `reservePhoneInvite` callers to re-anchor the scorer slot to the returned id. Without this, re-invite to a previously-used phone in the same group silently reverts state.
+6. **Third action:** patch `preservedGuests` filter in `GroupManagerView.refreshGroupData` to cross-check `guest_roster_json` (see Known issues table). Without this, guests removed by the creator on Device A keep reappearing on Device B.
+7. **Fourth action:** repro the "lost guest on QG create" bug.
 7. **Final ship:** apply migrations 1-6 on prod, bump CURRENT_PROJECT_VERSION, archive, ASC.
 
 ---
 
 ## Last updated
 
-2026-05-13 — late session, post `7211817`. Waiting on Daniel's retest with a fresh phone number to verify the saveGroupNums fix on a clean code path.
+2026-05-13 — very late session, post `7d7a041`. QG re-invite path verified. SG parity insert landed. Test group on dev is too polluted for clean verification; recommend Daniel start with a fresh SG. Two pre-existing bugs (preservedGuests + RPC dedup) flagged for follow-up; not blocking ship if known issues are acceptable.
