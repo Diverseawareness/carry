@@ -905,7 +905,7 @@ struct ScorecardView: View {
             let isYou = player.id == viewModel.currentUserId
             let bg = isYou ? Color(hexString: "#FFFDF7") : Color.white
 
-            Text(player.shortName)
+            Text(player.scorecardName)
                 .font(.system(size: layout.labelFont, weight: isYou ? .bold : .medium))
                 .foregroundColor(isYou ? Color.textPrimary : Color.textMid)
                 .lineLimit(1)

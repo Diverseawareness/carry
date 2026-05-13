@@ -45,6 +45,19 @@ struct Player: Identifiable, Hashable {
         return name
     }
 
+    /// Aggressively-truncated label for the scorecard's player column,
+    /// which is squeezed to share width with 18+ hole columns. Starts
+    /// from `shortName` ("First L.") and clips to 8 chars + ellipsis
+    /// when longer — keeps "Daniel S." readable, prevents long names
+    /// like "Christopher S." from blowing out the row.
+    var scorecardName: String {
+        let s = shortName
+        if s.count > 8 {
+            return String(s.prefix(8)) + "…"
+        }
+        return s
+    }
+
     var swiftColor: Color {
         Color(hexString: color)
     }
