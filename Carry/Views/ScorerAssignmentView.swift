@@ -481,6 +481,13 @@ struct ScorerSlot: Equatable {
     /// the eventual group_members.id) → profileId (Carry user) → fresh UUID
     /// fallback (truly empty slot — unreachable in practice since `state`
     /// guards rendering).
+    ///
+    /// `phoneNumber` is propagated so the parent's tee row can render a
+    /// formatted "(415) 697-9011" subtitle for the pending-invite scorer.
+    /// Without this, the row's `Text(formatPhoneDisplay(player.phoneNumber))`
+    /// fell through to the nil fallback and displayed the literal string
+    /// "Invited" until the next server refresh repopulated phoneNumber
+    /// from `invited_phone`.
     var asPlayer: Player {
         Player(
             id: Player.stableId(from: inviteMemberId ?? profileId ?? UUID()),
@@ -494,6 +501,7 @@ struct ScorerSlot: Equatable {
             venmoUsername: nil,
             avatarImageName: nil,
             avatarUrl: avatarUrl,
+            phoneNumber: phoneNumber,
             isPendingInvite: isPendingInvite,
             profileId: profileId,
             inviteMemberId: inviteMemberId

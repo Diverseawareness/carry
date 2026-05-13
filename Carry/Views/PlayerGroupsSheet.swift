@@ -910,6 +910,12 @@ struct PlayerGroupsSheet: View {
                         groups[groupIndex].append(player)
                     }
                     scorerIDs[groupIndex] = player.id
+                    // Same selectedIDs guarantee as the .invited branch
+                    // below — a refresh rebuilds tee rows from
+                    // `selectedIDs.contains(id)`, so the search-added
+                    // scorer must be in selectedIDs or the next 30s tick
+                    // wipes them off the sheet.
+                    selectedIDs.insert(player.id)
                 } else if newValue.isPendingInvite && !oldValue.isPendingInvite {
                     // Transitioning to SMS-invite scorer. Clean up the prior
                     // slot occupant so they don't linger as a "demoted"
@@ -925,6 +931,13 @@ struct PlayerGroupsSheet: View {
                     let player = newValue.asPlayer
                     groups[groupIndex].append(player)
                     scorerIDs[groupIndex] = player.id
+                    // Critical: selectedIDs is the parent's authoritative
+                    // "playing today" set. The next refreshGroupData rebuild
+                    // filters tee-row players by `selectedIDs.contains(id)`
+                    // — without adding the new SMS-invite's stableId here,
+                    // the row appears once locally, then vanishes from the
+                    // tee table on the next 30s refresh.
+                    selectedIDs.insert(player.id)
                 } else if newValue.state == .empty && oldValue.state != .empty {
                     // Scorer cleared — never auto-assign (especially not a
                     // guest). Leave 0 so the creator explicitly picks one.
