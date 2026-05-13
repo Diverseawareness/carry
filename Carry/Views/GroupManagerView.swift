@@ -1373,14 +1373,24 @@ struct GroupManagerView: View {
                                 }
                             }
                         )
-                        // Position the coach mark so its top-right corner is
-                        // ~8pt right of QR button's right edge, ~12pt below.
-                        // Using .position() centers the view on (x, y); we
-                        // offset by half the bubble's outer dims (208 wide,
-                        // ~80 tall) to get top-right alignment.
-                        .position(
-                            x: rect.maxX - (208 / 2) + 8 - 20,
-                            y: rect.maxY + 12 + (80 / 2)
+                        // Position via top-leading anchor + .offset so we
+                        // don't need to know the bubble's HEIGHT (avoids
+                        // breakage from Dynamic Type / different iOS versions
+                        // where the rendered text height varies).
+                        // - Bubble width is design-fixed at 208pt outer
+                        //   (176 text + 32 padding).
+                        // - X: position bubble's left edge such that its
+                        //   right edge aligns with QR button's right edge.
+                        //   Since pointer sits 12pt + 8pt half-width = 20pt
+                        //   from right inside, pointer center lands at
+                        //   bubble_right - 20 = rect.maxX - 20 = QR center.
+                        // - Y: position bubble's top edge 12pt below QR
+                        //   button's bottom. Bubble grows downward naturally;
+                        //   no height-dependent math.
+                        .fixedSize()
+                        .offset(
+                            x: rect.maxX - 208,
+                            y: rect.maxY + 12
                         )
                     }
                 }
