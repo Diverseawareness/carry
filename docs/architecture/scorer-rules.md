@@ -9,7 +9,7 @@ Universal rule across game types: a tee group's scorer slot **must be filled by 
 | Slot 0 eligibility | Allowed? | Why |
 |---|---|---|
 | Confirmed Carry user (`profileId != nil`, not pending) | ✅ | Can `canScore` immediately |
-| Pending SMS invitee (`isPendingInvite == true`, no profileId yet) | ✅ in QG | The assignment IS the "playing today" signal — they finish onboarding before round-start and become a real scorer. SG advances past via `syncScorerIDs` rule 5 |
+| Pending SMS invitee (`isPendingInvite == true`, no profileId yet) | ✅ in QG and SG (1.0.9) | The assignment IS the "playing today" signal — they finish onboarding before round-start and become a real scorer. SG used to advance past via `syncScorerIDs` rule 5 but the 1.0.9 `scorerPickerSheet` upgrade now lets the SG creator assign a pending SMS invitee directly. Pre-reconciliation visibility is gated by [`refreshGroupData` L985-1001](../../Carry/Views/GroupManagerView.swift:985) which lets pending invites through `selectedIDs` ONLY when they're in `assignedScorerIds = union(local scorerIDs, server freshGroup.scorerIds)`. Non-scorer phone invites still hidden — Carry-only invariant preserved for the rest of SG roster |
 | Pending-accept Carry user (has `profileId`, `isPendingAccept == true`) | ✅ in QG | Same as above; they tap accept and become canScore-eligible |
 | Permanent guest (name + handicap only, no profileId, no pending invite) | ❌ | Never has an app account, can't authenticate, can't write scores |
 
@@ -82,14 +82,23 @@ Single source of truth for scorer eligibility. See [player-flags.md](player-flag
 
 ## Score Keeper UI
 
-[PlayerGroupsSheet.swift:417-427](../../Carry/Views/PlayerGroupsSheet.swift:417):
+Two parallel surfaces (1.0.9):
+
+| Surface | When | Where |
+|---|---|---|
+| `PlayerGroupsSheet` scorer slot | QG creator opens "Edit Players" from QG details | [PlayerGroupsSheet.swift:417-427](../../Carry/Views/PlayerGroupsSheet.swift:417) — per-group scorer slot, drag-to-rearrange row above |
+| `scorerPickerSheet` | SG creator taps "Tee time needs scorer" banner OR taps a "Scorer" pill on a non-creator group's row | [GroupManagerView.swift:3486-3552](../../Carry/Views/GroupManagerView.swift:3486) — uses `ScorerAssignmentView`, search Carry users globally + SMS invite (1.0.9 upgrade — was a flat list of group members) |
+
+Both wrap `ScorerAssignmentView`. State transitions identical:
 
 | State | Trigger | UI |
 |---|---|---|
-| `readOnly = true` | `groups[groupIndex].contains { $0.id == creatorId }` ([:424](../../Carry/Views/PlayerGroupsSheet.swift:424)) | Lock icon, no X button |
+| `readOnly = true` | `groups[groupIndex].contains { $0.id == creatorId }` ([PlayerGroupsSheet:424](../../Carry/Views/PlayerGroupsSheet.swift:424)) | Lock icon, no X button |
 | `readOnly = false` | Otherwise | X button to clear, search field to assign |
 
-X button behavior: clears scorer slot, demotes player to non-scorer slot in same group. Does NOT remove player from group.
+X button behavior:
+- Pending SMS invite → cleared slot + server `group_members` row hard-deleted via `inviteMemberId`
+- Confirmed Carry user → unassigned from scorer slot, **stays in group as a regular member** (PlayerGroupsSheet historically demoted to non-scorer; `scorerPickerSheet` matches)
 
 ## `scoringMode`
 

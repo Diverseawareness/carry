@@ -6090,13 +6090,15 @@ private struct AddTeeGroupDropDelegate: DropDelegate {
             syncScorerIDs()
             syncSelectedTees()
         }
-        // Persist scorer_ids immediately if the new group changed
-        // the scorer assignments — mirrors removePlayer's pattern.
-        // Without this, the new group's scorer slot would only land
-        // on the server when some OTHER save action fires, leaving
-        // a window where the server's scorer_ids array is shorter
-        // than iOS's local scorerIDs (next refresh would clamp).
-        if oldScorerIDs != scorerIDs {
+        // Persist scorer_ids immediately. We test count separately
+        // from value equality because syncScorerIDs always appends a
+        // new slot for the new group, so `count` differs reliably —
+        // but a defensive count-check guards against future
+        // syncScorerIDs refactors that might short-circuit the
+        // append (e.g. an early-return path) and leave server's
+        // scorer_ids array shorter than iOS's local view of the
+        // tee groups.
+        if oldScorerIDs.count != scorerIDs.count || oldScorerIDs != scorerIDs {
             saveScorerIds()
         }
         resetDrag()

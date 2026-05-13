@@ -183,7 +183,8 @@ iOS entry: [GroupsListView.swift:260-289 `convertQuickGame`](../../Carry/Views/G
 | Restart Round flow | Wipes scores + `delete_quick_game_guests` | Wipes scores only |
 | Scorer drag (tee-sheet) | **Blocked** ([GroupDropDelegate:5328-5334](../../Carry/Views/GroupManagerView.swift:5328)) — must move scorers via PlayerGroupsSheet | Allowed (everyone-scores mode) |
 | Full-group drop on target | Opens swap picker | Rejects with toast |
-| Missing-scorer affordance | Bottom CTA only — label "Group N needs scorer", tap opens PlayerGroupsSheet ([:1791](../../Carry/Views/GroupManagerView.swift:1791)). `canStartRound` blocks round-start until fixed. See [scorer-rules.md §"Missing scorer behavior (Quick Game)"](scorer-rules.md) | Pink banner inside group card ([:3477](../../Carry/Views/GroupManagerView.swift:3477)) — gated on `.single` mode which is dormant in v1. See [scorer-rules.md §"SG single-scorer toggle dormant"](scorer-rules.md) |
+| Drag-to-create-new-tee-group | Same dotted drop zone — appears below the last group card during a drag when `groups.count < 5 && groups[src].count > 1 && isCreator && !isLiveRound` ([:3850-3877](../../Carry/Views/GroupManagerView.swift:3850)). 1.0.9. | Same. Closes the 2026-05-10 gap where SG with ≤4 players couldn't get a 2nd tee group. |
+| Missing-scorer affordance | Bottom CTA only — label "Group N needs scorer", tap opens PlayerGroupsSheet ([:1791](../../Carry/Views/GroupManagerView.swift:1791)). `canStartRound` blocks round-start until fixed. See [scorer-rules.md §"Missing scorer behavior (Quick Game)"](scorer-rules.md) | Pink banner inside group card ([:3477](../../Carry/Views/GroupManagerView.swift:3477)) — tap opens `scorerPickerSheet` (1.0.9 upgrade) with search + SMS invite. See [scorer-rules.md §"SG missing-scorer banner"](scorer-rules.md) |
 
 ## Auto-grouping rules
 
