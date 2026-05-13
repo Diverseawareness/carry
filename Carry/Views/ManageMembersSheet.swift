@@ -517,14 +517,18 @@ struct ManageMembersSheet: View {
 
     // MARK: - Long-press Remove
 
-    /// Open the iOS-native confirm alert. Scoped to players with a real
-    /// profile — phone-only pending invites (no `profileId`) use a
-    /// different server row keyed by `invited_phone` that `removeMember`
-    /// can't match, so long-press is a silent no-op for those until a
-    /// phone-specific removal helper is added.
+    /// Open the iOS-native confirm alert. Accepts both:
+    ///   - Confirmed Carry members (have `profileId`) → server delete by
+    ///     (group_id, player_id) via `removeMember`
+    ///   - Pending SMS-invite rows (no `profileId` but have
+    ///     `inviteMemberId` = the row's group_members.id, set by
+    ///     loadSingleGroup and ManageMembersSheet.sendInvite) → server
+    ///     hard-delete by row id
+    /// Silent no-op only when neither identifier is available (defensive,
+    ///   shouldn't happen for any row that reached this view).
     private func requestRemoval(of player: Player) {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-        guard player.profileId != nil else { return }
+        guard player.profileId != nil || player.inviteMemberId != nil else { return }
         memberToRemove = player
     }
 
@@ -536,7 +540,7 @@ struct ManageMembersSheet: View {
     /// silently no-ops.
     private func confirmRemoval(of player: Player) {
         memberToRemove = nil
-        guard let groupId = supabaseGroupId, let profileId = player.profileId else { return }
+        guard let groupId = supabaseGroupId else { return }
 
         withAnimation(.easeOut(duration: 0.2)) {
             locallyRemovedIds.insert(player.id)
@@ -545,7 +549,19 @@ struct ManageMembersSheet: View {
 
         let task = Task<Void, Never> {
             do {
-                try await GroupService().removeMember(groupId: groupId, playerId: profileId)
+                if player.isPendingInvite, let inviteMemberId = player.inviteMemberId {
+                    // Phone-invite path — delete by row id. The row's
+                    // `player_id` is the inviter's UUID placeholder, so
+                    // a (group_id, player_id) delete would either miss
+                    // or accidentally hit the inviter's regular row.
+                    try await SupabaseManager.shared.client
+                        .from("group_members")
+                        .delete()
+                        .eq("id", value: inviteMemberId.uuidString)
+                        .execute()
+                } else if let profileId = player.profileId {
+                    try await GroupService().removeMember(groupId: groupId, playerId: profileId)
+                }
             } catch {
                 await MainActor.run {
                     // Rollback if server rejected — re-surface the tile
