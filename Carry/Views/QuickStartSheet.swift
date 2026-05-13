@@ -244,9 +244,19 @@ struct QuickGameSheet: View {
                 // gained focus → scroll the group's scorer slot into
                 // view above the keyboard. Slot 0 of each group is
                 // the scorer (see playerGroupsSection .id wiring).
+                //
+                // Anchor .bottom (not .center): the scorer slot
+                // expands when the user types — adds search-result
+                // cards + the "Send Invite" phone row underneath. The
+                // phone field lives at the BOTTOM of the slot
+                // container, so a .center anchor leaves it covered by
+                // the keyboard. .bottom aligns the slot's bottom edge
+                // with the visible viewport edge (above the keyboard
+                // since iOS shrinks the safe area), keeping phone +
+                // Send button visible.
                 guard let sig = newValue else { return }
                 withAnimation(.easeOut(duration: 0.25)) {
-                    scrollProxy.scrollTo("slot-\(sig.groupIndex)-0", anchor: .center)
+                    scrollProxy.scrollTo("slot-\(sig.groupIndex)-0", anchor: .bottom)
                 }
             }
             }
