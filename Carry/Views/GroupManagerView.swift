@@ -3855,6 +3855,7 @@ struct GroupManagerView: View {
         )
         .contentShape(Rectangle())
         .onDrop(of: [.text], delegate: AddTeeGroupDropDelegate(
+            scorerAnchored: isQuickGame || scoringMode != .everyone,
             dragSourceGroup: $dragSourceGroup,
             dragPlayer: $dragPlayer,
             dropTargetGroup: $dropTargetGroup,
@@ -3866,6 +3867,7 @@ struct GroupManagerView: View {
             syncTeeTimes: syncTeeTimes,
             syncScorerIDs: syncScorerIDs,
             syncSelectedTees: syncSelectedTees,
+            saveScorerIds: saveScorerIds,
             currentTargetIndex: { groups.count }
         ))
     }
@@ -6012,6 +6014,11 @@ struct GroupDropDelegate: DropDelegate {
 // user dropped a player into a different group first then
 // re-grabbed and dragged toward the "+ Add" zone.
 private struct AddTeeGroupDropDelegate: DropDelegate {
+    /// Mirrors the existing GroupDropDelegate semantics:
+    /// `scorerAnchored: true` means a structurally-locked scorer
+    /// (QG, or legacy single-scorer SG) cannot be moved to a
+    /// different group. Show the same toast + reject.
+    let scorerAnchored: Bool
     @Binding var dragSourceGroup: Int?
     @Binding var dragPlayer: Player?
     @Binding var dropTargetGroup: Int?
@@ -6023,6 +6030,7 @@ private struct AddTeeGroupDropDelegate: DropDelegate {
     let syncTeeTimes: () -> Void
     let syncScorerIDs: () -> Void
     let syncSelectedTees: () -> Void
+    let saveScorerIds: () -> Void
     let currentTargetIndex: () -> Int
 
     func dropEntered(info: DropInfo) {
@@ -6048,9 +6056,21 @@ private struct AddTeeGroupDropDelegate: DropDelegate {
             resetDrag()
             return false
         }
+        // Scorer-anchored guard — matches the existing
+        // GroupDropDelegate's protection. Without this, a creator
+        // dragging their locked QG scorer slot to a new group would
+        // silently bypass the structural invariant.
+        if scorerAnchored,
+           sourceGroup < scorerIDs.count,
+           scorerIDs[sourceGroup] == player.id {
+            ToastManager.shared.error("Scorers are anchored — change scorers in Manage Members.")
+            resetDrag()
+            return false
+        }
         // Source single-player guard happens at the view level via the
         // `groups[src].count > 1` gate before this delegate is wired,
         // so we can trust source has spare players here.
+        let oldScorerIDs = scorerIDs
         withAnimation(.easeOut(duration: 0.2)) {
             groups[sourceGroup].removeAll { $0.id == player.id }
             groups.append([player])
@@ -6069,6 +6089,15 @@ private struct AddTeeGroupDropDelegate: DropDelegate {
             syncTeeTimes()
             syncScorerIDs()
             syncSelectedTees()
+        }
+        // Persist scorer_ids immediately if the new group changed
+        // the scorer assignments — mirrors removePlayer's pattern.
+        // Without this, the new group's scorer slot would only land
+        // on the server when some OTHER save action fires, leaving
+        // a window where the server's scorer_ids array is shorter
+        // than iOS's local scorerIDs (next refresh would clamp).
+        if oldScorerIDs != scorerIDs {
+            saveScorerIds()
         }
         resetDrag()
         return true
