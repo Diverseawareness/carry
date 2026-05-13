@@ -3815,7 +3815,12 @@ struct CreateGroupSheet: View {
         // homepage instead of routing the link into Carry.
         let inviteLink = "https://carryapp.site/invite?group=\(draftGroupId.uuidString)"
         let body = "Join my skins game on Carry! \(inviteLink)"
-        let encoded = body.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        // Stricter encoding: `.urlQueryAllowed` keeps ?&=# raw, which
+        // chunks the sms URL's own query and drops the deep-link
+        // group_id in Messages. Strip those four so they percent-escape.
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.remove(charactersIn: "?&=#")
+        let encoded = body.addingPercentEncoding(withAllowedCharacters: allowed) ?? ""
         if let url = URL(string: "sms:\(digits)&body=\(encoded)") {
             UIApplication.shared.open(url)
         }

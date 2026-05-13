@@ -727,15 +727,20 @@ struct ManageMembersSheet: View {
                         groupNum: 1,
                         inviteeName: typedName.isEmpty ? nil : typedName
                     )
-                    // Open native SMS with deep link. The full body
-                    // (including the deep link's `?group=` query)
-                    // MUST be percent-encoded as a single unit —
-                    // otherwise the `?` inside the body terminates
-                    // the sms URL's query string early and Messages
-                    // drops everything after `/invite`. Matches the
-                    // ScorerAssignmentView pattern.
+                    // Open native SMS with deep link. The body's
+                    // own `?group=` query was being chewed up by the
+                    // sms URL parser because `.urlQueryAllowed`
+                    // permits `?`, `&`, `=` — the body terminated
+                    // early and Messages dropped everything after
+                    // `/invite`. Build a stricter set: urlQueryAllowed
+                    // minus the four characters that segment a URL
+                    // query string. Now the `?`, `&`, `=` inside the
+                    // body get percent-escaped as `%3F`, `%26`, `%3D`
+                    // and the full body roundtrips through Messages.
                     let body = "Join my skins game on Carry! https://carryapp.site/invite?group=\(groupId.uuidString)"
-                    let encoded = body.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+                    var allowed = CharacterSet.urlQueryAllowed
+                    allowed.remove(charactersIn: "?&=#")
+                    let encoded = body.addingPercentEncoding(withAllowedCharacters: allowed) ?? ""
                     if let smsURL = URL(string: "sms:\(digits)&body=\(encoded)") {
                         await MainActor.run { UIApplication.shared.open(smsURL) }
                     }

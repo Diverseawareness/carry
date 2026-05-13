@@ -429,7 +429,13 @@ struct ScorerAssignmentView: View {
         // doesn't supply a builder.
         let body = smsBodyBuilder?(digits)
             ?? "Score our skins game on Carry! Download: https://carryapp.site"
-        let encoded = body.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        // `.urlQueryAllowed` permits `?`, `&`, `=` — those characters
+        // inside the body would chunk the sms URL's own query and
+        // truncate the deep link in Messages. Remove them so they
+        // get percent-escaped.
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.remove(charactersIn: "?&=#")
+        let encoded = body.addingPercentEncoding(withAllowedCharacters: allowed) ?? ""
         if let url = URL(string: "sms:\(digits)&body=\(encoded)") {
             UIApplication.shared.open(url)
         }
