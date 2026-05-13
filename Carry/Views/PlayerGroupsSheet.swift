@@ -927,21 +927,29 @@ struct PlayerGroupsSheet: View {
                     // Scorer cleared — never auto-assign (especially not a
                     // guest). Leave 0 so the creator explicitly picks one.
                     scorerIDs[groupIndex] = 0
-                    // If we just cleared a pending SMS-invite scorer slot,
-                    // remember the server row id so saveAndDismiss deletes
-                    // it. inviteMemberId is the group_members.id (set by
-                    // loadSingleGroup at row construction time AND by the
-                    // sendInvite mint at slot-time).
+
                     if oldValue.isPendingInvite, let inviteMemberId = oldValue.inviteMemberId {
+                        // Pending SMS invite → tracked for server delete in
+                        // saveAndDismiss step 3b'. Drop from local groups
+                        // so the tee sheet immediately reflects the clear.
                         userRemovedInviteMemberIds.insert(inviteMemberId)
-                    }
-                    // Also drop the local Player row from this group so
-                    // the tee sheet immediately shows the cleared state
-                    // (no orphan phone-invite player lingering in groups[]
-                    // after the X tap).
-                    if oldValue.isPendingInvite {
-                        let removedId = Player.stableId(from: oldValue.inviteMemberId ?? UUID())
+                        let removedId = Player.stableId(from: inviteMemberId)
                         groups[groupIndex].removeAll { $0.id == removedId }
+                    } else if let profileId = oldValue.profileId {
+                        // Confirmed Carry user → full remove from the group
+                        // (not just demote to non-scorer). Demoting created
+                        // a duplicate when the user subsequently sent an SMS
+                        // invite to the same slot: the demoted player
+                        // lingered in the Players section while the new
+                        // SMS-invite appeared in the Score Keeper.
+                        // Skip removal if the player is the creator —
+                        // creator should stay in their original group seat
+                        // regardless of scorer churn.
+                        let removedId = Player.stableId(from: profileId)
+                        if removedId != creatorId && removedId != currentUserId {
+                            userRemovedProfileIds.insert(profileId)
+                            groups[groupIndex].removeAll { $0.id == removedId }
+                        }
                     }
                 }
             }
