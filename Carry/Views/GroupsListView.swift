@@ -762,12 +762,32 @@ struct GroupsListView: View {
                     scorerIds: scorerIntIds
                 )
 
-                // 5. Create Supabase invite records for SMS-invited scorers
+                // 5. Create Supabase invite records for SMS-invited scorers.
+                // Use reservePhoneInvite when the slot has a pre-allocated
+                // inviteMemberId (the new SMS-invite-as-scorer flow), passing
+                // it as the explicit group_members.id so Player.stableId on
+                // the client matches player_stable_id(group_members.id) on
+                // the server. Fall back to inviteMemberByPhone for any
+                // legacy slot without an inviteMemberId (defensive — should
+                // be unreachable post-Stage 4a since sendInvite always mints
+                // a UUID, but keeps the build/runtime safe if a slot somehow
+                // arrives here without one). See migration 20260513000003 +
+                // docs/sms-invite-scorer-plan.md.
                 for member in updatedMembers where member.isPendingInvite {
                     if let phone = member.phoneNumber, !phone.isEmpty {
-                        try? await groupService.inviteMemberByPhone(
-                            groupId: groupDTO.id, phone: phone, invitedBy: userId, groupNum: member.group
-                        )
+                        if let inviteId = member.inviteMemberId {
+                            _ = try? await groupService.reservePhoneInvite(
+                                id: inviteId,
+                                groupId: groupDTO.id,
+                                phone: phone,
+                                invitedBy: userId,
+                                groupNum: member.group
+                            )
+                        } else {
+                            try? await groupService.inviteMemberByPhone(
+                                groupId: groupDTO.id, phone: phone, invitedBy: userId, groupNum: member.group
+                            )
+                        }
                     }
                 }
 
