@@ -649,7 +649,11 @@ struct GroupManagerView: View {
             // `shortPlayerGroups` (counts pending) and fell through — label
             // said "Need 2+ Players" but the button was still enabled and
             // started an unscorable round when tapped.
-            return activePlayerCount >= 2 && currentCourse != nil
+            //
+            // Also block on missing scorer: `startButtonLabel` shows "Group N
+            // needs scorer" but without this check the button stayed tappable
+            // and started an unscorable round.
+            return activePlayerCount >= 2 && currentCourse != nil && missingScorerGroupIndex == nil
         }
         return activePlayerCount >= 2 && currentCourse != nil && allTeeTimesSet && isWithinTeeTimeWindow
     }
@@ -3517,12 +3521,7 @@ struct GroupManagerView: View {
             // designated scorer to miss, so the banner would be a confusing
             // false alarm when (for example) the creator swipes themselves
             // off the sheet and only guests remain. Gate on single-scorer mode.
-            //
-            // Quick Games now surface this in the main CTA button text
-            // (`missingScorerGroupIndex` → "Group N needs scorer"), which is
-            // where the creator's thumb goes — so the pink banner would be
-            // redundant. Keep the banner only for single-scorer Skins Groups.
-            if needsScorer && isCreator && !isLiveRound && !roundStarted && scoringMode != .everyone && !isQuickGame {
+            if needsScorer && isCreator && !isLiveRound && !roundStarted && scoringMode != .everyone {
                 missingScorerBanner(forGroup: index)
             }
 
