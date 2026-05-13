@@ -3827,16 +3827,31 @@ struct GroupManagerView: View {
             PlayerAvatar(player: player, size: 38)
 
             VStack(alignment: .leading, spacing: 5) {
-                Text(player.isPendingInvite ? formatPhoneDisplay(player.phoneNumber) : player.shortName)
+                // For pending SMS-invitees: name = inviter-typed display
+                // name (carried via invitee_name column; falls back to
+                // phone digits when null) so the row reads like a real
+                // person, not "Invited"/digits.
+                Text(player.shortName)
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(Color.textPrimary)
                     .opacity(isPendingPlayer ? 0.7 : 1)
                     .lineLimit(1)
 
-                Text(pops != 0 ? "\(formatHandicap(player.handicap)) · \(pops > 0 ? "\(pops)" : "+\(abs(pops))")" : formatHandicap(player.handicap))
-                    .font(.system(size: 14))
-                    .foregroundColor(Color.textSecondary)
-                    .opacity(isPendingPlayer ? 0.7 : 1)
+                // For pending SMS-invitees: subtitle = formatted phone.
+                // No handicap/index until they actually onboard — we
+                // don't know their HC index yet and "0.0 · 1" looks
+                // like a real but mistaken value.
+                if player.isPendingInvite {
+                    Text(formatPhoneDisplay(player.phoneNumber))
+                        .font(.system(size: 14))
+                        .foregroundColor(Color.textSecondary)
+                        .opacity(0.7)
+                } else {
+                    Text(pops != 0 ? "\(formatHandicap(player.handicap)) · \(pops > 0 ? "\(pops)" : "+\(abs(pops))")" : formatHandicap(player.handicap))
+                        .font(.system(size: 14))
+                        .foregroundColor(Color.textSecondary)
+                        .opacity(isPendingPlayer ? 0.7 : 1)
+                }
             }
 
             Spacer()

@@ -457,46 +457,25 @@ final class GroupService {
     /// scorer slot anchor remains valid; the next refresh resolves the slot
     /// via the regular member path (Player.id = stableId(profile.id)) and the
     /// reconciliation trigger extension keeps scorer_ids in sync.
-    func reservePhoneInvite(id: UUID, groupId: UUID, phone: String, invitedBy: UUID, groupNum: Int = 1) async throws -> UUID {
-        // Calls the SECURITY DEFINER RPC create_phone_invite() instead of a
-        // direct REST insert. Background: PostgREST silently drops
-        // group_num from the JSON INSERT body for this table — direct SQL
-        // preserves it, so the RPC body INSERTs in plain SQL where the
-        // column write isn't broken. Dedup-by-phone is handled inside the
-        // RPC. Reverse trigger reconcile_phone_invite_at_insert continues
-        // to fire BEFORE INSERT and may rewrite NEW.player_id / status /
-        // invited_phone if the phone matches an existing profile; NEW.id
-        // and NEW.group_num are preserved, so the scorer slot's anchor
-        // UUID stays intact. See migration
-        // 20260513000004_create_phone_invite_rpc.sql.
-        #if DEBUG
-        print("[reservePhoneInvite] RPC call: id=\(id.uuidString) p_group_num='\(String(groupNum))' phone=\(phone)")
-        #endif
-        do {
-            let resultId: UUID = try await client.rpc(
-                "create_phone_invite",
-                params: [
-                    "p_id": AnyJSON.string(id.uuidString),
-                    "p_group_id": AnyJSON.string(groupId.uuidString),
-                    "p_phone": AnyJSON.string(phone),
-                    "p_invited_by": AnyJSON.string(invitedBy.uuidString),
-                    // Pass as text; RPC casts inside. Previously used
-                    // AnyJSON.integer but it was being silently coerced on
-                    // the iOS wire. Sticking to strings end-to-end keeps
-                    // the param transit predictable.
-                    "p_group_num": AnyJSON.string(String(groupNum))
-                ]
-            ).execute().value
-            #if DEBUG
-            print("[reservePhoneInvite] RPC success: returned id=\(resultId.uuidString)")
-            #endif
-            return resultId
-        } catch {
-            #if DEBUG
-            print("[reservePhoneInvite] RPC FAILED: \(error)")
-            #endif
-            throw error
+    func reservePhoneInvite(id: UUID, groupId: UUID, phone: String, invitedBy: UUID, groupNum: Int = 1, inviteeName: String? = nil) async throws -> UUID {
+        // Calls the SECURITY DEFINER RPC create_phone_invite() (see
+        // migrations 20260513000004 + 20260513000005). inviteeName carries
+        // the inviter-typed display name so iOS renders the pending row
+        // as "Daniel" / "(415) 697-9011" instead of "Invited" / digits.
+        // Pass values as strings end-to-end — AnyJSON.integer caused
+        // silent coercion issues on the iOS wire earlier in this session.
+        var params: [String: AnyJSON] = [
+            "p_id": AnyJSON.string(id.uuidString),
+            "p_group_id": AnyJSON.string(groupId.uuidString),
+            "p_phone": AnyJSON.string(phone),
+            "p_invited_by": AnyJSON.string(invitedBy.uuidString),
+            "p_group_num": AnyJSON.string(String(groupNum))
+        ]
+        if let trimmed = inviteeName?.trimmingCharacters(in: .whitespaces), !trimmed.isEmpty {
+            params["p_invitee_name"] = AnyJSON.string(trimmed)
         }
+        let resultId: UUID = try await client.rpc("create_phone_invite", params: params).execute().value
+        return resultId
     }
 
     /// Check if a phone number has pending group invites (called on sign-up/sign-in).
@@ -1209,12 +1188,16 @@ final class GroupService {
         // (e.g. GroupManagerView.removePlayer deleting a mistakenly-invited
         // scorer) can target it directly. Player.id stays as
         // stableId(invite.id) for SwiftUI list identity + scorer_ids
-        // lookup alignment.
+        // lookup alignment. name prefers invitee_name (typed by inviter)
+        // and falls back to the phone digits when nil — see migration
+        // 20260513000005.
         for invite in phoneInvites {
             let phone = invite.invitedPhone ?? ""
+            let typedName = invite.inviteeName?.trimmingCharacters(in: .whitespaces) ?? ""
+            let displayName = typedName.isEmpty ? phone : typedName
             let player = Player(
                 id: Player.stableId(from: invite.id),
-                name: phone,
+                name: displayName,
                 initials: "✉️",
                 color: "#CB895D",
                 handicap: 0,

@@ -1441,7 +1441,8 @@ struct PlayerGroupsSheet: View {
                             groupId: groupId,
                             phone: phone,
                             invitedBy: userId,
-                            groupNum: player.group
+                            groupNum: player.group,
+                            inviteeName: player.name
                         )
                     } catch {
                         #if DEBUG

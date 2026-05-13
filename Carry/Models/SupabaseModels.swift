@@ -576,6 +576,7 @@ struct GroupMemberDTO: Codable, Identifiable {
     var sortOrder: Int?
     var invitedPhone: String?
     var groupNum: Int?     // which foursome group (1, 2, 3...) — for multi-group Quick Games
+    var inviteeName: String?  // inviter-typed display name for SMS invites (nullable)
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -586,6 +587,7 @@ struct GroupMemberDTO: Codable, Identifiable {
         case sortOrder = "sort_order"
         case invitedPhone = "invited_phone"
         case groupNum = "group_num"
+        case inviteeName = "invitee_name"
     }
 }
 

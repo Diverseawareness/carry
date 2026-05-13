@@ -791,7 +791,8 @@ struct GroupsListView: View {
                                 groupId: groupDTO.id,
                                 phone: phone,
                                 invitedBy: userId,
-                                groupNum: member.group
+                                groupNum: member.group,
+                                inviteeName: member.name
                             )
                         } else {
                             try? await groupService.inviteMemberByPhone(
