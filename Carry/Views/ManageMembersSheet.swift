@@ -669,23 +669,48 @@ struct ManageMembersSheet: View {
         guard digits.count >= 10 else { return }
         let guestColors = ["#E67E22", "#9B59B6", "#1ABC9C", "#C0392B", "#2980B9", "#27AE60"]
         let colorIdx = (nextGuestID - 100) % guestColors.count
+        // Capture the typed name from the search field (the "Send
+        // Invite to '<name>'" label). Falls back to the formatted
+        // phone if the user somehow opened the SMS path without
+        // typing a name first (shouldn't happen — gate is
+        // `memberSearchText.count >= 2` — but defensive).
+        let typedName = memberSearchText.trimmingCharacters(in: .whitespaces)
+        let displayName = typedName.isEmpty ? digits : typedName
+        // Mint a stable UUID for this invite. Used as the explicit
+        // group_members.id via reservePhoneInvite so the row's id is
+        // known client-side from the start (matches what
+        // loadSingleGroup will compute on refresh).
+        let inviteId = UUID()
         let invited = Player(
-            id: nextGuestID, name: "Invited", initials: "\u{2709}\u{FE0F}",
+            id: nextGuestID, name: displayName, initials: "\u{2709}\u{FE0F}",
             color: guestColors[colorIdx], handicap: 0, avatar: "\u{2709}\u{FE0F}",
             group: 1, ghinNumber: nil, venmoUsername: nil,
-            phoneNumber: digits, isPendingInvite: true
+            phoneNumber: digits, isPendingInvite: true,
+            inviteMemberId: inviteId
         )
         localGuests.append(invited)
         nextGuestID += 1
         withAnimation { inviteSent = true }
 
-        // Create Supabase invite record + send SMS with deep link
+        // Create Supabase invite record + send SMS with deep link.
+        // Switched from legacy inviteMemberByPhone to reservePhoneInvite
+        // so the typed name lands on the server's invitee_name column —
+        // survives refresh + cross-device, so the Pending chip stays
+        // readable as "Daniel" / "(415) 697-9011" rather than reverting
+        // to the placeholder.
         if let groupId = supabaseGroupId {
             Task {
                 guard let userId = try? await SupabaseManager.shared.client.auth.session.user.id else { return }
                 let groupService = GroupService()
                 do {
-                    try await groupService.inviteMemberByPhone(groupId: groupId, phone: digits, invitedBy: userId)
+                    _ = try await groupService.reservePhoneInvite(
+                        id: inviteId,
+                        groupId: groupId,
+                        phone: digits,
+                        invitedBy: userId,
+                        groupNum: 1,
+                        inviteeName: typedName.isEmpty ? nil : typedName
+                    )
                     // Open native SMS with deep link
                     let encodedLink = "https://carryapp.site/invite?group=\(groupId.uuidString)"
                     if let smsURL = URL(string: "sms:\(digits)&body=Join%20my%20skins%20game%20on%20Carry!%20\(encodedLink)") {
