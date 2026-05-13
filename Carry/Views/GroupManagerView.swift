@@ -3681,9 +3681,16 @@ struct GroupManagerView: View {
         .buttonStyle(.plain)
     }
 
-    /// Returns true when `scorerIDs[index]` points to a real Carry user who
-    /// is still in the group's player list. Guests (no `profileId`) and
-    /// empty assignments both return false — they can't actually score.
+    /// Returns true when `scorerIDs[index]` points to a meaningfully-filled
+    /// scorer slot — either a real Carry user OR a pending SMS-invitee
+    /// who'll become a Carry user upon onboarding. Permanent guests
+    /// (profileId nil AND NOT pending invite) and empty assignments both
+    /// return false.
+    ///
+    /// Pending-invite slots count as filled because the user did assign
+    /// someone; the slot isn't "missing", it's just awaiting reconciliation.
+    /// The orthogonal `pendingScorerWarnings` predicate gates Start Round
+    /// for pending slots so the round can't begin until they accept.
     private func groupHasValidScorer(index: Int) -> Bool {
         guard index < scorerIDs.count, index < groups.count else { return false }
         let scorerId = scorerIDs[index]
@@ -3691,8 +3698,10 @@ struct GroupManagerView: View {
         guard let scorerPlayer = groups[index].first(where: { $0.id == scorerId }) else {
             return false
         }
-        // Must be a Carry user — guests don't have a profile and can't score.
-        return scorerPlayer.profileId != nil
+        // Real Carry user → valid. Permanent guest (no profile, not pending) → invalid.
+        // Pending SMS invite (no profile yet, isPendingInvite=true) → provisionally valid
+        // (the slot is filled; pendingScorerWarnings handles "can't start yet").
+        return scorerPlayer.profileId != nil || scorerPlayer.isPendingInvite
     }
 
     private func groupCardHeader(index: Int) -> some View {
