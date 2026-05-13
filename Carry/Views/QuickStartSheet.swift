@@ -11,6 +11,12 @@ private struct PlayerSlot: Identifiable {
     var isPendingInvite: Bool = false
     var phoneNumber: String? = nil
     var homeClub: String? = nil
+    /// For SMS-invited slots only: the UUID minted at sendInvite time. Used
+    /// as the explicit group_members.id when handleQuickGameCreate later
+    /// calls reservePhoneInvite, so the row's PK matches what the client
+    /// derived as Player.id via stableId(inviteMemberId). See
+    /// docs/sms-invite-scorer-plan.md.
+    var inviteMemberId: UUID? = nil
 
     var initials: String {
         let parts = name.split(separator: " ")
@@ -1345,7 +1351,9 @@ struct QuickGameSheet: View {
 
     // MARK: - Scorer Assignment Bindings
 
-    /// Bridges ScorerSlot ↔ PlayerSlot for ScorerAssignmentView
+    /// Bridges ScorerSlot ↔ PlayerSlot for ScorerAssignmentView. Preserves
+    /// `inviteMemberId` in both directions so the SMS-invite slot's
+    /// anchor UUID survives sheet re-renders.
     private func scorerSlotBinding(groupIndex: Int) -> Binding<ScorerSlot> {
         Binding(
             get: {
@@ -1357,7 +1365,8 @@ struct QuickGameSheet: View {
                     color: slot.color,
                     isPendingInvite: slot.isPendingInvite,
                     phoneNumber: slot.phoneNumber,
-                    homeClub: slot.homeClub
+                    homeClub: slot.homeClub,
+                    inviteMemberId: slot.inviteMemberId
                 )
             },
             set: { newValue in
@@ -1367,7 +1376,8 @@ struct QuickGameSheet: View {
                     existingProfileId: newValue.profileId,
                     color: newValue.color.isEmpty ? slotColors[(groupIndex * 4) % slotColors.count] : newValue.color,
                     isPendingInvite: newValue.isPendingInvite,
-                    phoneNumber: newValue.phoneNumber
+                    phoneNumber: newValue.phoneNumber,
+                    inviteMemberId: newValue.inviteMemberId
                 )
             }
         )
@@ -1419,6 +1429,14 @@ struct QuickGameSheet: View {
                 if let existingId = slot.existingProfileId {
                     playerId = Player.stableId(from: existingId)
                     profileId = existingId
+                } else if let inviteId = slot.inviteMemberId, slot.isPendingInvite {
+                    // SMS-invite slot: anchor on inviteMemberId so the iOS
+                    // Player.id matches what the server's player_stable_id
+                    // helper computes from group_members.id post-insert. Both
+                    // sides agree on the int → scorer_ids stays valid across
+                    // reconciliation. See migration 20260513000003.
+                    playerId = Player.stableId(from: inviteId)
+                    profileId = nil
                 } else {
                     playerId = Player.stableId(from: slot.id)
                     profileId = nil
@@ -1439,7 +1457,8 @@ struct QuickGameSheet: View {
                     phoneNumber: slot.phoneNumber,
                     isPendingInvite: slot.isPendingInvite,
                     isGuest: slot.existingProfileId == nil && !slot.isPendingInvite,
-                    profileId: profileId
+                    profileId: profileId,
+                    inviteMemberId: slot.inviteMemberId
                 )
                 players.append(player)
             }

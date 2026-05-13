@@ -21,6 +21,13 @@ struct Player: Identifiable, Hashable {
     var isGuest: Bool = false  // true for guest profiles created via Quick Start
     var profileId: UUID? = nil  // link back to Supabase profile
     var homeClub: String? = nil  // home course name from profile
+    /// For SMS-invited scorer slots only: the UUID that this slot anchored
+    /// on at "Send Invite" time. Used as the explicit `group_members.id` PK
+    /// when the parent calls `GroupService.reservePhoneInvite(id:...)`. Same
+    /// UUID feeds `Player.stableId(from:)` so scorer_ids[i] equals what the
+    /// server's `player_stable_id(group_members.id)` computes — keeping the
+    /// scorer slot intact across reconciliation. nil for everyone else.
+    var inviteMemberId: UUID? = nil
 
     /// First name + last initial: "Daniel S."
     var shortName: String {

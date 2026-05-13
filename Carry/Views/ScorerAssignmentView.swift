@@ -335,11 +335,22 @@ struct ScorerAssignmentView: View {
 
         let name = phoneName.trimmingCharacters(in: .whitespaces)
 
+        // Mint a stable UUID for this slot. The same UUID will be passed to
+        // GroupService.reservePhoneInvite(id:...) as the explicit
+        // group_members PK when the parent persists. Player.stableId(from:)
+        // derives the in-memory Player.id from this UUID, so the int the
+        // client writes into scorer_ids matches what the server's
+        // player_stable_id(uuid) helper computes — keeping the scorer slot
+        // intact across reconciliation. See migration 20260513000002 +
+        // docs/sms-invite-scorer-plan.md.
+        let inviteId = UUID()
+
         scorer = ScorerSlot(
             name: name.isEmpty ? Self.formatPhone(digits) : name,
             color: defaultColor,
             isPendingInvite: true,
-            phoneNumber: digits
+            phoneNumber: digits,
+            inviteMemberId: inviteId
         )
 
         // Open native SMS. Body comes from the parent's builder when provided
@@ -393,6 +404,17 @@ struct ScorerSlot: Equatable {
     var phoneNumber: String? = nil
     var avatarUrl: String? = nil
     var homeClub: String? = nil
+    /// For SMS-invited scorer slots, the UUID that the slot anchors on. Set
+    /// at `sendInvite` time and then used as the explicit id when the parent
+    /// calls `GroupService.reservePhoneInvite(id:...)`. The same UUID feeds
+    /// `Player.stableId(from:)` for `asPlayer.id`, so the slot's local
+    /// Player.id matches what the server's reconciliation triggers expect.
+    /// Without this, every call to `asPlayer` for a pending-invite slot
+    /// minted a fresh random UUID inline → `Player.id` was non-stable AND
+    /// never aligned with anything server-side. See the SMS-invite-as-scorer
+    /// reconciliation plan (docs/sms-invite-scorer-plan.md) and the int-path
+    /// trigger migration (20260513000003).
+    var inviteMemberId: UUID? = nil
 
     enum State {
         case empty, confirmed, invited
@@ -414,9 +436,13 @@ struct ScorerSlot: Equatable {
     }
 
     /// Convert to Player for PlayerAvatar rendering.
+    /// Player.id derivation order: inviteMemberId (SMS-invitee, anchors on
+    /// the eventual group_members.id) → profileId (Carry user) → fresh UUID
+    /// fallback (truly empty slot — unreachable in practice since `state`
+    /// guards rendering).
     var asPlayer: Player {
         Player(
-            id: Player.stableId(from: profileId ?? UUID()),
+            id: Player.stableId(from: inviteMemberId ?? profileId ?? UUID()),
             name: name,
             initials: initials,
             color: color,
@@ -428,7 +454,8 @@ struct ScorerSlot: Equatable {
             avatarImageName: nil,
             avatarUrl: avatarUrl,
             isPendingInvite: isPendingInvite,
-            profileId: profileId
+            profileId: profileId,
+            inviteMemberId: inviteMemberId
         )
     }
 }
