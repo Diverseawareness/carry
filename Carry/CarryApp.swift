@@ -199,7 +199,8 @@ struct CarryApp: App {
         // Same idea for the first-group QR coach mark: reset every cold
         // launch so we can verify rendering + dismiss behavior without
         // manually wiping UserDefaults.
-        UserDefaults.standard.removeObject(forKey: "hasSeenFirstGroupQRCoachMark")
+        UserDefaults.standard.removeObject(forKey: "hasSeenFirstQuickGameQRCoachMark")
+        UserDefaults.standard.removeObject(forKey: "hasSeenFirstSkinsGroupQRCoachMark")
         #endif
 
         // PostHog setup runs on a detached background task. Its setup() kicks

@@ -46,11 +46,19 @@ struct GroupManagerView: View {
     @State private var showPaywall = false
     @State private var paywallTrigger: PaywallTrigger = .general
     @State private var showQRInvite = false
-    /// First-group coach mark — points at the QR button on the user's
-    /// first-ever group view. Once dismissed, never re-shows. Triggered
-    /// post-Demo Round conversion AND first cold-create of a Skins Group
-    /// or Quick Game. See CoachMark.swift.
-    @AppStorage("hasSeenFirstGroupQRCoachMark") private var hasSeenFirstGroupQRCoachMark: Bool = false
+    /// First-group QR coach mark — fires once per game TYPE (Quick Game and
+    /// Skins Group are tracked independently) so a creator sees it the first
+    /// time they enter each kind of group. Tap-to-dismiss or tapping the QR
+    /// button itself burns the gate. See CoachMark.swift.
+    @AppStorage("hasSeenFirstQuickGameQRCoachMark") private var hasSeenQuickGameQRCoachMark: Bool = false
+    @AppStorage("hasSeenFirstSkinsGroupQRCoachMark") private var hasSeenSkinsGroupQRCoachMark: Bool = false
+    private var hasSeenFirstGroupQRCoachMark: Bool {
+        isQuickGame ? hasSeenQuickGameQRCoachMark : hasSeenSkinsGroupQRCoachMark
+    }
+    private func markFirstGroupQRCoachMarkSeen() {
+        if isQuickGame { hasSeenQuickGameQRCoachMark = true }
+        else { hasSeenSkinsGroupQRCoachMark = true }
+    }
     /// Fullscreen QR shown when the user shakes their phone inside a group
     /// detail. Big, tap-to-dismiss surface so multiple people can scan at
     /// once without passing the phone around. Debug builds skip this path
@@ -1369,7 +1377,7 @@ struct GroupManagerView: View {
                             pointerInset: 12,
                             onDismiss: {
                                 withAnimation(.easeOut(duration: 0.2)) {
-                                    hasSeenFirstGroupQRCoachMark = true
+                                    markFirstGroupQRCoachMarkSeen()
                                 }
                             }
                         )
@@ -1448,7 +1456,7 @@ struct GroupManagerView: View {
                             // Tapping the QR button itself satisfies the
                             // coach mark's purpose - dismiss it.
                             if !hasSeenFirstGroupQRCoachMark {
-                                hasSeenFirstGroupQRCoachMark = true
+                                markFirstGroupQRCoachMarkSeen()
                             }
                         } label: {
                             Image(systemName: "qrcode")
