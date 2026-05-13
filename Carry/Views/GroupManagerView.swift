@@ -16,6 +16,7 @@ private extension View {
 
 struct GroupManagerView: View {
     @EnvironmentObject var storeService: StoreService
+    @EnvironmentObject var authService: AuthService
     @State private var allMembers: [Player]
     var onCourseChanged: ((SelectedCourse) -> Void)?
     var onTeeTimeChanged: ((Date?) -> Void)?
@@ -3396,6 +3397,13 @@ struct GroupManagerView: View {
 
     // MARK: - Scorer Picker Sheet
 
+    /// Upgraded scorer picker — replaces the old flat list of Carry users
+    /// with the shared `ScorerAssignmentView` so the SG creator can BOTH
+    /// search globally for any Carry user AND send an SMS invite to a
+    /// non-Carry phone. Matches QG's PlayerGroupsSheet scorer slot UX.
+    /// The binding handles all three state transitions
+    /// (.confirmed / .invited / .empty) and persists via
+    /// reservePhoneInvite + saveScorerIds.
     private func scorerPickerSheet(groupIndex: Int) -> some View {
         VStack(spacing: 0) {
             Text("Assign Scorer")
@@ -3404,7 +3412,7 @@ struct GroupManagerView: View {
                 .padding(.top, 40)
                 .padding(.bottom, 6)
 
-            Text("Pick who keeps score for Group \(groupIndex + 1).")
+            Text("Pick or invite who keeps score for Group \(groupIndex + 1).")
                 .font(.carry.captionLG)
                 .foregroundColor(Color.textSecondary)
                 .multilineTextAlignment(.center)
@@ -3412,72 +3420,172 @@ struct GroupManagerView: View {
                 .padding(.bottom, 20)
 
             if groupIndex < groups.count {
-                // Only confirmed Carry users can score — guests have no profile
-                // to attribute scores to, and pending users haven't accepted yet.
-                // If the current group's roster has no eligible scorer, fall back
-                // to the full group roster so the creator can pick someone who
-                // will join later.
-                let source = groups[groupIndex].isEmpty ? allAvailable : groups[groupIndex]
-                let candidates = source.filter(\.canScore)
-                ForEach(candidates) { player in
-                    let isCurrentScorer = groupIndex < scorerIDs.count && scorerIDs[groupIndex] == player.id
-
-                    Button {
-                        // If the group is empty, add the player to it
-                        if groups[groupIndex].isEmpty || !groups[groupIndex].contains(where: { $0.id == player.id }) {
-                            groups[groupIndex].append(player)
-                        }
-                        scorerIDs[groupIndex] = player.id
-                        scorerPickerItem = nil
-                        saveScorerIds()
-                    } label: {
-                        HStack(spacing: 14) {
-                            PlayerAvatar(player: player, size: 43)
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(player.shortName)
-                                    .font(.system(size: 19, weight: .semibold))
-                                    .foregroundColor(Color.textPrimary)
-                                    .lineLimit(1)
-                                let pops: Int = {
-                                    if let tee = currentCourse?.teeBox {
-                                        return tee.playingHandicap(forIndex: player.handicap, percentage: handicapPercentage)
-                                    }
-                                    return Int(player.handicap.rounded())
-                                }()
-                                Text(pops != 0 ? "\(formatHandicap(player.handicap)) · \(pops > 0 ? "\(pops)" : "+\(abs(pops))")" : formatHandicap(player.handicap))
-                                    .font(.system(size: 14))
-                                    .foregroundColor(Color.textSecondary)
-                            }
-
-                            Spacer()
-
-                            if isCurrentScorer {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .font(.system(size: 22))
-                                    .foregroundColor(Color.textPrimary)
-                            } else {
-                                Circle()
-                                    .strokeBorder(Color(hexString: "#DDDDDD"), lineWidth: 1.5)
-                                    .frame(width: 22, height: 22)
-                            }
-                        }
-                        .padding(.horizontal, 24)
-                        .padding(.vertical, 12)
+                let scorerColors = ["#4CAF50", "#2196F3", "#FF9800", "#E91E63", "#9C27B0", "#00BCD4", "#FF5722", "#607D8B"]
+                ScorerAssignmentView(
+                    scorer: scorerPickerBinding(groupIndex: groupIndex),
+                    excludeProfileIds: scorerPickerExcludedIds(exceptGroup: groupIndex),
+                    groupLabel: "Group \(groupIndex + 1)",
+                    defaultColor: scorerColors[(groupIndex * 4) % scorerColors.count],
+                    readOnly: false,
+                    selfPhoneDigits: authService.currentUser?.phone,
+                    smsBodyBuilder: { _ in
+                        // Deep link points at the live SG so SMS recipients
+                        // land directly in the right group when they tap.
+                        let id = supabaseGroupId?.uuidString ?? ""
+                        return "Score our skins game on Carry! https://carryapp.site/invite?group=\(id)"
                     }
-                    .buttonStyle(.plain)
-
-                    if player.id != groups[groupIndex].last?.id {
-                        Rectangle()
-                            .fill(Color.bgPrimary)
-                            .frame(height: 1)
-                            .padding(.leading, 86)
-                    }
-                }
+                )
+                .padding(.horizontal, 24)
             }
 
             Spacer()
         }
+    }
+
+    /// Profile IDs the picker should exclude from search — the creator
+    /// can't be reassigned (locked) and every other group's scorer is
+    /// already taken.
+    private func scorerPickerExcludedIds(exceptGroup gi: Int) -> Set<UUID> {
+        var ids = Set<UUID>()
+        // Exclude the creator — they're locked into their own group's
+        // scorer slot regardless.
+        if let creatorPlayer = allMembers.first(where: { $0.id == creatorId }),
+           let pid = creatorPlayer.profileId {
+            ids.insert(pid)
+        }
+        // Exclude players currently assigned as scorer of OTHER groups,
+        // so the picker doesn't let the creator double-assign.
+        for (otherGi, sid) in scorerIDs.enumerated() {
+            if otherGi == gi { continue }
+            if sid == 0 { continue }
+            if let p = allMembers.first(where: { $0.id == sid }),
+               let pid = p.profileId {
+                ids.insert(pid)
+            }
+        }
+        return ids
+    }
+
+    /// Bridges the picker's `ScorerAssignmentView` with the parent's
+    /// `groups[]` + `scorerIDs[]` state + server-side phone-invite rows.
+    /// Mirrors `PlayerGroupsSheet.scorerSlotBinding` for parity. Saves
+    /// scorerIds + persists phone-invite row on .invited transition.
+    private func scorerPickerBinding(groupIndex: Int) -> Binding<ScorerSlot> {
+        Binding(
+            get: {
+                guard groupIndex < scorerIDs.count, groupIndex < groups.count else {
+                    return ScorerSlot()
+                }
+                let sid = scorerIDs[groupIndex]
+                guard sid != 0,
+                      let player = groups[groupIndex].first(where: { $0.id == sid })
+                else { return ScorerSlot() }
+                if player.isPendingInvite {
+                    return ScorerSlot(
+                        name: player.name,
+                        color: player.color,
+                        isPendingInvite: true,
+                        phoneNumber: player.phoneNumber,
+                        inviteMemberId: player.inviteMemberId
+                    )
+                } else {
+                    return ScorerSlot(
+                        name: player.name,
+                        handicap: String(player.handicap),
+                        profileId: player.profileId,
+                        color: player.color,
+                        avatarUrl: player.avatarUrl,
+                        homeClub: player.homeClub
+                    )
+                }
+            },
+            set: { newValue in
+                guard groupIndex < scorerIDs.count, groupIndex < groups.count else { return }
+                let oldValue = self.scorerPickerBinding(groupIndex: groupIndex).wrappedValue
+
+                // .confirmed → Carry user picked from search. Add to the
+                // group if not already there, set scorerIDs, persist.
+                if let profileId = newValue.profileId, oldValue.profileId != profileId {
+                    let player = newValue.asPlayer
+                    // Move semantics: remove from any other group first.
+                    for gi in 0..<groups.count where gi != groupIndex {
+                        if let prevIdx = groups[gi].firstIndex(where: { $0.id == player.id }) {
+                            groups[gi].remove(at: prevIdx)
+                            if gi < scorerIDs.count && scorerIDs[gi] == player.id {
+                                scorerIDs[gi] = 0
+                            }
+                        }
+                    }
+                    // Insert if not already in this group.
+                    if !groups[groupIndex].contains(where: { $0.id == player.id }) {
+                        groups[groupIndex].append(player)
+                    }
+                    scorerIDs[groupIndex] = player.id
+                    selectedIDs.insert(player.id)
+                    if !allMembers.contains(where: { $0.id == player.id }) {
+                        allMembers.append(player)
+                    }
+                    saveScorerIds()
+                    scorerPickerItem = nil
+                    _ = profileId  // silence "unused" — we read it above for branch selection
+                }
+                // .invited → SMS invite path. Mint a pre-allocated id on
+                // the ScorerSlot side (already done in
+                // ScorerAssignmentView.sendInvite), create the server
+                // phone-invite row via reservePhoneInvite, add a pending
+                // Player to groups[groupIndex] so the tee table renders
+                // it immediately.
+                else if newValue.isPendingInvite && !oldValue.isPendingInvite {
+                    let player = newValue.asPlayer
+                    groups[groupIndex].append(player)
+                    scorerIDs[groupIndex] = player.id
+                    selectedIDs.insert(player.id)
+                    if !allMembers.contains(where: { $0.id == player.id }) {
+                        allMembers.append(player)
+                    }
+                    if let groupId = supabaseGroupId,
+                       let inviteId = newValue.inviteMemberId,
+                       let phone = newValue.phoneNumber {
+                        Task {
+                            guard let userId = try? await SupabaseManager.shared.client.auth.session.user.id else { return }
+                            _ = try? await GroupService().reservePhoneInvite(
+                                id: inviteId,
+                                groupId: groupId,
+                                phone: phone,
+                                invitedBy: userId,
+                                groupNum: groupIndex + 1,
+                                inviteeName: newValue.name
+                            )
+                        }
+                    }
+                    saveScorerIds()
+                    scorerPickerItem = nil
+                }
+                // .empty → X-clear. Remove the local Player, clear
+                // scorerIDs, hard-delete the server phone-invite row if
+                // one was pending. Confirmed Carry user just gets
+                // unassigned (no server delete — they may still be a
+                // group member outside this slot).
+                else if newValue.state == .empty && oldValue.state != .empty {
+                    scorerIDs[groupIndex] = 0
+                    if oldValue.isPendingInvite, let inviteId = oldValue.inviteMemberId {
+                        let removedStableId = Player.stableId(from: inviteId)
+                        groups[groupIndex].removeAll { $0.id == removedStableId }
+                        if let groupId = supabaseGroupId {
+                            Task {
+                                _ = try? await SupabaseManager.shared.client
+                                    .from("group_members")
+                                    .delete()
+                                    .eq("id", value: inviteId.uuidString)
+                                    .execute()
+                            }
+                        }
+                    }
+                    saveScorerIds()
+                    scorerPickerItem = nil
+                }
+            }
+        )
     }
 
     // MARK: - Add Player Chip
@@ -3698,12 +3806,17 @@ struct GroupManagerView: View {
     // a scorer via search or SMS invite.
     private func missingScorerBanner(forGroup groupIndex: Int) -> some View {
         Button {
-            // Route to the same Manage sheet the "Invite & Manage" button uses.
-            // Quick Game → PlayerGroupsSheet; Skins Group → ManageMembersSheet.
+            // Route to the appropriate scorer-assignment surface:
+            //   - Quick Game → PlayerGroupsSheet (per-group scorer slots)
+            //   - Skins Group → scorerPickerSheet (single-slot ScorerAssignmentView
+            //     with search + SMS invite, 1.0.9 upgrade)
+            //
+            // Pre-1.0.9: SG routed to ManageMembersSheet which had NO
+            // scorer assignment UI — the "Add Scorer" CTA was a trap.
             if isQuickGame {
                 showPlayerGroups = true
             } else {
-                showManageMembers = true
+                scorerPickerItem = SheetItem(id: groupIndex)
             }
         } label: {
             HStack {
