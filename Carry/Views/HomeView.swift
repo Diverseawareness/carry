@@ -57,9 +57,16 @@ struct HomeRound: Identifiable {
         let total: Int  // total players
     }
 
-    /// Players sorted by winnings (leader first), then by name for ties
+    /// Players sorted by winnings (leader first), then by name for ties.
+    /// Pending members (SMS invitees or pending Carry accepts) are pushed
+    /// to the END of the list regardless of winnings — they read as
+    /// "still joining" and shouldn't crowd the leader position on the
+    /// game cards (Home + Games tab).
     var sortedPlayers: [Player] {
         players.sorted { a, b in
+            let ap = a.isPendingInvite || a.isPendingAccept
+            let bp = b.isPendingInvite || b.isPendingAccept
+            if ap != bp { return !ap && bp }
             let aWin = playerWinnings[a.id] ?? 0
             let bWin = playerWinnings[b.id] ?? 0
             if aWin != bWin { return aWin > bWin }

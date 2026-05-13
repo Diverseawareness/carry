@@ -1281,10 +1281,19 @@ struct GroupsListView: View {
                             .padding(.bottom, 12)
                     }
 
-                    // Player pills
+                    // Player pills — pending members (isPendingInvite or
+                    // isPendingAccept) pushed to the end so the active
+                    // roster reads cleanly left-to-right. Stable sort
+                    // preserves the original order within each bucket.
+                    let sortedMembers = group.members.enumerated().sorted { lhs, rhs in
+                        let lp = lhs.element.isPendingInvite || lhs.element.isPendingAccept
+                        let rp = rhs.element.isPendingInvite || rhs.element.isPendingAccept
+                        if lp != rp { return !lp && rp }
+                        return lhs.offset < rhs.offset
+                    }.map(\.element)
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
-                            ForEach(group.members) { player in
+                            ForEach(sortedMembers) { player in
                                 HStack(spacing: 6) {
                                     PlayerAvatar(player: player, size: 28)
                                     Text(player.shortName)
