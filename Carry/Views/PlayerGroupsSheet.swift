@@ -49,6 +49,7 @@ struct PlayerGroupsResult {
 /// doesn't re-render the parent GroupManagerView (4000+ lines).
 struct PlayerGroupsSheet: View {
     @EnvironmentObject var storeService: StoreService
+    @EnvironmentObject var authService: AuthService
 
     // Initial data — copied into local @State on appear
     let initialGroups: [[Player]]
@@ -430,7 +431,8 @@ struct PlayerGroupsSheet: View {
                             excludeProfileIds: excludedScorerIds(exceptGroup: groupIndex),
                             groupLabel: "Group \(groupIndex + 1)",
                             defaultColor: scorerColors[(groupIndex * 4) % scorerColors.count],
-                            readOnly: groups[groupIndex].contains(where: { $0.id == creatorId })
+                            readOnly: groups[groupIndex].contains(where: { $0.id == creatorId }),
+                            selfPhoneDigits: authService.currentUser?.phone
                         )
                     }
                 }

@@ -42,6 +42,7 @@ private let slotColors = [
 
 struct QuickGameSheet: View {
     @EnvironmentObject var storeService: StoreService
+    @EnvironmentObject var authService: AuthService
     let currentUser: Player
     let recentQuickGames: [SavedGroup]
     let onCreate: (SavedGroup) -> Void
@@ -934,6 +935,7 @@ struct QuickGameSheet: View {
                         groupLabel: "Group \(groupIndex + 1)",
                         defaultColor: slotColors[(groupIndex * 4) % slotColors.count],
                         readOnly: groupIndex == 0,
+                        selfPhoneDigits: authService.currentUser?.phone,
                         smsBodyBuilder: { _ in
                             // Lazy-allocate the draft group UUID on first phone
                             // invite, then reuse for any subsequent phone invites

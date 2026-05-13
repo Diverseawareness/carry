@@ -29,6 +29,17 @@ struct ScorerAssignmentView: View {
     /// When true, shows confirmed state without clear button (used for creator/group 1).
     var readOnly: Bool = false
 
+    /// Digits-only phone of the inviter (the logged-in user, taken from
+    /// their profile). Used to block self-invite: if a creator types their
+    /// OWN phone into the SMS field and hits send, the server's
+    /// `reconcile_phone_invite_at_insert` trigger collapses the new
+    /// `group_members` row directly into the inviter's profile — leaving
+    /// the iOS scorer slot pointing at a `stableId(UUID)` that no longer
+    /// matches any player on the next refresh, so the slot wipes
+    /// silently. Blocking client-side gives the inviter a clear error
+    /// instead of a mysterious empty slot.
+    var selfPhoneDigits: String? = nil
+
     /// Optional builder that, given the phone digits, returns the SMS body
     /// to send. When nil, falls back to a generic body (legacy behavior).
     /// Quick Game injects a per-group deep-link body using a pre-allocated
@@ -350,6 +361,18 @@ struct ScorerAssignmentView: View {
     private func sendInvite() {
         let digits = phoneText.filter { $0.isNumber }
         guard digits.count >= 10 else { return }
+
+        // Self-invite block. Compare last-10-digits to ignore the leading
+        // "1" country-code variance (profile stores 10, user might type
+        // 11). If the inviter is SMS-inviting their own phone, the server
+        // reconciles the new row into their existing profile immediately
+        // and the iOS scorer slot orphans on next refresh.
+        if let selfDigits = selfPhoneDigits?.filter({ $0.isNumber }),
+           selfDigits.suffix(10) == digits.suffix(10),
+           !selfDigits.isEmpty {
+            ToastManager.shared.error("You can't invite yourself — use search to add yourself as scorer.")
+            return
+        }
 
         let name = phoneName.trimmingCharacters(in: .whitespaces)
 
