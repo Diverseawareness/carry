@@ -909,6 +909,17 @@ struct PlayerGroupsSheet: View {
                     }
                     scorerIDs[groupIndex] = player.id
                 } else if newValue.isPendingInvite && !oldValue.isPendingInvite {
+                    // Transitioning to SMS-invite scorer. Clean up the prior
+                    // slot occupant so they don't linger as a "demoted"
+                    // non-scorer in this group. Two cases:
+                    //  - oldValue was a confirmed Carry user (search-added):
+                    //    remove by stableId(profileId), unless they're the
+                    //    creator (creator stays in the group regardless).
+                    //  - oldValue was empty: nothing to remove.
+                    if let oldProfileId = oldValue.profileId {
+                        let oldId = Player.stableId(from: oldProfileId)
+                        groups[groupIndex].removeAll { $0.id == oldId && $0.id != currentUserId && $0.id != creatorId }
+                    }
                     let player = newValue.asPlayer
                     groups[groupIndex].append(player)
                     scorerIDs[groupIndex] = player.id
