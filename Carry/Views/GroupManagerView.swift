@@ -28,6 +28,15 @@ struct GroupManagerView: View {
     @State private var dragSourceGroup: Int?
     @State private var dropTargetGroup: Int?
     @State private var dropTargetIndex: Int?  // target row index for within-group reorder
+    /// SwiftUI `.onDrag` sets `dragPlayer`/`dragSourceGroup` but only
+    /// the drop delegates clear them — so a cancelled drag (user lifts
+    /// outside any drop target) leaves the state stuck, and the
+    /// drag-only affordances (e.g. the "+ Add Tee Group" dotted zone)
+    /// keep rendering at idle. This task is the safety reset: 3s after
+    /// the most recent drag start, if no drop has fired yet, clear the
+    /// drag state. Cancelled in drop delegates' `resetDrag()` when a
+    /// proper completion happens.
+    @State private var dragResetTask: Task<Void, Never>?
     @State private var orderSyncTask: Task<Void, Never>?
     @State private var teeTimesSyncTask: Task<Void, Never>?
     @State private var showAddSheet = false
@@ -4080,6 +4089,23 @@ struct GroupManagerView: View {
             view.onDrag {
                 dragPlayer = player
                 dragSourceGroup = groupIndex
+                // Safety reset: clear dragPlayer 3s after the drag
+                // starts if no drop delegate completed it. Catches
+                // the SwiftUI gap where a cancelled drag (finger
+                // lifted outside any target) never fires
+                // performDrop — without this, the "+ Add Tee Group"
+                // dotted zone (and any other dragPlayer-gated UI)
+                // stayed visible at idle indefinitely.
+                dragResetTask?.cancel()
+                dragResetTask = Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 3_000_000_000)
+                    if !Task.isCancelled {
+                        dragPlayer = nil
+                        dragSourceGroup = nil
+                        dropTargetGroup = nil
+                        dropTargetIndex = nil
+                    }
+                }
                 return NSItemProvider(object: String(player.id) as NSString)
             }
         }
