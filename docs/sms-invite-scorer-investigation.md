@@ -132,6 +132,10 @@ Two related gaps, distinct severity:
 5. If SMS test is complete, the result determines next steps per the decision matrix
 6. The B+ prefill fix is documented above — implement only after Gap 2 picture is clear
 
+## Side-quest TODOs (don't block this test)
+
+- **SMS link preview missing on Daniel's current phone** (2026-05-12). The SMS sent from Ziggy contained `https://carryapp.site/invite` (no group UUID query param visible). Preview rendered on the OLD phone (Ziggy's device) but not on Daniel's CURRENT phone. Possible causes: (a) iOS link-preview behavior differs by device, (b) the SMS body itself is malformed/missing query params for `?group=UUID` (need to check SMS body construction in `inviteMemberByPhone` flow / QuickStartSheet send-invite path), (c) Carry app pre-installed status affects preview rendering. Investigate later — not blocking this test.
+
 ## Last updated
 
 2026-05-12 — initial capture during chat session. Update as test progresses.
