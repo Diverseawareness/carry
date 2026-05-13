@@ -2,17 +2,23 @@
 
 **TL;DR:** `scorerIDs[gi]: Int` is the per-group scorer marker (0 = unassigned). Creator is locked as scorer of their own group. `canScore` filters eligibility.
 
-## 🔒 Foundational premise — every Quick Game tee group must have a Carry-user scorer
+## 🔒 Foundational premise — every tee group must have a Carry-user scorer
 
-A Quick Game tee group **cannot exist without a Carry-user scorer in slot 0**. Guests, pending invites, and SMS invitees CANNOT be scorers — they don't have an app account, can't authenticate, can't write scores to Supabase.
+Universal rule across game types: a tee group **cannot exist without a Carry-user scorer**. Guests, pending invites, and SMS invitees CANNOT be scorers — they don't have an app account, can't authenticate, can't write scores to Supabase.
 
-| Surface | Where the rule is enforced |
+| Game type | How the rule holds |
 |---|---|
-| Quick Game create flow | [QuickStartSheet.swift:116](../../Carry/Views/QuickStartSheet.swift:116) — `canSave` blocks Create when any populated group's slot 0 has no `existingProfileId` and isn't a pending invite |
+| Skins Group | Trivially satisfied — SGs are Carry-only by the Skins-Groups-Carry-only invariant (no guests possible in `group_members`). Every member is a Carry user, so any of them can be a scorer. |
+| Quick Game | Enforced explicitly — guests CAN appear in QGs but never as scorers. `canSave` validation in [QuickStartSheet.swift:116](../../Carry/Views/QuickStartSheet.swift:116) blocks Create when any populated group's slot 0 has no `existingProfileId` and isn't a pending invite. |
+
+Mid-round defenses (apply to both):
+
+| Surface | Enforcement |
+|---|---|
 | Mid-round scorer reassignment | `syncScorerIDs` rule 4 — wipes permanent-guest scorer assignments to 0, surfacing the missing-scorer banner |
 | `canScore` predicate | [Player.swift:83-85](../../Carry/Models/Player.swift:83) — single source of truth: `profileId != nil && !isGuest && !isPendingInvite && !isPendingAccept` |
 
-This means downstream code can SAFELY ASSUME every populated tee group has a Carry user in slot 0. Defensive backstops that "ensure a Carry user exists" (like the prior `prefillFromRecentGame` overwrite at QuickStartSheet:411-417) are unnecessary — `canSave` will already block any state that violates the premise.
+This means downstream code can SAFELY ASSUME every populated tee group has a Carry user as scorer. Defensive backstops that "ensure a Carry user exists" (like the prior `prefillFromRecentGame` overwrite at QuickStartSheet:411-417) are unnecessary — `canSave` already blocks any state that violates the premise on the QG side, and SGs structurally cannot violate it.
 
 ## Eligibility predicate
 
