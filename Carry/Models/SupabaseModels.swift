@@ -590,6 +590,12 @@ struct GroupMemberDTO: Codable, Identifiable {
 }
 
 struct GroupMemberInsert: Codable {
+    /// Optional client-supplied PK. When set, Postgres uses it instead of the
+    /// gen_random_uuid() default. Used by the SMS-invite-as-scorer flow so
+    /// the slot can anchor on the row's UUID at slot-time and scorer_ids can
+    /// be persisted with that same UUID — see GroupService.reservePhoneInvite
+    /// + the SMS-scorer reconciliation plan.
+    var id: UUID? = nil
     let groupId: UUID
     let playerId: UUID
     var role: String = "member"
@@ -599,6 +605,7 @@ struct GroupMemberInsert: Codable {
     var groupNum: Int? = nil
 
     enum CodingKeys: String, CodingKey {
+        case id
         case groupId = "group_id"
         case playerId = "player_id"
         case role, status
@@ -609,6 +616,7 @@ struct GroupMemberInsert: Codable {
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
+        if let id { try container.encode(id, forKey: .id) }
         try container.encode(groupId, forKey: .groupId)
         try container.encode(playerId, forKey: .playerId)
         try container.encode(role, forKey: .role)

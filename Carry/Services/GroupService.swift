@@ -434,6 +434,57 @@ final class GroupService {
             .execute()
     }
 
+    /// Insert a phone-invite group_members row with a CLIENT-SUPPLIED id so
+    /// the SMS-invite-as-scorer flow can anchor scorer_ids on this UUID.
+    ///
+    /// Called from two paths:
+    /// - Quick Game creation (post-`createGroup`, before the round starts): the
+    ///   slot pre-allocates a UUID at "Send Invite" time, persists it on the
+    ///   `PlayerSlot.inviteMemberId`, then `handleQuickGameCreate` invokes
+    ///   this with the same id so the row's PK matches what scorer_ids has.
+    /// - PlayerGroupsSheet post-creation save: the same flow, on an existing
+    ///   group.
+    ///
+    /// Returns the row's id — typically the `id` parameter, but if a row with
+    /// this phone already exists in the group (dedup-by-phone), returns that
+    /// existing row's id instead. Caller MUST re-anchor the slot on the
+    /// returned id when it differs from what they passed in, otherwise
+    /// scorer_ids will reference a non-existent row.
+    ///
+    /// The reverse trigger `reconcile_phone_invite_at_insert` may rewrite the
+    /// row to status='active' + real player_id if the phone matches an existing
+    /// profile. The row's `id` stays the supplied UUID either way, so the
+    /// scorer slot anchor remains valid; the next refresh resolves the slot
+    /// via the regular member path (Player.id = stableId(profile.id)) and the
+    /// reconciliation trigger extension keeps scorer_ids in sync.
+    func reservePhoneInvite(id: UUID, groupId: UUID, phone: String, invitedBy: UUID, groupNum: Int = 1) async throws -> UUID {
+        // Dedup by phone — same shape as inviteMemberByPhone. If a row with
+        // this phone already exists in this group, return its id so the
+        // caller can re-anchor.
+        let existing: [GroupMemberDTO] = try await client.from("group_members")
+            .select()
+            .eq("group_id", value: groupId.uuidString)
+            .eq("invited_phone", value: phone)
+            .execute()
+            .value
+        if let existingRow = existing.first {
+            return existingRow.id
+        }
+
+        try await client.from("group_members")
+            .insert(GroupMemberInsert(
+                id: id,
+                groupId: groupId,
+                playerId: invitedBy,
+                role: "member",
+                status: "invited",
+                invitedPhone: phone,
+                groupNum: groupNum
+            ))
+            .execute()
+        return id
+    }
+
     /// Check if a phone number has pending group invites (called on sign-up/sign-in).
     func checkPhoneInvites(phone: String) async throws -> [GroupMemberDTO] {
         try await client.from("group_members")
