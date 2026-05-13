@@ -456,7 +456,14 @@ struct ManageMembersSheet: View {
                                         }
                                         .frame(width: 50, height: 50)
 
-                                        Text(player.isPendingInvite ? formatPhoneDisplay(player.phoneNumber) : player.shortName)
+                                        // Prefer the typed `invitee_name` (carried through
+                                        // as Player.name from loadSingleGroup) when it
+                                        // exists — falls back to the formatted phone when
+                                        // the inviter didn't type a name (or for legacy
+                                        // pre-invitee_name rows where name is the raw
+                                        // phone digits). Detect "is just digits" by
+                                        // stripping non-digit chars and comparing length.
+                                        Text(pendingChipLabel(for: player))
                                             .font(.system(size: 12, weight: .semibold))
                                             .foregroundColor(Color.deepNavy.opacity(0.7))
                                             .lineLimit(1)
@@ -704,5 +711,25 @@ struct ManageMembersSheet: View {
             return "(\(area)) \(mid)-\(last)"
         }
         return phone
+    }
+
+    /// Label for the pending-invites chip grid. Prefers the inviter-
+    /// typed name (carried through Player.name from
+    /// loadSingleGroup's invitee_name read) so users see "Dan" rather
+    /// than "(333) 333-..." truncated. Falls back to the formatted
+    /// phone when no name was typed at invite time, or when the row
+    /// predates the invitee_name column (Player.name = raw phone
+    /// digits in that legacy path).
+    private func pendingChipLabel(for player: Player) -> String {
+        if !player.isPendingInvite { return player.shortName }
+        let trimmed = player.name.trimmingCharacters(in: .whitespaces)
+        let digitsOnly = trimmed.filter(\.isNumber).count == trimmed.filter({ !$0.isWhitespace }).count
+        if !trimmed.isEmpty, !digitsOnly {
+            // shortName handles "First L." truncation for multi-word
+            // names; for single-word typed names it returns name
+            // unchanged.
+            return player.shortName
+        }
+        return formatPhoneDisplay(player.phoneNumber)
     }
 }
