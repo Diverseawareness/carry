@@ -659,7 +659,11 @@ struct GroupManagerView: View {
     }
 
     private var buttonEnabled: Bool {
-        canStartRound || needsNextSchedule
+        // Missing-scorer for Quick Games keeps the button tappable so its
+        // tap can route to PlayerGroupsSheet (the fix shortcut — see the
+        // button branch in the body). `canStartRound` still says false so
+        // the actual start-the-round path won't fire.
+        canStartRound || needsNextSchedule || missingScorerGroupIndex != nil
     }
 
     /// Kept as an alias of `buttonEnabled` so the styling helper stays
@@ -1848,6 +1852,13 @@ struct GroupManagerView: View {
                             onBack?()
                         } else if needsNextSchedule {
                             showSettings = true
+                        } else if missingScorerGroupIndex != nil {
+                            // Quick Games suppress the pink missing-scorer banner
+                            // (it's only shown for single-scorer Skins Groups).
+                            // The CTA button is the user's fix shortcut — label
+                            // reads "Group N needs scorer" and tap opens the
+                            // tee-group sheet where they can assign one.
+                            showPlayerGroups = true
                         } else if needsTeeTimesSet {
                             // Quick Games don't gate `canStartRound` on tee times
                             // being set, so the button is enabled even when the
@@ -3521,7 +3532,12 @@ struct GroupManagerView: View {
             // designated scorer to miss, so the banner would be a confusing
             // false alarm when (for example) the creator swipes themselves
             // off the sheet and only guests remain. Gate on single-scorer mode.
-            if needsScorer && isCreator && !isLiveRound && !roundStarted && scoringMode != .everyone {
+            //
+            // Quick Games suppress the banner — instead, the bottom CTA
+            // doubles as the fix shortcut: when scorer is missing the label
+            // reads "Group N needs scorer" and tap opens PlayerGroupsSheet
+            // (see the button branch in the body, plus `buttonEnabled`).
+            if needsScorer && isCreator && !isLiveRound && !roundStarted && scoringMode != .everyone && !isQuickGame {
                 missingScorerBanner(forGroup: index)
             }
 
