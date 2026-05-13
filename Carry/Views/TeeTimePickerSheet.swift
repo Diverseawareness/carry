@@ -60,6 +60,13 @@ struct TeeTimePickerSheet: View {
                         .foregroundColor(Color.textPrimary)
                         .padding(.top, 20)
 
+                    // Height bumped to 180pt so all three wheel columns
+                    // (date, hour, minute) are visible. The previous
+                    // 120pt frame clipped the hour/minute columns off
+                    // the bottom — users could spin date but not time.
+                    // QG's standalone picker uses 160pt; SG needs a
+                    // touch more because the surrounding sheet packs
+                    // tighter (recurrence section below).
                     DatePicker(
                         "",
                         selection: $selectedDate,
@@ -68,9 +75,9 @@ struct TeeTimePickerSheet: View {
                     )
                     .datePickerStyle(.wheel)
                     .labelsHidden()
-                    .frame(height: 120)
+                    .frame(height: 180)
                     .clipped()
-                    .padding(.horizontal, 40)
+                    .padding(.horizontal, 16)
                     .padding(.top, 8)
 
                     // Recurring-only: Frequency + Day picker
