@@ -594,7 +594,18 @@ struct ManageMembersSheet: View {
     }
 
     private func onlineSearchResultRow(_ profile: ProfileDTO) -> some View {
-        let isAlreadyAdded = localAllAvailable.contains { $0.profileId == profile.id }
+        let existingMember = localAllAvailable.first { $0.profileId == profile.id }
+        let isAlreadyAdded = existingMember != nil
+        // Pill state derived from the actual member's local state so a
+        // confirmed/active member doesn't show "Pending" (which was the
+        // catch-all for "already added" — confusing when the searcher
+        // is searching themselves and is fully joined).
+        let pillLabel: String? = {
+            guard let member = existingMember else { return nil }
+            if member.isPendingAccept { return "Pending" }
+            if member.isPendingInvite { return "Invited" }
+            return "Added"
+        }()
         return Button {
             guard !isAlreadyAdded else { return }
             // Carry users go in as active immediately (no accept step).
@@ -623,8 +634,8 @@ struct ManageMembersSheet: View {
                     }
                 }
                 Spacer()
-                if isAlreadyAdded {
-                    Text("Pending")
+                if let label = pillLabel {
+                    Text(label)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(Color.pendingFill)
                         .padding(.horizontal, 7)
