@@ -65,7 +65,27 @@ struct ManageMembersSheet: View {
     private var isSearchFocused: Bool { focused == .memberSearch }
 
     private var localAllAvailable: [Player] {
-        (allAvailable + localGuests).filter { !locallyRemovedIds.contains($0.id) }
+        // Dedup local-vs-server when both have the same logical
+        // member. Two collision cases:
+        //   1. SMS invite — local Player has id = nextGuestID (small
+        //      int) + inviteMemberId set; the server-loaded Player has
+        //      id = stableId(inviteMemberId) (huge int). Different
+        //      ids → both pass through (`localGuests + allAvailable`
+        //      → duplicate row in Pending section). Match on
+        //      inviteMemberId to drop the local stub once the server
+        //      version arrives.
+        //   2. Search-added Carry user — local Player.id matches the
+        //      server Player.id (both Player.stableId(from: profile.id)),
+        //      so set-union naturally dedups by id below.
+        let serverInviteIds: Set<UUID> = Set(allAvailable.compactMap(\.inviteMemberId))
+        let serverIds: Set<Int> = Set(allAvailable.map(\.id))
+        let filteredLocal = localGuests.filter { local in
+            if let mid = local.inviteMemberId, serverInviteIds.contains(mid) {
+                return false
+            }
+            return !serverIds.contains(local.id)
+        }
+        return (allAvailable + filteredLocal).filter { !locallyRemovedIds.contains($0.id) }
     }
 
     init(
