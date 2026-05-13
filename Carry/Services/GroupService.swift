@@ -1203,7 +1203,13 @@ final class GroupService {
             return (a.profileId?.uuidString ?? "") < (b.profileId?.uuidString ?? "")
         }
 
-        // Add phone-invited members as pending invite players
+        // Add phone-invited members as pending invite players.
+        // inviteMemberId carries the server row's `id` so downstream code
+        // that needs to identify or mutate this specific group_members row
+        // (e.g. GroupManagerView.removePlayer deleting a mistakenly-invited
+        // scorer) can target it directly. Player.id stays as
+        // stableId(invite.id) for SwiftUI list identity + scorer_ids
+        // lookup alignment.
         for invite in phoneInvites {
             let phone = invite.invitedPhone ?? ""
             let player = Player(
@@ -1218,7 +1224,8 @@ final class GroupService {
                 venmoUsername: nil,
                 phoneNumber: phone,
                 isPendingInvite: true,
-                profileId: nil
+                profileId: nil,
+                inviteMemberId: invite.id
             )
             players.append(player)
         }

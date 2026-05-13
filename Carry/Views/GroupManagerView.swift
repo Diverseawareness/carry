@@ -2982,18 +2982,42 @@ struct GroupManagerView: View {
             recentlyRemovedIds.insert(player.id)
             allMembers.removeAll { $0.id == player.id }
             selectedIDs.remove(player.id)
-            if let groupId = supabaseGroupId, let profileId = player.profileId {
+            if let groupId = supabaseGroupId {
                 Task {
                     do {
-                        try await SupabaseManager.shared.client
-                            .from("group_members")
-                            .delete()
-                            .eq("group_id", value: groupId.uuidString)
-                            .eq("player_id", value: profileId.uuidString)
-                            .execute()
-                        #if DEBUG
-                        print("[removePlayer] ✅ Hard-deleted \(player.name) (\(profileId)) from \(groupId)")
-                        #endif
+                        // Two delete paths:
+                        //  - Pending SMS invite: profileId is nil; the row's
+                        //    player_id is the inviter's UUID placeholder, so
+                        //    deleting by (group_id, player_id) would either
+                        //    miss or accidentally hit the inviter. Use the
+                        //    row id (Player.inviteMemberId, set by
+                        //    loadSingleGroup at row construction time).
+                        //  - Carry user / guest: profileId is the canonical
+                        //    handle. Delete by (group_id, player_id).
+                        if player.isPendingInvite, let inviteMemberId = player.inviteMemberId {
+                            try await SupabaseManager.shared.client
+                                .from("group_members")
+                                .delete()
+                                .eq("id", value: inviteMemberId.uuidString)
+                                .execute()
+                            #if DEBUG
+                            print("[removePlayer] ✅ Hard-deleted phone-invite \(player.name) (row=\(inviteMemberId)) from \(groupId)")
+                            #endif
+                        } else if let profileId = player.profileId {
+                            try await SupabaseManager.shared.client
+                                .from("group_members")
+                                .delete()
+                                .eq("group_id", value: groupId.uuidString)
+                                .eq("player_id", value: profileId.uuidString)
+                                .execute()
+                            #if DEBUG
+                            print("[removePlayer] ✅ Hard-deleted \(player.name) (\(profileId)) from \(groupId)")
+                            #endif
+                        } else {
+                            #if DEBUG
+                            print("[removePlayer] ⚠️ Skipping server delete — no profileId or inviteMemberId for \(player.name)")
+                            #endif
+                        }
                     } catch {
                         #if DEBUG
                         print("[removePlayer] ❌ Failed to delete \(player.name): \(error)")
