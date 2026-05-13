@@ -2,23 +2,31 @@
 
 **TL;DR:** `scorerIDs[gi]: Int` is the per-group scorer marker (0 = unassigned). Creator is locked as scorer of their own group. `canScore` filters eligibility.
 
-## 🔒 Foundational premise — every tee group must have a Carry-user scorer
+## 🔒 Foundational premise — every tee group's scorer is a Carry user (or becoming one)
 
-Universal rule across game types: a tee group **cannot exist without a Carry-user scorer**. Guests, pending invites, and SMS invitees CANNOT be scorers — they don't have an app account, can't authenticate, can't write scores to Supabase.
+Universal rule across game types: a tee group's scorer slot **must be filled by a Carry user OR a pending invitee who will become one**.
+
+| Slot 0 eligibility | Allowed? | Why |
+|---|---|---|
+| Confirmed Carry user (`profileId != nil`, not pending) | ✅ | Can `canScore` immediately |
+| Pending SMS invitee (`isPendingInvite == true`, no profileId yet) | ✅ in QG | The assignment IS the "playing today" signal — they finish onboarding before round-start and become a real scorer. SG advances past via `syncScorerIDs` rule 5 |
+| Pending-accept Carry user (has `profileId`, `isPendingAccept == true`) | ✅ in QG | Same as above; they tap accept and become canScore-eligible |
+| Permanent guest (name + handicap only, no profileId, no pending invite) | ❌ | Never has an app account, can't authenticate, can't write scores |
 
 | Game type | How the rule holds |
 |---|---|
-| Skins Group | Trivially satisfied — SGs are Carry-only by the Skins-Groups-Carry-only invariant (no guests possible in `group_members`). Every member is a Carry user, so any of them can be a scorer. |
-| Quick Game | Enforced explicitly — guests CAN appear in QGs but never as scorers. `canSave` validation in [QuickStartSheet.swift:116](../../Carry/Views/QuickStartSheet.swift:116) blocks Create when any populated group's slot 0 has no `existingProfileId` and isn't a pending invite. |
+| Skins Group | Trivially satisfied — SGs are Carry-only by the Skins-Groups-Carry-only invariant (no guests possible in `group_members`). Every member is a Carry user. Pending invitees are advanced past per `syncScorerIDs` rule 5 (SG demands confirmed) |
+| Quick Game | Enforced explicitly — guests CAN appear in QGs but never as scorers. `canSave` validation in [QuickStartSheet.swift:116](../../Carry/Views/QuickStartSheet.swift:116) blocks Create when slot 0 has no `existingProfileId` AND isn't a pending invite (the `!isPendingInvite` allows the pending case) |
 
 Mid-round defenses (apply to both):
 
 | Surface | Enforcement |
 |---|---|
 | Mid-round scorer reassignment | `syncScorerIDs` rule 4 — wipes permanent-guest scorer assignments to 0, surfacing the missing-scorer banner |
+| Pending advance in SG | `syncScorerIDs` rule 5 — Skins Groups advance past pending scorer to next confirmed Carry user; Quick Games preserve the pending assignment |
 | `canScore` predicate | [Player.swift:83-85](../../Carry/Models/Player.swift:83) — single source of truth: `profileId != nil && !isGuest && !isPendingInvite && !isPendingAccept` |
 
-This means downstream code can SAFELY ASSUME every populated tee group has a Carry user as scorer. Defensive backstops that "ensure a Carry user exists" (like the prior `prefillFromRecentGame` overwrite at QuickStartSheet:411-417) are unnecessary — `canSave` already blocks any state that violates the premise on the QG side, and SGs structurally cannot violate it.
+This means downstream code can SAFELY ASSUME every populated tee group has a scorer who is — or imminently will be — a Carry user. Defensive backstops that "ensure a Carry user exists" (like the prior `prefillFromRecentGame` overwrite at QuickStartSheet:411-417) are unnecessary — `canSave` already blocks any state that violates the premise on the QG side, and SGs structurally cannot violate it.
 
 ## Eligibility predicate
 
