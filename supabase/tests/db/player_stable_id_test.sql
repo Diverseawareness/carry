@@ -32,10 +32,10 @@ WITH results AS (
     -- f<<12 = 0x00006000 = 24576
     -- g<<4  = 0x00000070 = 112
     -- h     = 0x00000008 = 8
-    -- OR all → 0x0152637C = 22307708
+    -- No overlapping bits → OR = sum = 0x0152637C = 22176636
     SELECT 2,
-           'UUID 01020304-0506-0708-... returns 22307708',
-           CASE WHEN public.player_stable_id('01020304-0506-0708-0000-000000000000'::uuid) = 22307708
+           'UUID 01020304-0506-0708-... returns 22176636',
+           CASE WHEN public.player_stable_id('01020304-0506-0708-0000-000000000000'::uuid) = 22176636
                 THEN 'PASS' ELSE 'FAIL' END,
            public.player_stable_id('01020304-0506-0708-0000-000000000000'::uuid)::text
 

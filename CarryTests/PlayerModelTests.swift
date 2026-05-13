@@ -79,9 +79,9 @@ final class PlayerModelTests: XCTestCase {
     func testStableId_knownUUID_matchesSQLExpectation() {
         // First 8 bytes: 01 02 03 04 05 06 07 08
         // a<<24 | b<<16 | c<<8 | d | e<<20 | f<<12 | g<<4 | h
-        // = 0x0152637C = 22307708 decimal
+        // No overlapping bits → OR = sum = 0x0152637C = 22176636 decimal
         let uuid = UUID(uuidString: "01020304-0506-0708-0000-000000000000")!
-        XCTAssertEqual(Player.stableId(from: uuid), 22307708,
+        XCTAssertEqual(Player.stableId(from: uuid), 22176636,
                        "Must match SQL player_stable_id for the same UUID — see player_stable_id_test.sql test_id 2")
     }
 
