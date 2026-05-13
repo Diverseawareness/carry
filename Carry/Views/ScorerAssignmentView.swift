@@ -85,6 +85,25 @@ struct ScorerAssignmentView: View {
         .onChange(of: focused) { _, newValue in
             onFocusChanged?(newValue != nil)
         }
+        // Re-fire the focus signal whenever the slot's intrinsic
+        // height grows: search results appearing, the inline SMS
+        // invite section appearing, etc. The parent's scrollTo
+        // (.bottom anchor) re-pins the slot's NEW bottom edge above
+        // the keyboard so the freshly-appeared content (Carry result
+        // cards + the "Send Invite" phone row) is visible without
+        // the user having to manually scroll.
+        .onChange(of: searchResults.count) { _, _ in
+            guard focused != nil else { return }
+            onFocusChanged?(true)
+        }
+        .onChange(of: searchText) { _, newValue in
+            // searchText >= 2 triggers the showInviteOption gate
+            // (inline SMS invite section). Treat the threshold-cross
+            // as a layout-grow signal so the SMS field auto-reveals.
+            guard focused != nil else { return }
+            let crossedThreshold = newValue.count == 2
+            if crossedThreshold { onFocusChanged?(true) }
+        }
     }
 
     // MARK: - Confirmed Row
