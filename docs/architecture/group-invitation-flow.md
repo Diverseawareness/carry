@@ -2,6 +2,39 @@
 
 **TL;DR:** Three invite paths: search-add Carry users (auto-active), SMS phone (active when reconciled), QG → SG conversion (auto-accept). Phone reconciliation has 2 directions (forward + reverse triggers). 30-day staleness guard. All paths converge on `group_members.status = 'active'`.
 
+## SMS body encoding — load-bearing
+
+[ScorerAssignmentView.swift:430-444](../../Carry/Views/ScorerAssignmentView.swift:430), [ManageMembersSheet.swift:740-756](../../Carry/Views/ManageMembersSheet.swift:740), [GroupsListView.swift:3817-3833](../../Carry/Views/GroupsListView.swift:3817).
+
+All three SMS-composer call sites build the body as:
+```swift
+let body = "Join my skins game on Carry! https://carryapp.site/invite?group=<uuid>"
+var allowed = CharacterSet.urlQueryAllowed
+allowed.remove(charactersIn: "?&=#")
+let encoded = body.addingPercentEncoding(withAllowedCharacters: allowed) ?? ""
+if let url = URL(string: "sms:\(digits)&body=\(encoded)") { … }
+```
+
+**Why the custom CharacterSet:** `.urlQueryAllowed` permits `?`, `&`, `=`, `#` raw. The deep-link's own `?group=<uuid>` query, embedded inside the SMS body, would chunk the outer `sms:` URL's query string and Messages would drop everything after `/invite`. Removing those four chars forces them to percent-escape (`%3F`, `%26`, `%3D`, `%23`) inside the body. Recipient's iOS percent-decodes once when parsing the link, leaving the deep link intact.
+
+**Regression history:** Pre-`593cce8`, the encoding used vanilla `.urlQueryAllowed` and the recipient saw `https://carryapp.site/invite` (no group_id). Install bridge failed to route into the right group. Diagnosed via the Daniel/Ziggy E2E test on 2026-05-13. Fix applied to all three call sites. PlayerGroupsSheet's inline phone invite uses a body without a `?` query (just the homepage URL) — not affected.
+
+## Self-invite block
+
+[ScorerAssignmentView.swift:398-402](../../Carry/Views/ScorerAssignmentView.swift:398), [ManageMembersSheet.swift:687-697](../../Carry/Views/ManageMembersSheet.swift:687).
+
+Both SMS-composer paths check the typed digits against the inviter's profile phone (last-10-digits comparison to tolerate leading `1` country-code variance):
+```swift
+if let selfDigits = authService.currentUser?.phone?.filter({ $0.isNumber }),
+   selfDigits.suffix(10) == digits.suffix(10),
+   !selfDigits.isEmpty {
+    ToastManager.shared.error("You can't invite yourself …")
+    return
+}
+```
+
+**Why:** Without the guard, the reverse-reconcile trigger collapses the new `group_members` row immediately into the inviter's profile → silent double-add (already a member as creator, now also briefly as a reconciled invite). For QG SMS-invite-as-scorer it'd ALSO orphan the iOS scorer slot pointing at the locally-minted UUID. Block early in the UI.
+
 ## Three invite paths
 
 | Path | Initial status | Reconciliation |
