@@ -201,8 +201,14 @@ struct ManageMembersSheet: View {
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 16)
                                 } else {
-                                    // Carry user results
-                                    ForEach(onlineSearchResults, id: \.id) { profile in
+                                    // Carry user results — filter out
+                                    // anyone already in this group (any
+                                    // status). They appear in All
+                                    // Members above; surfacing them
+                                    // here as disabled rows is clutter.
+                                    let existingProfileIds = Set(localAllAvailable.compactMap(\.profileId))
+                                    let filteredResults = onlineSearchResults.filter { !existingProfileIds.contains($0.id) }
+                                    ForEach(filteredResults, id: \.id) { profile in
                                         onlineSearchResultRow(profile)
                                     }
 
