@@ -84,7 +84,7 @@
 
 Daniel ran the test with a fresh phone (`5550001234`) on PlayerGroupsSheet's Group 2 scorer slot. Row held through the 30s refresh tick. Then X-cleared + re-invited a different number — also held. RPC dedup case wasn't triggered (swipe-delete cleaned the prior row first), so the underlying create_phone_invite-doesn't-update-on-dedup bug is still unfixed but didn't surface in this test.
 
-## SG SMS-invite-as-scorer parity — PARTIALLY VERIFIED + UX POLISHED
+## SG SMS-invite-as-scorer parity — CODE REVIEWED, NOT LIVE-VERIFIED
 
 Initial wiring landed in `bdeca98`. Daniel started testing it. During the test pass we surfaced + fixed multiple UX issues:
 
@@ -95,12 +95,20 @@ Initial wiring landed in `bdeca98`. Daniel started testing it. During the test p
 - **Game card sort interleaved pending with confirmed** — fixed in `9cf8957` (pending at end).
 - **Search results / SMS section dropping behind keyboard** — fixed in `7d7a041` (re-fire scroll on layout grow).
 
-**Still UNVERIFIED end-to-end on a clean group:** the original "SMS invite a scorer on SG, wait 60s, row holds in correct group" test hasn't been clean-run from scratch since all the above bugs landed. Recommend Daniel:
-1. Delete the polluted test group
-2. Create a fresh SG with himself + Ziggy
-3. From the tee sheet, tap the "Tee time needs scorer" banner OR tap a Scorer pill to open `scorerPickerSheet`
-4. Send SMS invite to a fake phone with a typed name
-5. Wait 60s → row stays in the correct group with name + formatted phone
+### Why E2E verification is BLOCKED
+
+`autoGroup` (GroupManagerView L291-310) returns a single tee group when player count ≤ 4. SG has no `+ Add Tee Group` UI (this is the deferred 2026-05-10 spec). The SG SMS-invite-as-scorer picker only fires for **non-creator scorer slots** — creator is locked into Group 1's slot. With only 2 Carry users (Daniel + Ziggy), SG auto-groups into 1 group, creator owns the only scorer slot, the picker can't be opened.
+
+**To live-verify SG SMS-invite-as-scorer, you need ONE of:**
+- 5+ Carry test accounts in the group (forces autoGroup → 2 groups, Group 2 has a non-creator scorer slot)
+- Convert a QG (which supports explicit group assignment with any player count) → SG (inherits the 2 groups)
+- Build the deferred 2026-05-10 "+ Add Tee Group" affordance for SG
+
+The code path is shared with QG's `ScorerAssignmentView` + `reservePhoneInvite` + `saveGroupNums` (all live-verified on the QG side post `7211817`). Risk of SG-specific divergence is low but non-zero.
+
+### Decision pending
+
+Ship 1.0.9 as-is with the SG insert "verified by code review + parallel QG E2E", or defer (revert `8a45db3` + `bdeca98`). Daniel's call.
 
 ---
 
@@ -139,7 +147,7 @@ Apply via Supabase Studio SQL Editor on prod (`seeitehizboxjbnccnyd`). Dev branc
 3. **Current state of the server-side test data on dev:**
    - QG id: `1c04a53b-f357-4f67-b226-e2c612a5b669` is heavily polluted from today's testing. Recommend Daniel start fresh — delete this group and create a new SG with himself + Ziggy for clean verification.
    - Earlier in the session: phantom members `6183cd4c` (Fgggg1111) and `69ecfc7e` (Ggggg222) were SQL-marked `status='removed'` + `guest_roster_json` set NULL on the group. They may still appear cached in iOS @State on either device until a force-quit + relaunch.
-4. **First action:** clean-room SG SMS-invite-as-scorer test on a fresh group. See "SG SMS-invite-as-scorer parity" section above for repro steps. If the row holds through 60s + reads in the assigned group, SG parity is fully verified.
+4. **First action:** decide on shipping path for SG SMS-invite-as-scorer. Code is in, but live verification needs 5+ Carry users OR a QG→SG conversion OR the deferred "+ Add Tee Group" affordance. See the "Why E2E verification is BLOCKED" subsection above.
 5. **Second action (parallel):** patch `create_phone_invite` RPC to UPDATE on dedup hit + iOS `reservePhoneInvite` callers to re-anchor the scorer slot to the returned id. Without this, re-invite to a previously-used phone in the same group silently reverts state.
 6. **Third action:** patch `preservedGuests` filter in `GroupManagerView.refreshGroupData` to cross-check `guest_roster_json` (see Known issues table). Without this, guests removed by the creator on Device A keep reappearing on Device B.
 7. **Fourth action:** repro the "lost guest on QG create" bug.
@@ -149,4 +157,4 @@ Apply via Supabase Studio SQL Editor on prod (`seeitehizboxjbnccnyd`). Dev branc
 
 ## Last updated
 
-2026-05-13 — very late session, post `7d7a041`. QG re-invite path verified. SG parity insert landed. Test group on dev is too polluted for clean verification; recommend Daniel start with a fresh SG. Two pre-existing bugs (preservedGuests + RPC dedup) flagged for follow-up; not blocking ship if known issues are acceptable.
+2026-05-13 — very late session, post `7d7a041`. QG re-invite path verified. SG parity insert landed but blocked from live verification by the 2-player autoGroup constraint (creator owns the only scorer slot in a 1-group SG, picker can't be opened). Decision pending on whether to ship 1.0.9 as-is with code-review-only SG verification or defer SG to 1.0.10. Two pre-existing bugs (preservedGuests + RPC dedup) flagged for follow-up; not blocking ship.
