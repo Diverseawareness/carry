@@ -1,92 +1,90 @@
 # SMS-Invite-as-Scorer — Status Checkpoint
 
-**Branch:** `hotfix/1.0.9` @ `966e048`
-**Captured:** 2026-05-13 (mid-session)
+**Branch:** `hotfix/1.0.9` @ `7211817`
+**Captured:** 2026-05-13 (late session, mid re-invite verification)
 **Goal:** Ship the SMS-invite-as-scorer reconciliation fix as part of 1.0.9.
 
-## What ships in 1.0.9
+---
 
-### Stage 0 — QG missing-scorer CTA fixes (pre-existing, already cherry-picked)
-| Commit | What |
+## Where we are right now
+
+- **Most of the SMS-invite plumbing is in.** The forward + reverse triggers, `player_stable_id` int path, `create_phone_invite` RPC, `inviteMemberId` threading through `ScorerSlot`/`Player`/`PlayerSlot`, and the X-clear + swipe-delete paths are all landed and verified.
+- **The 2026-05-13 re-invite bug surfaced a layered set of issues** in `PlayerGroupsSheet` (Edit Players flow) for Group 2+ SMS-invite scorers. Each layer was fixed; latest unverified fix is `7211817`.
+- **Currently waiting on Daniel to retest** after cleaning the broken server row.
+
+## Latest commit chain (since `31d220b`)
+
+| Commit | Why |
 |---|---|
-| `21aa57f` | `canStartRound` for QG ANDs `missingScorerGroupIndex == nil` so the "Group N needs scorer" CTA actually blocks |
-| `9898f7c` | CTA tap routes to PlayerGroupsSheet when missing-scorer is the blocker |
-| `00e4584` | scorer-rules.md + game-types.md + playbook.md updated to reflect the new CTA contract |
-| `9d5e82b` | MARKETING_VERSION 1.0.9, build 82 |
+| `08fe784` | Swipe-delete phone-invite: handle the `profileId=nil` case via `inviteMemberId` row id |
+| `f559386` | X button on `invitedRow` to clear pending SMS-invite scorer slot |
+| `fb7a13c` | `invitee_name` column + render typed name in tee sheet |
+| `39df783` | HC picker focus guard |
+| `fecedfa` | Clean up prior search-added Carry user when switching to SMS-invite (.confirmed → .invited) |
+| `c12e370` | X-clearing confirmed Carry scorer FULLY removes (was demoting → duplicate) |
+| `91740a0` | Block self-SMS-invite — server collapse otherwise orphans the slot |
+| `95ccaa5` | `ScorerSlot.asPlayer` carries `phoneNumber` + `selectedIDs.insert` on .invited/.confirmed transitions |
+| `9f1812d` | QuickStartSheet scorer slot auto-scrolls above keyboard on focus |
+| `6146033` | `.bottom` anchor for the scorer auto-scroll |
+| `816b023` | Same auto-scroll wired into PlayerGroupsSheet |
+| `64f1bef` | `saveAndDismiss` step 3c derives `groupNum` from outer enumerate index, not from `Player.group` (which `asPlayer` hardcodes to 1) |
+| `322d0fb` | 350ms delay on scrollTo so iOS keyboard safe-area inset lands first |
+| `7211817` | `saveGroupNums` switched to SELECT-then-UPDATE-by-id (PostgREST `.or("invited_phone.is.null,invited_phone.eq.")` empty-value term wasn't being respected → was clobbering phone-invite row group_num) |
 
-### Stage 1 — SQL helper `scorer_ids_uuid_at` (vestigial after pivot to int-path)
-- `091e568` — `supabase/migrations/20260513000000_scorer_ids_uuid_format.sql` adds `scorer_ids_uuid_at(jsonb, int) -> uuid` helper. Still installed but unused after the int-path pivot. Harmless.
-- Test: `supabase/tests/db/scorer_ids_uuid_at_test.sql` (10 PASS on dev).
+---
 
-### Stage 2 — `reservePhoneInvite` + `GroupMemberInsert.id`
-- `2e44fcd` — `GroupMemberInsert` gains optional `id: UUID?`. `GroupService.reservePhoneInvite(id:groupId:phone:invitedBy:groupNum:) async throws -> UUID` lets the iOS slot supply the row's PK at insert time.
+## The full chain of bugs we hit (in order they surfaced)
 
-### Stage 3a (vestigial) — UUID-shape trigger extension
-- `bc13292` — `supabase/migrations/20260513000001_reconcile_extends_scorer_ids.sql`. Superseded by Stage 3b below.
+1. **Tee row showed "Invited" instead of formatted phone.**
+   Cause: `ScorerSlot.asPlayer` didn't propagate `phoneNumber` → local Player had nil phone → `formatPhoneDisplay(nil) == "Invited"`. **Fixed in `95ccaa5`.**
 
-### Stage 3b — **Path A int-path triggers** (load-bearing)
-- `453fa83` — Pivot to int-path. Two migrations:
-  - `20260513000002_player_stable_id_sql.sql` — `player_stable_id(uuid) -> bigint` replicates iOS `Player.stableId(from:)` bit-shift formula in SQL.
-  - `20260513000003_reconcile_scorer_ids_int_path.sql` — Both phone-invite reconciliation triggers (`reconcile_phone_invites_for_profile` forward + `reconcile_phone_invite_at_insert` reverse) rewrite `scorer_ids` int-in-place from `player_stable_id(placeholder_uuid)` to `player_stable_id(profile_uuid)` via helper `_reconcile_scorer_ids_int`. Wire format stays `[Int]` — non-breaking for clients on older app versions.
-- Tests: `supabase/tests/db/player_stable_id_test.sql` (7 PASS), `supabase/tests/db/reconcile_scorer_ids_int_path_test.sql` (multi-assertion PASS).
+2. **Slot disappeared after 30s refresh.**
+   Cause: `.invited` and `.confirmed` branches of `scorerSlotBinding` appended to `groups[]` but never added the new player.id to `selectedIDs`. `refreshGroupData`'s rebuild filters by `selectedIDs.contains(id)` → dropped. **Fixed in `95ccaa5`.**
 
-### Stage 4a/b/c — Client-side UUID threading
-- `1627b3d` — `ScorerSlot.inviteMemberId: UUID?` + `Player.inviteMemberId: UUID?` + `ScorerSlot.asPlayer` derivation uses `inviteMemberId ?? profileId ?? UUID()` for `Player.id`. `QuickStartSheet`'s `PlayerSlot` + bridge + `createQuickGame` thread `inviteMemberId` through.
-- `78ad41e` — `GroupsListView.handleQuickGameCreate` calls `reservePhoneInvite(id: inviteMemberId, …)` for SMS-invite slots (was previously `.insert()` with server-generated id).
-- `ee1248b` — `handleQuickGameCreate`'s guest-rebuild `map` skips `isPendingInvite` slots so SMS-invite players aren't accidentally converted to guest profiles.
-- `ebb9cd8` — `PlayerGroupsSheet.saveAndDismiss` adds new step 3c: walks `cleanResult.groups`, calls `reservePhoneInvite` for each pending-invite Player with an `inviteMemberId`. Closes the worse-half of the bug where PlayerGroupsSheet previously made zero server calls for SMS-invite scorer slots.
+3. **After re-invite, scorer "moved" from Group 2 to Group 1 (visible in a guest slot).**
+   Cause: `ScorerSlot.asPlayer` hardcodes `Player.group = 1`. Step 3c was using `player.group` for the `reservePhoneInvite` groupNum param → every SMS invite was persisted with `group_num=1`. **Fixed in `64f1bef`.**
 
-### Stage 5 — Cross-language regression test
-- `bd64632` — `CarryTests/PlayerModelTests` adds 4 cases verifying `Player.stableId(from:)` matches `player_stable_id(uuid)` SQL for known UUIDs (all-zero → 0; `01020304-0506-0708-...` → 22176636; all-FF → 4294967295; bytes beyond index 7 ignored). Updated SQL test to match. Tests committed in `45d0f48` + `3ecad51`.
+4. **Even with #3 fixed, the slot STILL disappeared after refresh.**
+   Cause: `saveGroupNums`'s scope (`.or("invited_phone.is.null,invited_phone.eq.")`) was supposed to exclude phone-invite rows from the UPDATE, but the empty-value `eq.` term wasn't being respected — the UPDATE still matched phone-invite rows that share the inviter's `player_id` placeholder. After `reservePhoneInvite` inserted with `group_num=2`, either step 4 in saveAndDismiss OR the parent's debounced `syncGroupNumsToSupabase` clobbered it back to 1 (the creator's group). **Fixed in `7211817`** via SELECT-then-UPDATE-by-id — fetches the rows for (group, player), filters out non-empty `invited_phone` client-side, UPDATEs each surviving row by primary key.
 
-### Root-cause fix — `saveGroupNums` scope
-- `8ea03a4` — `GroupService.saveGroupNums` adds `.or("invited_phone.is.null,invited_phone.eq.")` so the UPDATE doesn't stomp SMS-invite rows whose `player_id` placeholder equals the inviter's UUID. **This was the actual root cause of every "group_num=1 instead of 2" symptom**; PostgREST was never dropping the field — `saveGroupNums` was overwriting it 1 second post-insert because the WHERE clause matched both rows.
-- New migration `20260513000004_create_phone_invite_rpc.sql` — adds SECURITY DEFINER `create_phone_invite(p_id, p_group_id, p_phone, p_invited_by, p_group_num text) -> uuid` RPC. iOS `reservePhoneInvite` calls the RPC instead of `.insert()`. This was originally added as a workaround for the misdiagnosed PostgREST issue; it's still useful (clean server-side write contract) but no longer load-bearing now that the real fix is in `saveGroupNums`.
+5. **`create_phone_invite` RPC dedup-by-phone doesn't update group_num on hit.**
+   When the same phone is re-invited (e.g. user X-cleared then re-invited the same number, or test scenario where the previous broken row wasn't cleaned), the RPC's existing-row dedup returns the old id WITHOUT updating any fields. iOS minted a new UUID for the slot but the server returned the old row's id → mismatch → slot wipes anyway. **Pending — see below.**
 
-### Pre-reconciliation UX fix
-- `966e048` — `GroupManagerView` init + refreshGroupData filter splits by `isQuickGame`: QG includes `isPendingInvite` in default Playing roster + newly-active members so the SMS-invitee shows up in Group 2's scorer slot before they onboard. SG keeps excluding (Carry-only invariant).
+---
 
-## Verified on dev
+## Verified end-to-end
 
 | Path | Status |
 |---|---|
-| Direct SQL INSERT preserves `group_num` | ✅ |
-| RPC `create_phone_invite` inserts with supplied id + group_num | ✅ |
-| iOS `Player.stableId` matches SQL `player_stable_id` for known UUIDs | ✅ (Swift + SQL tests pass) |
-| **Reverse trigger** (invitee already has phone-on-profile → reconciles at INSERT) | ✅ Daniel's phone was on his profile; invite landed as active + scorer immediately |
-| **Forward trigger** (invitee onboards later → phone added → reconciles) | ✅ Daniel deleted his profile, onboarded fresh, scorer slot reconciled |
-| Post-reconciliation: Ziggy sees Daniel as Group 2 scorer with lock icon | ✅ |
-| Post-reconciliation: Daniel's iPhone sees QG on Home + can score Group 2 | ✅ |
-| `scorer_ids` round-trip aligned between client + server stable-ints | ✅ Verified `[1316978173, 533855954]` = `[stableId(Ziggy.profileId), stableId(SMS_row.id)]` |
+| Forward + reverse reconciliation triggers fire correctly | ✅ |
+| iOS `Player.stableId` matches SQL `player_stable_id` for known UUIDs | ✅ (Swift + SQL tests) |
+| Pre-reconciliation orange-dimmed scorer slot visibility | ✅ |
+| `"Waiting for Scorer to Join"` button state on pending scorer | ✅ |
+| X-clear on pending invite removes the server row | ✅ |
+| Swipe-delete on phone-invite tee row removes server row + local | ✅ |
+| Typed name + formatted phone render in tee row on **first** invite | ✅ |
+| Block self-SMS-invite with toast | ✅ |
+| QuickStartSheet + PlayerGroupsSheet scorer slot auto-scrolls above keyboard | ✅ (newer devices); needs verification on Ziggy's older device after `322d0fb` |
 
-## Pre-reconciliation visibility — VERIFIED live (Session 2 evening)
+## Unverified — Daniel's next test step
 
-After temporarily clearing the recipient's `profile.phone` via SQL, Daniel created a fresh QG with SMS invite. Observed on Ziggy:
-- Group 2 Score Keeper slot rendered with **orange avatar + phone number, both dimmed** ✅
-- "Invited" state visually distinct from the missing-scorer state ✅
-- (Untested live but committed: button label `"Waiting for Scorer to Join"` + greyed/inactive — commit `31d220b`. See below.)
+- Re-invite flow in **PlayerGroupsSheet** (Edit Players) for **Group 2+** scorer slot: verify the row holds in Group 2 with typed name + formatted phone through a full 30-60s refresh cycle.
+- Latest test (before `7211817`) showed the row still disappearing — but the test re-used phone `5555555555` which triggered the RPC dedup path (#5 above), not the new saveGroupNums code path. Daniel asked for a different phone to retest properly.
+- **Next test:** rebuild → Edit Players → Group 2 scorer → invite with phone `5550001234` (or any unused number) + typed name "Test" → Save → wait 60s.
 
-## Final fix landed late session — pending live verify
-
-`31d220b` updates `groupHasValidScorer` to count pending-invite slots as filled (not missing). Effect on the CTA:
-- Before: button said "Group N needs scorer" + tappable (wrong — there IS a scorer, just pending)
-- After: button says **"Waiting for Scorer to Join"** + greyed out / not tappable
-
-**Not verified live yet.** Daniel asked to leave it as-committed and verify tomorrow. To test:
-1. Cmd+R on Ziggy to rebuild with `31d220b`
-2. Either re-test the pre-reconciliation scenario (clear phone again, create fresh QG with SMS invite) OR find the existing pending QG in this state
-3. Confirm: orange dimmed scorer slot, button = "Waiting for Scorer to Join", button is greyed and not tappable
+---
 
 ## Known issues / follow-ups
 
 | Issue | Notes |
 |---|---|
-| **"user4 x 2" duplicate guest row** in Group 2 details (observed mid-session) | Daniel reported the typed Group 2 slot-1 guest ("user4") appeared duplicated in QG details. Root cause not investigated — could be iOS rendering, or the `allMembers = filteredFreshMembers + preservedGuests` merge introducing dups when ids match between local + server. **Repro + diagnose before ship.** Start with the diagnostic SQL in this doc and compare local-side and server-side member counts. |
-| **Swipe-to-delete on pending-invite player in QG tee sheet leaves a server-side orphan** | `GroupManagerView.removePlayer` (line ~2978-3006) for QG hard-deletes by `(group_id, player_id)` but gates on `if let profileId = player.profileId`. Phone-invite Players have `profileId = nil`, so the server delete is skipped. Local state updates (removed from `groups[]`, `allMembers`, `selectedIDs`), but the next refresh re-fetches the row via `loadSingleGroup`'s phone-invites loop → the player reappears. Fix shape: (1) `loadSingleGroup` phone-invite Player needs `inviteMemberId: invite.id` so the row id reaches `removePlayer`, (2) `removePlayer` QG branch handles phone-invite by deleting `WHERE id = inviteMemberId` instead of `WHERE player_id = ...`. Required for the "remove a mistakenly-invited scorer" UX Daniel asked about — the X-button / swipe affordance has nothing to delete server-side currently. |
-| Pre-reconciliation scorer-slot styling shows raw phone digits, not the typed name | Daniel asked: "have the orange state, with invited in the scorer slot, until I auto join so the invite feels like it was successful". Today's phone-invite Player has `name = phone_digits`, no typed name stored. Fix: add `invitee_name text` column to `group_members`, plumb the typed name from `ScorerAssignmentView.sendInvite` through `reservePhoneInvite` → RPC. `loadSingleGroup` phone-invite Player uses `invitee_name` when present. Queued for 1.0.10. |
-| Debug prints left in code | `[QuickStart.createQuickGame] SMS slot`, `[SMS-invite] member.group`, `[reservePhoneInvite] RPC call`, `[reservePhoneInvite] RPC success`, `[reservePhoneInvite] RPC FAILED` — all in DEBUG blocks. Strip before ship OR leave for one more release cycle to aid any post-ship debugging. |
-| Migration `20260513000004` still has `RAISE LOG` line | Useful for PostgreSQL log debugging, low overhead. Can stay. |
-| Architecture docs (scorer-rules.md, game-types.md, playbook.md) NOT updated with SMS-invite-as-scorer behavior | Deferred until the feature is fully shipped + verified. After 1.0.9 lands, sync them in a follow-up commit. |
+| **`create_phone_invite` RPC dedup needs to UPDATE on hit** | When a row exists for (group_id, invited_phone), the RPC returns the existing id without updating `group_num` / `invitee_name` / `status`. Stale state from prior bugs sticks. **Fix:** UPDATE the existing row with the new values + reset status to 'invited'. iOS also needs to re-anchor its slot to the returned id when it differs from the locally-minted UUID. **Required for robust re-invite UX.** |
+| **Lost guest player on QG creation** | Daniel reported a guest in Group 2 disappeared on create. Not yet diagnosed — could be the local Player not making it through `createQuickGame`'s slot iteration, or a separate server-side dedup hit. Flagged 2026-05-13 mid-session. Repro: create a fresh QG with a guest in Group 2 — does the guest survive the creation round-trip? |
+| **Group 2 scorer auto-scroll on Ziggy's device** | After `322d0fb` (350ms delay) Daniel didn't re-verify on the smaller screen. Re-test once the re-invite flow is signed off. |
+| Debug prints left in code | `[QuickStart.createQuickGame] SMS slot`, `[reservePhoneInvite] RPC...`, `[PlayerGroupsSheet] saveAndDismiss → removing N members...` — all in DEBUG blocks. Strip before ship OR leave one more cycle. |
+| Architecture docs (scorer-rules.md, game-types.md, playbook.md) NOT updated with SMS-invite-as-scorer behavior | Sync as a follow-up after 1.0.9 ships. |
+
+---
 
 ## Migrations to apply on prod when 1.0.9 ships
 
@@ -94,32 +92,29 @@ In order:
 1. `20260513000000_scorer_ids_uuid_format.sql` (vestigial but harmless)
 2. `20260513000001_reconcile_extends_scorer_ids.sql` (vestigial — superseded by next two)
 3. `20260513000002_player_stable_id_sql.sql` (active)
-4. `20260513000003_reconcile_scorer_ids_int_path.sql` (active — `CREATE OR REPLACE`s the triggers added in 20260502)
+4. `20260513000003_reconcile_scorer_ids_int_path.sql` (active)
 5. `20260513000004_create_phone_invite_rpc.sql` (active)
+6. `20260513000005_add_invitee_name_to_group_members.sql` (active — adds `invitee_name` column + extends RPC sig to accept `p_invitee_name`)
 
-Apply via Supabase Studio SQL Editor on prod (`seeitehizboxjbnccnyd`). Dev branch is already in this state.
+Apply via Supabase Studio SQL Editor on prod (`seeitehizboxjbnccnyd`). Dev branch already has all of these.
 
-## Final ship steps (in order)
+---
 
-1. ⏳ **Rebuild on Ziggy** (Cmd+R) and verify the `31d220b` pending-state UX live: greyed-out button + "Waiting for Scorer to Join" label
-2. ⏳ Fix the swipe-to-delete orphan for pending-invite players (see Known issues — Daniel wants this so a mistakenly-invited scorer can be removed)
-3. ⏳ Repro the "user4 x 2" duplicate guest bug and either fix or document as known issue
-4. ⏳ Decide on debug-print stripping (recommend: leave for now, strip in 1.0.10)
-4. ⏳ Apply migrations 1–5 above on prod
-5. ⏳ Bump `CURRENT_PROJECT_VERSION` from 82 → 83 (or leave at 82 if no new prod build was archived yet on 1.0.9)
-6. ⏳ Archive in Xcode (Release config → prod Supabase) → upload to ASC
-7. ⏳ ASC: fill "What's New" — note: still need to add Leaderboards & Stats + Share Your Round to App Description (memory says this is pending from 1.0.4)
-8. ⏳ Submit for review
+## Resume instructions for new session
 
-## Resume instructions for tomorrow
+1. **Read this file end-to-end** + skim `MEMORY.md` "Active investigation" section for context.
+2. `git log --oneline hotfix/1.0.7..hotfix/1.0.9` — should show ~40 commits ending at `7211817`.
+3. **Current state of the server-side test data on dev:**
+   - QG id: `1c04a53b-f357-4f67-b226-e2c612a5b669` ("Quick Game", created by `4a7f79cd-...` = Daniel)
+   - Phone-invite row `99f72f21-...` was DELETED (Daniel ran `DELETE ... RETURNING id` and got the id back). State is clean.
+   - `scorer_ids` may still have stale int from prior tests — Daniel can `UPDATE skins_groups SET scorer_ids = '[]'::jsonb WHERE id = '1c04a53b...'` to fully reset.
+4. **First action:** confirm Daniel's latest retest with a fresh phone number (not `5555555555`) on the PlayerGroupsSheet → Group 2 scorer path. If the row holds through the 30s refresh, the saveGroupNums fix is good and we move to known-issues cleanup.
+5. **Second action (parallel, can be done after #1 passes):** patch `create_phone_invite` RPC to UPDATE on dedup hit (group_num + invitee_name + status='invited'), and patch iOS `reservePhoneInvite` callers to re-anchor the scorer slot to the returned id when it differs from the supplied UUID. Without this, any re-invite to a previously-used phone in the same group will silently revert state.
+6. **Third action:** repro the "lost guest on QG create" bug.
+7. **Final ship:** apply migrations 1-6 on prod, bump CURRENT_PROJECT_VERSION, archive, ASC.
 
-1. **Read this file end-to-end.** Especially "Final fix landed late session" and "Known issues" — that's where you stopped.
-2. `git log hotfix/1.0.7..hotfix/1.0.9 --oneline` — should show ~28 commits ending at `31d220b`.
-3. Check that dev DB has migrations 20260513000000–20260513000004 applied (per the migrations table above). Also confirm: Daniel's iPhone profile's phone is currently NULL on dev (cleared during late session for the pre-reconciliation test — re-add if needed).
-4. **First action:** Cmd+R on Ziggy and verify the `31d220b` UX change (pending scorer = "Waiting for Scorer to Join" + greyed button). If broken, dig into `groupHasValidScorer` + `startButtonLabel` interaction.
-5. **Second action:** Repro the "user4 x 2" bug. Diagnostic SQL is the one earlier in this doc — counts and lists group_members for the latest QG. If the DB has 1 row for user4 but iOS shows 2, it's an iOS dup-merge issue; if DB has 2, it's a server-side issue.
-6. Once both issues are clean, ship per the "Final ship steps" list above.
+---
 
 ## Last updated
 
-2026-05-13 — end-of-session checkpoint. Pre-reconciliation visibility verified live (orange avatar + dimmed phone number). `31d220b` (pending-state button) committed but not verified — tomorrow's first step.
+2026-05-13 — late session, post `7211817`. Waiting on Daniel's retest with a fresh phone number to verify the saveGroupNums fix on a clean code path.
