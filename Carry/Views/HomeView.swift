@@ -527,37 +527,12 @@ struct HomeView: View {
                         phoneMigrationBanner
                     }
 
-                    // MARK: New User CTA / Demo Round
-                    // Demo Round card takes precedence over the empty CTA when
-                    // groups is empty AND user hasn't dismissed the demo. Once
-                    // dismissed (any path), demo card never re-renders and the
-                    // empty CTA returns. See DemoRoundController.isDismissed.
-                    // Production: demo card shows ONLY when user has zero
-                    // groups + not yet dismissed. In DEBUG we relax the empty
-                    // check so the 30s home poll - which loads real groups
-                    // for the signed-in dev user - doesn't make the demo
-                    // disappear during testing.
-                    if Self.shouldShowDemoCard(groupsEmpty: skinGameGroups.isEmpty, isLoadingGroups: isLoadingGroups, dismissed: demoRoundDismissedStorage) {
-                        DemoRoundCard(
-                            displayName: authService.currentUser?.displayName,
-                            previewVM: demoPreviewVM,
-                            onTap: {
-                                // Reuse the preview VM if it's already built
-                                // (pill numbers match exactly). Construct one
-                                // if .task hasn't fired yet.
-                                let vm = demoPreviewVM ?? DemoRoundController.makeViewModel(authService: authService)
-                                demoPreviewVM = nil  // hand off ownership to demoViewModel
-                                withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
-                                    demoViewModel = vm
-                                }
-                            },
-                            onDismiss: {
-                                DemoRoundController.isDismissed = true
-                            }
-                        )
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 24)
-                    } else if skinGameGroups.isEmpty && !isLoadingGroups {
+                    // MARK: New User CTA
+                    // Shown only when the user has no groups, no active rounds,
+                    // AND the demo card isn't already filling the Active Rounds
+                    // section (handled below). Demo dismissed = empty CTA returns.
+                    if skinGameGroups.isEmpty && !isLoadingGroups
+                        && !Self.shouldShowDemoCard(groupsEmpty: skinGameGroups.isEmpty, isLoadingGroups: isLoadingGroups, dismissed: demoRoundDismissedStorage) {
                         VStack(spacing: 12) {
                             Image(systemName: "person.2.fill")
                                 .font(.carry.displaySM)
@@ -597,10 +572,34 @@ struct HomeView: View {
                         .padding(.vertical, 60)
                     }
 
-                    // MARK: Active Rounds
-                    sectionHeader("Active Rounds", count: activeRounds.count)
+                    // MARK: Active Rounds (includes Demo Round card when visible)
+                    let demoCardVisible = Self.shouldShowDemoCard(groupsEmpty: skinGameGroups.isEmpty, isLoadingGroups: isLoadingGroups, dismissed: demoRoundDismissedStorage)
+                    let activeCount = activeRounds.count + (demoCardVisible ? 1 : 0)
+                    sectionHeader("Active Rounds", count: activeCount)
 
-                    if activeRounds.isEmpty {
+                    if demoCardVisible {
+                        DemoRoundCard(
+                            displayName: authService.currentUser?.displayName,
+                            previewVM: demoPreviewVM,
+                            onTap: {
+                                // Reuse the preview VM if it's already built
+                                // (pill numbers match exactly). Construct one
+                                // if .task hasn't fired yet.
+                                let vm = demoPreviewVM ?? DemoRoundController.makeViewModel(authService: authService)
+                                demoPreviewVM = nil  // hand off ownership to demoViewModel
+                                withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                                    demoViewModel = vm
+                                }
+                            },
+                            onDismiss: {
+                                DemoRoundController.isDismissed = true
+                            }
+                        )
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 8)
+                    }
+
+                    if activeRounds.isEmpty && !demoCardVisible {
                         emptyCard("No Active Rounds", icon: "figure.golf")
                     } else {
                         ForEach(activeRounds) { round in
