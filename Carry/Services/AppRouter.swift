@@ -21,17 +21,13 @@ class AppRouter: ObservableObject {
     /// Jumps to phase 1 (the "Convert game into a recurring Skins Group"
     /// prompt, Figma `1187:10698`) in isolation for visual review.
     @Published var debugShowConvertPrompt: Bool = false
-    /// Simulates the "user scanned a QR from iPhone Camera, installed
-    /// Carry, finished onboarding" flow by writing a Carry invite URL to
-    /// the clipboard and forcing HomeView to re-check its pasteboard so
-    /// the "Open your invite" banner appears. The Debug menu action
-    /// populates this from the user's first existing group so the tap
-    /// actually completes end-to-end.
-    @Published var debugSimulateClipboardInvite: Bool = false
-    /// Forces HomeView to present PhoneInviteFinderSheet regardless of
-    /// the normal hasURLs/skinGameGroups gates. Useful for visual review
-    /// of the modal without needing a clipboard hint.
-    @Published var debugShowPhoneInviteFinder: Bool = false
+    // Removed in 1.0.9: debugSimulateClipboardInvite +
+    // debugShowPhoneInviteFinder. The clipboard "Open your invite?"
+    // bridge + the auto-presented PhoneInviteFinderSheet were
+    // pre-phone-on-profile UX. With the reverse/forward reconcile
+    // triggers and mandatory phone at onboarding, both paths are
+    // redundant. ProfileSheetView still has a manual "Find an
+    // Invite" entry for pre-1.0.3 users who never set a phone.
     #endif
 
     /// Set to true after accepting a group invite; MainTabView watches and reloads groups.

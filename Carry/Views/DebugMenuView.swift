@@ -236,13 +236,6 @@ struct DebugMenuView: View {
                     ToastManager.shared.success("Demo Round reset")
                 }
                 divider
-                // Forces PhoneInviteFinderSheet to present on Home regardless
-                // of the normal hasURLs/skinGameGroups gates. Useful for
-                // visual review of the modal without staging a real invite.
-                actionRow("Show Phone Invite Finder", icon: "magnifyingglass.circle") {
-                    appRouter.debugShowPhoneInviteFinder = true
-                }
-                divider
                 // Fires a real phoneInviteReconciled push to the current
                 // user via the Edge Function. Bypasses the SQL trigger but
                 // exercises the same Edge Function handler + APNs delivery
@@ -348,27 +341,6 @@ struct DebugMenuView: View {
                     dismiss()
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                         NotificationCenter.default.post(name: .debugPreviewFullScreenQR, object: nil)
-                    }
-                }
-                divider
-                actionRow("Simulate Post-Install Clipboard Invite", icon: "doc.on.clipboard") {
-                    // Reproduces the non-Carry-user flow: web page copies
-                    // the invite URL to clipboard, user installs + opens
-                    // Carry, the Home tab surfaces the "Open your invite"
-                    // banner. Uses the first persisted group id if one
-                    // exists so tapping the banner actually joins
-                    // end-to-end (idempotent if already an active member);
-                    // otherwise a dummy UUID is used and the tap will
-                    // error-toast — which is itself a useful visual test.
-                    let groupId: UUID = GroupStorage.shared.load().first?.id ?? UUID()
-                    let inviteURL = "https://carryapp.site/invite?group=\(groupId.uuidString)"
-                    UIPasteboard.general.string = inviteURL
-                    dismiss()
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        appRouter.navigateToTab = "home"
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                            appRouter.debugSimulateClipboardInvite = true
-                        }
                     }
                 }
                 divider

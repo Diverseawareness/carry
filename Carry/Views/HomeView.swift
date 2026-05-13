@@ -357,33 +357,18 @@ struct HomeView: View {
     @State private var showPaywall = false
     @State private var showCreateGroup = false
     @State private var showQRScanner = false
-    /// When the user arrives from `invite.html` → App Store download → install,
-    /// the invite URL is copied to their clipboard by the web page (see
-    /// `site/invite.html`). Post-onboarding we surface a one-tap banner on
-    /// Home so they can complete the join without rescanning the QR.
-    /// The `hasURLs` check is privacy-preserving — it does NOT trigger the
-    /// iOS paste banner. That prompt only fires when the user taps the
-    /// banner, at which point we read the URL and route through the same
-    /// `handleScannedInvite` path as the QR scanner.
-    @State private var clipboardInviteAvailable = false
-    @State private var didDismissClipboardInvite = false
-    /// System-wide `UIPasteboard.changeCount` value at the moment the user
-    /// last acknowledged the clipboard invite alert (either tapped Join or
-    /// Cancel). Stored via `@AppStorage` so it persists across app launches
-    /// and across HomeView re-creations (SwiftUI destroys + rebuilds the
-    /// view on tab switches, which would otherwise reset session flags and
-    /// re-fire the alert for the same clipboard content).
-    @AppStorage("clipboardInviteAckdChangeCount") private var clipboardInviteAckdChangeCount: Int = -1
-
-    /// Phone-invite finder modal — debug-only on Home now. The user-facing
-    /// manual entry lives in ProfileSheetView under Support; the banner +
-    /// onboarding cover phone-on-profile, and the server reconcile triggers
-    /// handle invite landing in both directions (past + future). This @State
-    /// + the `.sheet` below exist only so the debug menu shortcut
-    /// (`appRouter.debugShowPhoneInviteFinder`) can preview the modal here.
-    #if DEBUG
-    @State private var showPhoneInviteFinder = false
-    #endif
+    // Pre-1.0.3 clipboard-invite-detection paths removed in 1.0.9.
+    // Phone-on-profile + reverse/forward reconcile triggers handle
+    // invite landing automatically: the user sets phone at onboarding
+    // (mandatory), the server claims any pending invites with a
+    // matching `invited_phone`, and a `phoneInviteReconciled` push
+    // surfaces the new group. The clipboard alert + post-install
+    // bridge were redundant and added a confusing "Open your invite?"
+    // prompt for users whose invites had already been auto-claimed.
+    //
+    // Manual entry to PhoneInviteFinderSheet still exists in
+    // ProfileSheetView as a safety net for pre-1.0.3 users without
+    // phone on profile.
 
     /// One-time banner for users who installed before phone-on-profile shipped.
     /// Tapping opens PhoneEditSheet; once they enter their phone the server
@@ -849,29 +834,6 @@ struct HomeView: View {
         .sheet(isPresented: $showPaywall) {
             PaywallView()
         }
-        #if DEBUG
-        .sheet(isPresented: $showPhoneInviteFinder) {
-            PhoneInviteFinderSheet(
-                onSkip: {
-                    showPhoneInviteFinder = false
-                },
-                onClaimed: { groupId in
-                    showPhoneInviteFinder = false
-                    // Refresh groups + jump into the joined group on the
-                    // Games tab. Same path as handleScannedInvite uses on
-                    // a successful join.
-                    appRouter.shouldRefreshGroups = true
-                    appRouter.pendingRoundGroupId = groupId
-                    selectedTab = .skinGames
-                    ToastManager.shared.success("You're in!")
-                }
-            )
-            .environmentObject(authService)
-            .presentationDetents([.medium, .large])
-            .presentationDragIndicator(.visible)
-            .presentationBackground(.white)
-        }
-        #endif
         .sheet(isPresented: $showPhoneMigrationEdit, onDismiss: {
             // Once they've engaged with the sheet, hide the banner regardless
             // of save outcome. If they entered a valid phone, the trigger
@@ -899,23 +861,6 @@ struct HomeView: View {
                 handleScannedInvite(payload)
             }
         }
-        // Post-install bridge for scan-via-iPhone-Camera → install → open
-        // Carry. Fires once per session when the clipboard holds a URL
-        // (hasURLs is privacy-preserving — no paste banner here). Tapping
-        // Join triggers the "Allow Paste" prompt and routes the URL
-        // through the same `handleScannedInvite` path as a QR scan,
-        // landing the user directly inside the group.
-        .alert("Open your invite?", isPresented: Binding(
-            get: { clipboardInviteAvailable && !didDismissClipboardInvite },
-            set: { if !$0 { markClipboardInviteAcknowledged() } }
-        )) {
-            Button("Open") { consumeClipboardInvite() }
-            Button("Not Now", role: .cancel) {
-                markClipboardInviteAcknowledged()
-            }
-        } message: {
-            Text("Tap Open and choose Allow Paste when iOS asks — we'll take you straight to your group.")
-        }
         .alert("Leave Group?", isPresented: Binding(
             get: { roundToLeave != nil },
             set: { if !$0 { roundToLeave = nil } }
@@ -936,9 +881,6 @@ struct HomeView: View {
         }
         .onAppear {
             startHomePoller()
-            // Post-install bridge: did invite.html copy a URL to the
-            // clipboard that we can surface as a one-tap banner?
-            checkClipboardForInvite()
             // Refresh the per-user dismissal state for the phone migration
             // banner (depends on currentUser.id, which may not be loaded
             // until after the view appears).
@@ -947,26 +889,6 @@ struct HomeView: View {
         .onChange(of: authService.currentUser?.id) { _, _ in
             loadPhoneMigrationBannerState()
         }
-        #if DEBUG
-        .onChange(of: appRouter.debugSimulateClipboardInvite) { _, shouldSimulate in
-            guard shouldSimulate else { return }
-            appRouter.debugSimulateClipboardInvite = false
-            // Reset both the session dismissal flag AND the persisted
-            // `changeCount` acknowledgement so the debug action can always
-            // re-trigger the alert even if we previously dismissed it for
-            // the same clipboard content.
-            didDismissClipboardInvite = false
-            clipboardInviteAckdChangeCount = -1
-            checkClipboardForInvite()
-        }
-        .onChange(of: appRouter.debugShowPhoneInviteFinder) { _, shouldShow in
-            guard shouldShow else { return }
-            appRouter.debugShowPhoneInviteFinder = false
-            // Bypass the hasURLs/empty-groups gate so the modal opens for
-            // visual review even when the normal trigger conditions aren't met.
-            showPhoneInviteFinder = true
-        }
-        #endif
         .onDisappear {
             stopHomePoller()
         }
@@ -1062,58 +984,6 @@ struct HomeView: View {
             print("[HomePoller] Failed to poll: \(error)")
             #endif
         }
-    }
-
-    // MARK: - Clipboard Invite (post-install bridge)
-
-    /// Called on appear. Uses `hasURLs` (no consent prompt) so we can
-    /// decide whether to surface the "Join Skins Game" alert without
-    /// triggering the "Allow Paste" dialog. The actual paste only
-    /// happens when the user taps Join in the alert.
-    ///
-    /// Gated on `skinGameGroups.isEmpty` — this is a *post-install bridge*
-    /// per the doc on `clipboardInviteAvailable`. Once the user has any
-    /// group (joined or created), they're past the join-by-clipboard
-    /// phase; suppressing the prompt avoids re-firing on every cold
-    /// launch when `UIPasteboard.changeCount` has incremented (other apps
-    /// writing to the clipboard, or this app's own Share-link CTAs).
-    private func checkClipboardForInvite() {
-        guard skinGameGroups.isEmpty else {
-            clipboardInviteAvailable = false
-            return
-        }
-        let current = UIPasteboard.general.changeCount
-        let hasNewURL = UIPasteboard.general.hasURLs
-            && current != clipboardInviteAckdChangeCount
-        clipboardInviteAvailable = hasNewURL
-    }
-
-    /// Records the current pasteboard `changeCount` as acknowledged so the
-    /// alert won't re-fire for this clipboard content — whether the user
-    /// tapped Join or Cancel.
-    private func markClipboardInviteAcknowledged() {
-        clipboardInviteAckdChangeCount = UIPasteboard.general.changeCount
-        didDismissClipboardInvite = true
-        clipboardInviteAvailable = false
-    }
-
-    /// Invoked from the alert's Join button. Reads the clipboard — this is
-    /// where iOS shows the single "Allow Paste" prompt — validates that
-    /// the URL parses as a Carry invite, and routes through the same
-    /// flow as a QR scan. Non-Carry URLs dismiss silently (no error
-    /// toast for incidental clipboard contents).
-    private func consumeClipboardInvite() {
-        let urlOpt = UIPasteboard.general.url ?? UIPasteboard.general.string.flatMap(URL.init(string:))
-        guard let url = urlOpt, GroupInviteParser.parse(url) != nil else {
-            // Either the user denied the iOS Paste prompt or the clipboard
-            // held something that wasn't a Carry invite. Surface a recovery
-            // hint so they're not stranded.
-            ToastManager.shared.error("Tap the QR icon to scan your invite.")
-            markClipboardInviteAcknowledged()
-            return
-        }
-        markClipboardInviteAcknowledged()
-        handleScannedInvite(url.absoluteString)
     }
 
     /// Scanned QR payload handler. Mirrors `GroupsListView.handleScannedInvite`
