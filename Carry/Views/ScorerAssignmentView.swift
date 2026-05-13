@@ -143,6 +143,24 @@ struct ScorerAssignmentView: View {
                 .padding(.vertical, 3)
                 .background(Capsule().fill(Color(hexString: "#FFE7CA")))
                 .overlay(Capsule().strokeBorder(Color(hexString: "#FFD4BE"), lineWidth: 0.88))
+
+            // Clear pending invite (mistake / change of mind). Mirrors the
+            // confirmedRow X behavior. The local clearScorer() resets the
+            // slot to empty; if the parent persisted a group_members row
+            // (PlayerGroupsSheet post-creation path), the parent observes
+            // the .invited → .empty binding transition and deletes the
+            // row server-side on save.
+            if !readOnly {
+                Button {
+                    clearScorer()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 20))
+                        .foregroundColor(Color.textDisabled)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Remove pending invite")
+            }
         }
         .padding(.horizontal, 15)
         .padding(.vertical, 10)

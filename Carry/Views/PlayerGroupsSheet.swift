@@ -108,6 +108,12 @@ struct PlayerGroupsSheet: View {
     /// could silently wipe members when local slot tracking lost track of
     /// them (e.g. a search-result selection overwriting an occupied slot).
     @State private var userRemovedProfileIds: Set<UUID> = []
+    /// Tracks `group_members.id` UUIDs for SMS-invite scorer slots the
+    /// user cleared via the invitedRow X button. Phone-invite rows have
+    /// `player_id = inviter UUID` (placeholder), so `userRemovedProfileIds`
+    /// can't represent them. On `saveAndDismiss` we delete these rows
+    /// from the server by id.
+    @State private var userRemovedInviteMemberIds: Set<UUID> = []
 
     @State private var showRemoveGroupConfirm = false
     @State private var removeGroupIndex: Int? = nil
@@ -896,6 +902,22 @@ struct PlayerGroupsSheet: View {
                     // Scorer cleared — never auto-assign (especially not a
                     // guest). Leave 0 so the creator explicitly picks one.
                     scorerIDs[groupIndex] = 0
+                    // If we just cleared a pending SMS-invite scorer slot,
+                    // remember the server row id so saveAndDismiss deletes
+                    // it. inviteMemberId is the group_members.id (set by
+                    // loadSingleGroup at row construction time AND by the
+                    // sendInvite mint at slot-time).
+                    if oldValue.isPendingInvite, let inviteMemberId = oldValue.inviteMemberId {
+                        userRemovedInviteMemberIds.insert(inviteMemberId)
+                    }
+                    // Also drop the local Player row from this group so
+                    // the tee sheet immediately shows the cleared state
+                    // (no orphan phone-invite player lingering in groups[]
+                    // after the X tap).
+                    if oldValue.isPendingInvite {
+                        let removedId = Player.stableId(from: oldValue.inviteMemberId ?? UUID())
+                        groups[groupIndex].removeAll { $0.id == removedId }
+                    }
                 }
             }
         )
@@ -1383,6 +1405,19 @@ struct PlayerGroupsSheet: View {
                     .update(["status": "removed"])
                     .eq("group_id", value: groupId.uuidString)
                     .eq("player_id", value: profileId.uuidString)
+                    .execute()
+            }
+
+            // 3b'. Hard-delete pending phone-invite rows the user cleared
+            // via the invitedRow X. These rows can't be marked 'removed'
+            // by profile_id (phone-invite rows use a placeholder
+            // player_id = inviter UUID, so an UPDATE by player_id would
+            // either miss or hit the inviter). Delete by row id.
+            for inviteMemberId in userRemovedInviteMemberIds {
+                _ = try? await SupabaseManager.shared.client
+                    .from("group_members")
+                    .delete()
+                    .eq("id", value: inviteMemberId.uuidString)
                     .execute()
             }
         }
