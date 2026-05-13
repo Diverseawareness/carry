@@ -733,19 +733,28 @@ struct ManageMembersSheet: View {
     /// Label for the pending-invites chip grid. Prefers the inviter-
     /// typed name (carried through Player.name from
     /// loadSingleGroup's invitee_name read) so users see "Dan" rather
-    /// than "(333) 333-..." truncated. Falls back to the formatted
-    /// phone when no name was typed at invite time, or when the row
-    /// predates the invitee_name column (Player.name = raw phone
-    /// digits in that legacy path).
+    /// than "(333) 333-..." truncated. Caps at 8 chars + "…" so long
+    /// names ("Christopher") don't overflow the 79pt chip width.
+    ///
+    /// Fallback chain:
+    /// 1. Typed name (truncated to 8 chars + … if longer)
+    /// 2. Formatted phone (legacy rows that predate invitee_name)
+    /// 3. Literal "Invited" if neither is available (very rare —
+    ///    only possible if Player.name + phoneNumber are both empty,
+    ///    which shouldn't happen for pending invites in practice)
     private func pendingChipLabel(for player: Player) -> String {
         if !player.isPendingInvite { return player.shortName }
         let trimmed = player.name.trimmingCharacters(in: .whitespaces)
         let digitsOnly = trimmed.filter(\.isNumber).count == trimmed.filter({ !$0.isWhitespace }).count
         if !trimmed.isEmpty, !digitsOnly {
-            // shortName handles "First L." truncation for multi-word
-            // names; for single-word typed names it returns name
-            // unchanged.
-            return player.shortName
+            // 8 chars + ellipsis when longer. shortName ("First L.")
+            // handles multi-word names; single-word names go through
+            // unchanged before the 8-char clip.
+            let base = player.shortName
+            if base.count > 8 {
+                return String(base.prefix(8)) + "…"
+            }
+            return base
         }
         return formatPhoneDisplay(player.phoneNumber)
     }
