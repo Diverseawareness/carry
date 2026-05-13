@@ -525,11 +525,18 @@ struct ManageMembersSheet: View {
     ///     `inviteMemberId` = the row's group_members.id, set by
     ///     loadSingleGroup and ManageMembersSheet.sendInvite) → server
     ///     hard-delete by row id
-    /// Silent no-op only when neither identifier is available (defensive,
-    ///   shouldn't happen for any row that reached this view).
+    /// Silent no-op when neither identifier is available (defensive)
+    /// OR when the target is the logged-in user themselves — Leave/Delete
+    /// Group is the canonical self-removal path; long-press in Manage
+    /// Members shouldn't let the user delete themselves and leave the
+    /// group in a creator-less state.
     private func requestRemoval(of player: Player) {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         guard player.profileId != nil || player.inviteMemberId != nil else { return }
+        if let selfProfileId = authService.currentUser?.id, player.profileId == selfProfileId {
+            ToastManager.shared.error("You can't remove yourself — use Leave/Delete Group.")
+            return
+        }
         memberToRemove = player
     }
 
