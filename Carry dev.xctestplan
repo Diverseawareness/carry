@@ -1,0 +1,30 @@
+{
+  "configurations" : [
+    {
+      "id" : "121F5449-31AD-4758-A50F-C55E144E6262",
+      "name" : "Test Scheme Action",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "codeCoverage" : false,
+    "performanceAntipatternCheckerEnabled" : true,
+    "targetForVariableExpansion" : {
+      "containerPath" : "container:Carry.xcodeproj",
+      "identifier" : "D10001",
+      "name" : "Carry"
+    }
+  },
+  "testTargets" : [
+    {
+      "target" : {
+        "containerPath" : "container:Carry.xcodeproj",
+        "identifier" : "608DA9192F8A35F900B69072",
+        "name" : "CarryTests"
+      }
+    }
+  ],
+  "version" : 1
+}

@@ -640,10 +640,17 @@ struct GroupsListView: View {
                     }
                 }
 
-                // 2. Rebuild members with real Supabase UUIDs (index-based, not name-based)
+                // 2. Rebuild members with real Supabase UUIDs (index-based, not name-based).
+                // SMS-invite slots are passed through unchanged so their
+                // inviteMemberId (Stage 4a) survives to the reservePhoneInvite
+                // call below (Stage 4b). Without this filter, the SMS slot
+                // would consume a guest UUID intended for an actual typed
+                // guest, lose its isPendingInvite flag in the rebuilt Player,
+                // and end up persisted as a guest profile.
                 var guestIndex = 0
                 let updatedMembers = savedGroup.members.map { player -> Player in
                     if player.profileId != nil { return player }
+                    if player.isPendingInvite { return player }
                     guard !player.name.trimmingCharacters(in: .whitespaces).isEmpty else { return player }
                     guard guestIndex < guestUUIDs.count else { return player }
                     let guestId = guestUUIDs[guestIndex].uuid
