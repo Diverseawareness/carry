@@ -100,6 +100,7 @@
 		DA0002 /* DemoRoundController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB0002 /* DemoRoundController.swift */; };
 		DA0003 /* DemoRoundCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB0003 /* DemoRoundCard.swift */; };
 		DA0004 /* DemoConvertSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB0004 /* DemoConvertSheet.swift */; };
+		DC0001 /* CoachMark.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD0001 /* CoachMark.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -229,6 +230,7 @@
 		DB0002 /* DemoRoundController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoRoundController.swift; sourceTree = "<group>"; };
 		DB0003 /* DemoRoundCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoRoundCard.swift; sourceTree = "<group>"; };
 		DB0004 /* DemoConvertSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoConvertSheet.swift; sourceTree = "<group>"; };
+		DD0001 /* CoachMark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachMark.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -420,6 +422,7 @@
 				QR0002 /* QRScannerView.swift */,
 				DB0003 /* DemoRoundCard.swift */,
 				DB0004 /* DemoConvertSheet.swift */,
+				DD0001 /* CoachMark.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -705,6 +708,7 @@
 				DA0002 /* DemoRoundController.swift in Sources */,
 				DA0003 /* DemoRoundCard.swift in Sources */,
 				DA0004 /* DemoConvertSheet.swift in Sources */,
+				DC0001 /* CoachMark.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -46,6 +46,11 @@ struct GroupManagerView: View {
     @State private var showPaywall = false
     @State private var paywallTrigger: PaywallTrigger = .general
     @State private var showQRInvite = false
+    /// First-group coach mark — points at the QR button on the user's
+    /// first-ever group view. Once dismissed, never re-shows. Triggered
+    /// post-Demo Round conversion AND first cold-create of a Skins Group
+    /// or Quick Game. See CoachMark.swift.
+    @AppStorage("hasSeenFirstGroupQRCoachMark") private var hasSeenFirstGroupQRCoachMark: Bool = false
     /// Fullscreen QR shown when the user shakes their phone inside a group
     /// detail. Big, tap-to-dismiss surface so multiple people can scan at
     /// once without passing the phone around. Debug builds skip this path
@@ -1395,6 +1400,11 @@ struct GroupManagerView: View {
                     if isCreator && supabaseGroupId != nil && storeService.isPremium {
                         Button {
                             showQRInvite = true
+                            // Tapping the QR button itself satisfies the
+                            // coach mark's purpose - dismiss it.
+                            if !hasSeenFirstGroupQRCoachMark {
+                                hasSeenFirstGroupQRCoachMark = true
+                            }
                         } label: {
                             Image(systemName: "qrcode")
                                 .font(.system(size: 16, weight: .bold))
@@ -1404,6 +1414,25 @@ struct GroupManagerView: View {
                         }
                         .accessibilityLabel("QR invite")
                         .accessibilityHint("Shows a scannable QR code to invite players")
+                        .overlay(alignment: .topLeading) {
+                            // First-group coach mark - points at the QR button.
+                            // Renders below the button (anchored to its bottom
+                            // edge via offset). Tap to dismiss; auto-dismissed
+                            // on QR button tap above.
+                            if !hasSeenFirstGroupQRCoachMark {
+                                CoachMark(
+                                    text: "Reveal QR code for players to scan and join group directly",
+                                    pointerLeadingOffset: 12,
+                                    onDismiss: {
+                                        withAnimation(.easeOut(duration: 0.2)) {
+                                            hasSeenFirstGroupQRCoachMark = true
+                                        }
+                                    }
+                                )
+                                .offset(x: -8, y: 44)
+                                .zIndex(100)
+                            }
+                        }
                     }
 
                     // Group options button. Three flavors:
