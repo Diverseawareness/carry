@@ -286,11 +286,18 @@ struct PlayerGroupsSheet: View {
                 // block above the keyboard. Anchor .bottom so the
                 // phone field + Send button (which live at the bottom
                 // of the expanded scorer container) land just above
-                // the keyboard's top edge. Matches QuickStartSheet
-                // behavior.
+                // the keyboard's top edge.
+                //
+                // 350 ms delay: iOS shrinks the ScrollView safe-area
+                // inset as the keyboard animates up; firing scrollTo
+                // immediately computes the destination against the
+                // pre-keyboard viewport, leaving the slot partially
+                // covered on smaller screens (iPhone SE etc).
                 guard let sig = newValue else { return }
-                withAnimation(.easeOut(duration: 0.25)) {
-                    scrollProxy.scrollTo("scorer-\(sig.groupIndex)", anchor: .bottom)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    withAnimation(.easeOut(duration: 0.25)) {
+                        scrollProxy.scrollTo("scorer-\(sig.groupIndex)", anchor: .bottom)
+                    }
                 }
             }
             }

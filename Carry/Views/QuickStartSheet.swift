@@ -250,13 +250,21 @@ struct QuickGameSheet: View {
                 // cards + the "Send Invite" phone row underneath. The
                 // phone field lives at the BOTTOM of the slot
                 // container, so a .center anchor leaves it covered by
-                // the keyboard. .bottom aligns the slot's bottom edge
-                // with the visible viewport edge (above the keyboard
-                // since iOS shrinks the safe area), keeping phone +
-                // Send button visible.
+                // the keyboard.
+                //
+                // Delayed scrollTo (350 ms): iOS shrinks the
+                // ScrollView's safe-area inset as the keyboard
+                // animates up (~0.25s system animation). Firing
+                // scrollTo immediately on focus computes the
+                // destination against the PRE-keyboard viewport, so
+                // on smaller screens (iPhone SE/Ziggy's device) the
+                // slot ends up partially behind the keyboard. The
+                // delay lets the safe-area shrink land first.
                 guard let sig = newValue else { return }
-                withAnimation(.easeOut(duration: 0.25)) {
-                    scrollProxy.scrollTo("slot-\(sig.groupIndex)-0", anchor: .bottom)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    withAnimation(.easeOut(duration: 0.25)) {
+                        scrollProxy.scrollTo("slot-\(sig.groupIndex)-0", anchor: .bottom)
+                    }
                 }
             }
             }
