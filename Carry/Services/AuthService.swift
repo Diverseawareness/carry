@@ -210,13 +210,22 @@ final class AuthService: ObservableObject {
     // Caller (AuthView) drives the GIDSignIn flow and hands us the idToken.
     // We just exchange it with Supabase, exactly like the Apple path.
     func signInWithGoogle(idToken: String, accessToken: String?) async throws {
-        let session = try await client.auth.signInWithIdToken(
-            credentials: .init(
-                provider: .google,
-                idToken: idToken,
-                accessToken: accessToken
+        let session: Session
+        do {
+            session = try await client.auth.signInWithIdToken(
+                credentials: .init(
+                    provider: .google,
+                    idToken: idToken,
+                    accessToken: accessToken
+                )
             )
-        )
+        } catch {
+            // Server-side dedup trigger (migration 20260515000000) may raise
+            // EMAIL_ALREADY_REGISTERED: <provider> if a user with this email
+            // already exists under a different sign-in method. Translate
+            // to typed AuthError so the UI can show "use Apple instead", etc.
+            throw mapAuthSignupError(error)
+        }
 
         // Backfill profile from Google claims. Supabase normalizes the idToken
         // into userMetadata as `name`/`full_name` (not `given_name`/`family_name`),
@@ -365,15 +374,23 @@ final class AuthService: ObservableObject {
         if !trimmedFirst.isEmpty { metadata["first_name"] = .string(trimmedFirst) }
         if !trimmedLast.isEmpty { metadata["last_name"] = .string(trimmedLast) }
 
-        let response = try await client.auth.signUp(
-            email: email,
-            password: password,
-            data: metadata.isEmpty ? nil : metadata,
-            // Trailing `.html` is required because the host (DreamHost / Apache)
-            // doesn't auto-resolve extensionless URLs — `/auth/confirm` 404s.
-            // The AASA `/auth/*` glob still matches, so iOS Universal Links work.
-            redirectTo: URL(string: "https://carryapp.site/auth/confirm.html")
-        )
+        let response: AuthResponse
+        do {
+            response = try await client.auth.signUp(
+                email: email,
+                password: password,
+                data: metadata.isEmpty ? nil : metadata,
+                // Trailing `.html` is required because the host (DreamHost / Apache)
+                // doesn't auto-resolve extensionless URLs — `/auth/confirm` 404s.
+                // The AASA `/auth/*` glob still matches, so iOS Universal Links work.
+                redirectTo: URL(string: "https://carryapp.site/auth/confirm.html")
+            )
+        } catch {
+            // Server-side dedup trigger (migration 20260515000000) may raise
+            // EMAIL_ALREADY_REGISTERED: <provider> if a user with this email
+            // already exists under a different sign-in method.
+            throw mapAuthSignupError(error)
+        }
 
         if response.session == nil {
             throw AuthError.emailConfirmationPending
@@ -783,6 +800,13 @@ enum AuthError: LocalizedError {
     case missingToken
     case profileSaveVerificationFailed
     case emailConfirmationPending
+    /// Raised when the server-side `check_email_dedup_on_signup` trigger
+    /// rejects a new `auth.users` insert because another account already
+    /// owns this email under a different provider. `provider` is the
+    /// existing provider label (`apple`/`google`/`email`) so the UI can
+    /// tell the user which sign-in to use instead. See migration
+    /// `20260515000000_dedupe_email_on_signup.sql`.
+    case emailAlreadyRegistered(provider: String)
 
     var errorDescription: String? {
         switch self {
@@ -792,6 +816,36 @@ enum AuthError: LocalizedError {
             return "Couldn't confirm your profile was saved. Please try again."
         case .emailConfirmationPending:
             return nil
+        case .emailAlreadyRegistered(let provider):
+            switch provider {
+            case "apple":
+                return "An account already exists for this email with Apple Sign-In. Please sign in with Apple instead."
+            case "google":
+                return "An account already exists for this email with Google. Please sign in with Google instead."
+            case "email":
+                return "An account already exists for this email. Please sign in with your password instead."
+            default:
+                return "An account already exists for this email. Please sign in with the provider you used originally."
+            }
         }
     }
+}
+
+// MARK: - Server error mapping
+//
+// Pure function (no `self`) so it stays test-friendly. Reads the trigger's
+// raise message (format: "EMAIL_ALREADY_REGISTERED: <provider>") out of
+// whatever wrapping Supabase puts around it and re-throws as the typed
+// `AuthError.emailAlreadyRegistered`. Other errors pass through unchanged.
+func mapAuthSignupError(_ error: Error) -> Error {
+    let msg = error.localizedDescription
+    let marker = "EMAIL_ALREADY_REGISTERED:"
+    guard let range = msg.range(of: marker) else { return error }
+    let tail = msg[range.upperBound...]
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    // Take the first letter-only run — the trigger emits one of
+    // apple / google / email. Defensive against trailing punctuation
+    // or JSON escaping that Supabase might wrap the payload in.
+    let provider = tail.prefix { $0.isLetter }
+    return AuthError.emailAlreadyRegistered(provider: String(provider))
 }

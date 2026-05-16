@@ -279,6 +279,10 @@ struct AuthView: View {
                 // user dismissed — silent
             } catch let e as GoogleSignInService.Failure {
                 self.error = e.errorDescription ?? "Sign in failed. Please try again."
+            } catch let e as AuthError {
+                // Includes AuthError.emailAlreadyRegistered, which carries
+                // copy directing the user to the right provider.
+                self.error = e.errorDescription ?? "Sign in failed. Please try again."
             } catch {
                 self.error = "Sign in failed. Please try again."
             }

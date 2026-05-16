@@ -77,6 +77,12 @@ struct EmailAuthSheet: View {
         // toolbar Cancel, keyboard Done, the bottom mode-toggle link, and any
         // other Button label that defaults to .accentColor inherit textPrimary.
         .tint(Color.textPrimary)
+        // Attach the toast overlay at the sheet root so toasts fired from
+        // anywhere inside this sheet (including pushed destinations like
+        // ForgotPasswordView's "Successfully sent" / "Message failed") render
+        // within this sheet's window. The MainTabView overlay can't reach
+        // into a presented sheet — sheets live in a separate UIWindowScene.
+        .carryToastOverlay()
     }
 
     // MARK: - Form
@@ -402,6 +408,11 @@ struct EmailAuthSheet: View {
                 }
             } catch AuthError.emailConfirmationPending {
                 showCheckEmail = true
+            } catch let e as AuthError {
+                // Typed AuthError (e.g. .emailAlreadyRegistered) carries its own
+                // provider-aware copy via errorDescription — use it directly
+                // instead of pattern-matching the localizedDescription.
+                self.error = e.errorDescription ?? humanError(e)
             } catch {
                 self.error = humanError(error)
             }
