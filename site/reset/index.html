@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Reset Password — Carry</title>
+    <meta name="description" content="Set a new password for your Carry account.">
+    <meta name="theme-color" content="#1A1A1A">
+    <meta name="robots" content="noindex">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/png" href="../appicon.png">
+    <link rel="apple-touch-icon" href="../appicon.png">
+    <meta name="apple-itunes-app" content="app-id=6760993864">
+
+    <style>
+        :root {
+            --black: #1A1A1A;
+            --white: #FFFFFF;
+            --green-dark: #064102;
+            --green-light: #BCF0B5;
+            --gray-400: #999999;
+            --gray-200: #2A2A2A;
+            --red: #FF6B6B;
+            --font: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { -webkit-font-smoothing: antialiased; }
+        body {
+            font-family: var(--font);
+            background: var(--black);
+            color: var(--white);
+            min-height: 100dvh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 40px 24px;
+        }
+        .card {
+            max-width: 360px;
+            width: 100%;
+            text-align: center;
+        }
+        .app-icon {
+            display: block;
+            width: 80px;
+            height: 80px;
+            border-radius: 18px;
+            margin: 0 auto 32px;
+        }
+        h1 {
+            font-size: 28px;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            margin-bottom: 12px;
+        }
+        p {
+            font-size: 16px;
+            line-height: 1.5;
+            color: var(--gray-400);
+            margin-bottom: 32px;
+        }
+        form { text-align: left; }
+        label {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 8px;
+            color: var(--white);
+        }
+        input[type="password"] {
+            width: 100%;
+            background: var(--gray-200);
+            border: 1.5px solid var(--gray-200);
+            border-radius: 14px;
+            padding: 16px;
+            font-size: 16px;
+            font-family: var(--font);
+            color: var(--white);
+            outline: none;
+            margin-bottom: 16px;
+            transition: border-color 0.15s ease;
+        }
+        input[type="password"]:focus {
+            border-color: var(--green-light);
+        }
+        input[type="password"]::placeholder { color: var(--gray-400); }
+        button.btn {
+            display: block;
+            width: 100%;
+            background: var(--green-light);
+            color: var(--green-dark);
+            font-size: 16px;
+            font-weight: 600;
+            font-family: var(--font);
+            border: none;
+            padding: 16px 32px;
+            border-radius: 14px;
+            cursor: pointer;
+            margin-top: 8px;
+        }
+        button.btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .btn-link {
+            display: inline-block;
+            background: var(--green-light);
+            color: var(--green-dark);
+            font-size: 16px;
+            font-weight: 600;
+            text-decoration: none;
+            padding: 16px 32px;
+            border-radius: 14px;
+            min-width: 200px;
+        }
+        .btn-secondary {
+            display: block;
+            color: var(--gray-400);
+            font-size: 14px;
+            margin-top: 16px;
+            text-decoration: underline;
+        }
+        .error {
+            color: var(--red);
+            font-size: 14px;
+            margin-top: -8px;
+            margin-bottom: 16px;
+            text-align: center;
+        }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <img src="../appicon.png" alt="Carry" class="app-icon">
+
+        <!-- State 1: verifying the recovery token. Default visible. -->
+        <div id="state-loading">
+            <h1>Verifying link…</h1>
+            <p>One moment.</p>
+        </div>
+
+        <!-- State 2: token valid, show password form -->
+        <div id="state-form" class="hidden">
+            <h1>Set new password</h1>
+            <p>Choose a password you'll remember. At least 6 characters.</p>
+            <form id="reset-form">
+                <label for="password">New password</label>
+                <input type="password" id="password" minlength="6" placeholder="••••••••" required autocomplete="new-password" autofocus>
+                <div id="form-error" class="error hidden"></div>
+                <button type="submit" class="btn" id="submit-btn">Update password</button>
+            </form>
+        </div>
+
+        <!-- State 3: success -->
+        <div id="state-success" class="hidden">
+            <h1>Password updated</h1>
+            <p>Open Carry and sign in with your new password.</p>
+            <a href="carry://" class="btn-link">Open Carry</a>
+            <a href="https://apps.apple.com/app/id6760993864" class="btn-secondary">Don't have the app? Get Carry</a>
+        </div>
+
+        <!-- State 4: link expired / invalid -->
+        <div id="state-bad-token" class="hidden">
+            <h1>Link expired</h1>
+            <p>Password reset links expire after one hour. Request a new one from the app.</p>
+            <a href="carry://" class="btn-link">Open Carry</a>
+            <a href="https://apps.apple.com/app/id6760993864" class="btn-secondary">Don't have the app? Get Carry</a>
+        </div>
+    </div>
+
+    <script type="module">
+        // Supabase JS v2 via ESM CDN. Uses the prod project (this page is
+        // served from carryapp.site and only ever receives prod recovery
+        // tokens — dev recovery flow can be tested by pointing the dev
+        // Supabase project's redirect URL at a local server).
+        import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+
+        const SUPABASE_URL = 'https://seeitehizboxjbnccnyd.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNlZWl0ZWhpemJveGpibmNjbnlkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIzMzk2NDUsImV4cCI6MjA4NzkxNTY0NX0.joJEka9lBwcKMPwEOU59uCYuo5te7crOaN00fVcfo_E';
+
+        // detectSessionInUrl: true → Supabase parses the recovery hash from
+        // the URL (#access_token=…&type=recovery&refresh_token=…) and sets a
+        // temporary session, then fires the PASSWORD_RECOVERY event below.
+        // persistSession: false → don't write to localStorage; this page is
+        // single-use, session dies on tab close.
+        const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+            auth: {
+                detectSessionInUrl: true,
+                persistSession: false,
+                autoRefreshToken: false,
+            }
+        });
+
+        const $loading = document.getElementById('state-loading');
+        const $form = document.getElementById('state-form');
+        const $success = document.getElementById('state-success');
+        const $badToken = document.getElementById('state-bad-token');
+        const $resetForm = document.getElementById('reset-form');
+        const $password = document.getElementById('password');
+        const $submit = document.getElementById('submit-btn');
+        const $error = document.getElementById('form-error');
+
+        function show(el) {
+            for (const e of [$loading, $form, $success, $badToken]) {
+                e.classList.add('hidden');
+            }
+            el.classList.remove('hidden');
+        }
+
+        // PASSWORD_RECOVERY fires once Supabase parses the recovery hash and
+        // establishes the temporary session. That's our cue the link is valid.
+        supabase.auth.onAuthStateChange((event) => {
+            if (event === 'PASSWORD_RECOVERY') {
+                show($form);
+            }
+        });
+
+        // Fallback for users who land here without a valid hash (link expired,
+        // copy/paste loss, etc.). 3 s is enough time for the SDK to fire its
+        // PASSWORD_RECOVERY event after page load.
+        setTimeout(async () => {
+            if (!$form.classList.contains('hidden')) return;
+            const { data } = await supabase.auth.getSession();
+            if (data.session) {
+                show($form);
+            } else {
+                show($badToken);
+            }
+        }, 3000);
+
+        $resetForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            $error.classList.add('hidden');
+            $submit.disabled = true;
+            $submit.textContent = 'Updating…';
+
+            const pw = $password.value;
+            if (pw.length < 6) {
+                $error.textContent = 'Password must be at least 6 characters.';
+                $error.classList.remove('hidden');
+                $submit.disabled = false;
+                $submit.textContent = 'Update password';
+                return;
+            }
+
+            const { error } = await supabase.auth.updateUser({ password: pw });
+            if (error) {
+                $error.textContent = error.message || 'Something went wrong. Try requesting a new link.';
+                $error.classList.remove('hidden');
+                $submit.disabled = false;
+                $submit.textContent = 'Update password';
+                return;
+            }
+
+            // Sign out the recovery session so the user has to sign in fresh
+            // with the new password — better UX signal that the change worked.
+            await supabase.auth.signOut();
+            show($success);
+        });
+    </script>
+</body>
+</html>
