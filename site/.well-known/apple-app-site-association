@@ -4,7 +4,7 @@
     "details": [
       {
         "appID": "4HC6HD76J4.com.diverseawareness.carry",
-        "paths": ["/invite*"]
+        "paths": ["/invite*", "/auth/*"]
       }
     ]
   }

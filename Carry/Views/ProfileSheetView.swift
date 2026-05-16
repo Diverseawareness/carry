@@ -1,6 +1,7 @@
 import SwiftUI
 import PhotosUI
 import StoreKit
+import AuthenticationServices
 
 struct ProfileView: View {
     @EnvironmentObject var authService: AuthService
@@ -26,6 +27,12 @@ struct ProfileView: View {
     @State private var imageToCrop: UIImage? = nil
     @State private var showShareSheet = false
     @State private var showDeleteConfirm = false
+    @State private var showDisconnectConfirm = false
+    @State private var disconnectProvider: String? = nil
+    @State private var linkAlertMessage: String? = nil
+    @State private var showLinkAlert = false
+    @State private var isLinking = false
+    @State private var appleLinkCoordinator = AppleSignInCoordinator()
 
     /// Feature flag — GHIN row is hidden until USGA GPA Program approval.
     /// Code is kept in place; flip to `true` once API access is granted.
@@ -260,6 +267,27 @@ struct ProfileView: View {
                         }
                     }
 
+                    // MARK: Sign-In Methods
+                    capsHeader("SIGN-IN METHODS")
+                    settingsGroup {
+                        signInMethodRow(
+                            label: "Apple",
+                            provider: "apple",
+                            isConnected: authService.identities.contains(where: { $0.provider == "apple" })
+                        )
+                        groupDivider()
+                        signInMethodRow(
+                            label: "Google",
+                            provider: "google",
+                            isConnected: authService.identities.contains(where: { $0.provider == "google" })
+                        )
+                    }
+                    Text("Connect another sign-in method so you can sign in either way and land on the same account.")
+                        .font(.system(size: 13))
+                        .foregroundColor(Color.textSecondary)
+                        .padding(.horizontal, 24)
+                        .padding(.top, 6)
+
                     // MARK: Data
                     capsHeader("DATA")
                     settingsGroup {
@@ -334,6 +362,25 @@ struct ProfileView: View {
                 }
             }
             Button("Cancel", role: .cancel) {}
+        }
+        .confirmationDialog(
+            disconnectProvider.map { "Disconnect \($0.capitalized) sign-in?" } ?? "Disconnect sign-in?",
+            isPresented: $showDisconnectConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Disconnect", role: .destructive) {
+                if let p = disconnectProvider {
+                    Task { await disconnect(p) }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("You'll no longer be able to sign in with this method. You can reconnect it any time.")
+        }
+        .alert("Sign-In Methods", isPresented: $showLinkAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(linkAlertMessage ?? "")
         }
         .confirmationDialog("Delete your account?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
             Button("Delete Account", role: .destructive) {
@@ -616,6 +663,120 @@ struct ProfileView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func signInMethodRow(label: String, provider: String, isConnected: Bool) -> some View {
+        Button {
+            if isLinking { return }
+            if isConnected {
+                disconnectProvider = provider
+                showDisconnectConfirm = true
+            } else {
+                Task { await linkProvider(provider) }
+            }
+        } label: {
+            HStack(spacing: 10) {
+                Text(label)
+                    .font(.system(size: 16))
+                    .foregroundColor(Color.textPrimary)
+                Spacer(minLength: 8)
+                if isLinking, disconnectProvider == provider || isConnected == false {
+                    ProgressView().scaleEffect(0.8)
+                } else if isConnected {
+                    Text("Connected")
+                        .font(.system(size: 15))
+                        .foregroundColor(Color.textSecondary)
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(Color.greenDark)
+                } else {
+                    Text("Connect")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundColor(Color.textPrimary)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(Color.textSecondary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 14)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(isLinking)
+    }
+
+    private func linkProvider(_ provider: String) async {
+        isLinking = true
+        defer { isLinking = false }
+        do {
+            switch provider {
+            case "apple":
+                try await linkAppleFlow()
+            case "google":
+                try await linkGoogleFlow()
+            default:
+                break
+            }
+            await MainActor.run {
+                ToastManager.shared.success("\(provider.capitalized) connected")
+            }
+        } catch let e as AuthService.LinkError {
+            linkAlertMessage = e.errorDescription
+            showLinkAlert = true
+        } catch is CancellationError {
+            // user dismissed — silent
+        } catch let e as NSError where e.domain == ASAuthorizationError.errorDomain && e.code == ASAuthorizationError.canceled.rawValue {
+            // Apple cancel — silent
+        } catch {
+            linkAlertMessage = "Couldn't connect. Please try again."
+            showLinkAlert = true
+        }
+    }
+
+    private func linkAppleFlow() async throws {
+        let auth = try await withCheckedThrowingContinuation { (cont: CheckedContinuation<ASAuthorization, Error>) in
+            appleLinkCoordinator.signIn { result in
+                switch result {
+                case .success(let auth): cont.resume(returning: auth)
+                case .failure(let err): cont.resume(throwing: err)
+                }
+            }
+        }
+        guard let credential = auth.credential as? ASAuthorizationAppleIDCredential,
+              let tokenData = credential.identityToken,
+              let idTokenString = String(data: tokenData, encoding: .utf8) else {
+            throw AuthService.LinkError.underlying(NSError(domain: "AppleLink", code: -1, userInfo: [NSLocalizedDescriptionKey: "Apple didn't return a valid token."]))
+        }
+        try await authService.linkAppleIdentity(idTokenString: idTokenString)
+    }
+
+    private func linkGoogleFlow() async throws {
+        guard let rootVC = UIApplication.shared.connectedScenes
+            .compactMap({ ($0 as? UIWindowScene)?.keyWindow?.rootViewController })
+            .first else {
+            throw AuthService.LinkError.underlying(NSError(domain: "GoogleLink", code: -1, userInfo: [NSLocalizedDescriptionKey: "Couldn't present sign-in."]))
+        }
+        let tokens = try await GoogleSignInService.signIn(presenting: rootVC)
+        try await authService.linkGoogleIdentity(idToken: tokens.idToken, accessToken: tokens.accessToken)
+    }
+
+    private func disconnect(_ provider: String) async {
+        isLinking = true
+        defer { isLinking = false }
+        do {
+            try await authService.unlinkProvider(provider)
+            await MainActor.run {
+                ToastManager.shared.success("\(provider.capitalized) disconnected")
+            }
+        } catch let e as AuthService.LinkError {
+            linkAlertMessage = e.errorDescription
+            showLinkAlert = true
+        } catch {
+            linkAlertMessage = "Couldn't disconnect. Please try again."
+            showLinkAlert = true
+        }
     }
 }
 

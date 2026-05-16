@@ -20,6 +20,9 @@
 		6067A5C72F75E7980055DE9A /* AnalyticsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6067A5C62F75E7980055DE9A /* AnalyticsService.swift */; };
 		606FCC162FA1BE5600C79B91 /* GoogleSignInService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 606FCC152FA1BE5600C79B91 /* GoogleSignInService.swift */; };
 		606FCC182FA1BEE300C79B91 /* EmailAuthSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 606FCC172FA1BEE300C79B91 /* EmailAuthSheet.swift */; };
+		60860E3E2FA3EF4F00E6433C /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 60860E3D2FA3EF4F00E6433C /* GoogleSignIn */; };
+		60860E402FA3EF5000E6433C /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 60860E3F2FA3EF4F00E6433C /* GoogleSignInSwift */; };
+		60860E422FA4053000E6433C /* ForgotPasswordView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60860E412FA4053000E6433C /* ForgotPasswordView.swift */; };
 		608DA9452F8A3A0200B69072 /* PostHog in Frameworks */ = {isa = PBXBuildFile; productRef = CT0001 /* PostHog */; };
 		608DA9462F8A3A0200B69072 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = CT0002 /* Supabase */; };
 		6096464F2F8F5D8B002F3BA9 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6096464E2F8F5D8B002F3BA9 /* WidgetKit.framework */; };
@@ -149,6 +152,7 @@
 		6067A5C62F75E7980055DE9A /* AnalyticsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsService.swift; sourceTree = "<group>"; };
 		606FCC152FA1BE5600C79B91 /* GoogleSignInService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleSignInService.swift; sourceTree = "<group>"; };
 		606FCC172FA1BEE300C79B91 /* EmailAuthSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailAuthSheet.swift; sourceTree = "<group>"; };
+		60860E412FA4053000E6433C /* ForgotPasswordView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForgotPasswordView.swift; sourceTree = "<group>"; };
 		608DA91A2F8A35F900B69072 /* CarryTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CarryTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		6096464C2F8F5D8B002F3BA9 /* CarryWidgetsExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = CarryWidgetsExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		6096464E2F8F5D8B002F3BA9 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
@@ -284,6 +288,8 @@
 			files = (
 				A10025 /* Supabase in Frameworks */,
 				6067A5C52F75E4140055DE9A /* PostHog in Frameworks */,
+				60860E3E2FA3EF4F00E6433C /* GoogleSignIn in Frameworks */,
+				60860E402FA3EF5000E6433C /* GoogleSignInSwift in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -379,6 +385,7 @@
 		C10006 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				60860E412FA4053000E6433C /* ForgotPasswordView.swift */,
 				606FCC172FA1BEE300C79B91 /* EmailAuthSheet.swift */,
 				60385FE42F7A167800FBF213 /* SMSInviteSheet.swift */,
 				60385FE02F78D10200FBF213 /* ResultsShareCard.swift */,
@@ -534,6 +541,8 @@
 			packageProductDependencies = (
 				P10002 /* Supabase */,
 				6067A5C42F75E4140055DE9A /* PostHog */,
+				60860E3D2FA3EF4F00E6433C /* GoogleSignIn */,
+				60860E3F2FA3EF4F00E6433C /* GoogleSignInSwift */,
 			);
 			productName = Carry;
 			productReference = B10020 /* Carry.app */;
@@ -573,6 +582,7 @@
 			packageReferences = (
 				P10001 /* XCRemoteSwiftPackageReference "supabase-swift" */,
 				6067A5C32F75E4140055DE9A /* XCRemoteSwiftPackageReference "posthog-ios" */,
+				60860E3C2FA3EE4100E6433C /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
 			);
 			productRefGroup = C10003 /* Products */;
 			projectDirPath = "";
@@ -652,6 +662,7 @@
 				A20101 /* HandicapPickerSheet.swift in Sources */,
 				A20100 /* CarryTextField.swift in Sources */,
 				A20001 /* StoreService.swift in Sources */,
+				60860E422FA4053000E6433C /* ForgotPasswordView.swift in Sources */,
 				A20002 /* PaywallView.swift in Sources */,
 				S10002 /* SyncQueue.swift in Sources */,
 				N10002 /* NotificationService.swift in Sources */,
@@ -1258,6 +1269,14 @@
 				minimumVersion = 3.48.2;
 			};
 		};
+		60860E3C2FA3EE4100E6433C /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/google/GoogleSignIn-iOS";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 9.1.0;
+			};
+		};
 		P10001 /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/supabase/supabase-swift.git";
@@ -1273,6 +1292,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 6067A5C32F75E4140055DE9A /* XCRemoteSwiftPackageReference "posthog-ios" */;
 			productName = PostHog;
+		};
+		60860E3D2FA3EF4F00E6433C /* GoogleSignIn */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 60860E3C2FA3EE4100E6433C /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignIn;
+		};
+		60860E3F2FA3EF4F00E6433C /* GoogleSignInSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 60860E3C2FA3EE4100E6433C /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignInSwift;
 		};
 		CT0001 /* PostHog */ = {
 			isa = XCSwiftPackageProductDependency;

@@ -1,5 +1,8 @@
 import SwiftUI
 import PostHog
+#if canImport(GoogleSignIn)
+import GoogleSignIn
+#endif
 
 // MARK: - Shake Gesture Detection
 
@@ -276,6 +279,15 @@ struct CarryApp: App {
                 }
             }
             .onOpenURL { url in
+                // Google Sign-In returns to the app via a custom URL scheme
+                // matching the reversed iOS client ID. Let GIDSignIn claim
+                // the URL first; only fall through to invite/round handling
+                // if it wasn't a Google callback.
+                #if canImport(GoogleSignIn)
+                if GIDSignIn.sharedInstance.handle(url) {
+                    return
+                }
+                #endif
                 handleIncomingURL(url)
             }
             .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
@@ -340,6 +352,22 @@ struct CarryApp: App {
 
     /// Handle an incoming URL from either custom scheme (onOpenURL) or Universal Links (onContinueUserActivity).
     private func handleIncomingURL(_ url: URL) {
+        // Supabase auth callback (email confirmation, magic link, password
+        // reset). When the user taps the link in their email, the verify
+        // endpoint redirects to carryapp.site/auth/confirm with tokens in
+        // the URL fragment — iOS Universal Links route that back into the
+        // app, where we exchange it for a session.
+        if url.host == "carryapp.site", url.path.hasPrefix("/auth/") {
+            Task {
+                do {
+                    try await authService.handleAuthCallback(url: url)
+                } catch {
+                    ToastManager.shared.error("Couldn't complete sign-in. Try signing in with your email and password.")
+                }
+            }
+            return
+        }
+
         if let invite = GroupInviteParser.parse(url) {
             if let groupId = invite.groupId {
                 // Tapping the invite link / scanning the QR is itself the

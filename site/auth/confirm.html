@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Email Confirmed — Carry</title>
+    <meta name="description" content="Your Carry email is confirmed. Open the app to finish signing in.">
+    <meta name="theme-color" content="#1A1A1A">
+    <meta name="robots" content="noindex">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/png" href="../appicon.png">
+    <link rel="apple-touch-icon" href="../appicon.png">
+
+    <!-- Apple Smart App Banner. If Carry is installed, Safari shows the
+         native "Open" banner at the top — but in practice iOS intercepts
+         this URL via Universal Links before this page renders. -->
+    <meta name="apple-itunes-app" content="app-id=6760993864">
+
+    <style>
+        :root {
+            --black: #1A1A1A;
+            --white: #FFFFFF;
+            --green-dark: #064102;
+            --green-light: #BCF0B5;
+            --gray-400: #999999;
+            --font: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { -webkit-font-smoothing: antialiased; }
+        body {
+            font-family: var(--font);
+            background: var(--black);
+            color: var(--white);
+            min-height: 100dvh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 40px 24px;
+        }
+        .card { max-width: 360px; width: 100%; }
+        .app-icon {
+            display: block;
+            width: 80px;
+            height: 80px;
+            border-radius: 18px;
+            margin: 0 auto 32px;
+        }
+        h1 {
+            font-size: 28px;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            margin-bottom: 12px;
+        }
+        p {
+            font-size: 16px;
+            line-height: 1.5;
+            color: var(--gray-400);
+            margin-bottom: 32px;
+        }
+        .btn {
+            display: inline-block;
+            background: var(--green-light);
+            color: var(--green-dark);
+            font-size: 16px;
+            font-weight: 600;
+            text-decoration: none;
+            padding: 16px 32px;
+            border-radius: 14px;
+            min-width: 200px;
+        }
+        .btn-secondary {
+            display: block;
+            color: var(--gray-400);
+            font-size: 14px;
+            margin-top: 16px;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <img src="../appicon.png" alt="Carry" class="app-icon">
+        <h1>Email confirmed</h1>
+        <p>You're all set. Open Carry to finish signing in.</p>
+        <a href="https://carryapp.site/auth/confirm" class="btn">Open Carry</a>
+        <a href="https://apps.apple.com/app/id6760993864" class="btn-secondary">Don't have the app? Get Carry</a>
+    </div>
+
+    <script>
+        // iOS Universal Links typically intercept this URL before the page
+        // renders. If we get here, either the user's iOS hasn't indexed the
+        // AASA yet, they're on a non-iOS device, or the app isn't installed.
+        // The "Open Carry" button retries the same URL — Safari will then
+        // surface its native "Open in App" banner if Carry is installed.
+    </script>
+</body>
+</html>

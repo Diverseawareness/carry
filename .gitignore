@@ -20,6 +20,10 @@ build/
 
 # Secrets
 Secrets.xcconfig
+# Google OAuth client secret JSONs (downloaded from Cloud Console).
+# Never commit — quarantine rule, see memory/feedback_auth_v2_quarantine.md
+client_secret_*.json
+GoogleService-Info.plist
 
 # Swift Package Manager
 .build/

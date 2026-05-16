@@ -70,6 +70,16 @@
 				<string>carry</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.diverseawareness.carry.googlesignin</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.501439459788-g9auqo5f8rn5nellkuqehugmqae396lc</string>
+			</array>
+		</dict>
 	</array>
+	<key>GIDClientID</key>
+	<string>501439459788-g9auqo5f8rn5nellkuqehugmqae396lc.apps.googleusercontent.com</string>
 </dict>
 </plist>

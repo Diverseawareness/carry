@@ -5,18 +5,21 @@ import SwiftUI
 struct GolfBallLoader: View {
     var size: CGFloat = 60
 
+    @State private var startDate = Date()
+
     private var cupR: CGFloat { size * 0.22 }
     private var rimW: CGFloat { size * 0.08 }
     private var ballR: CGFloat { size * 0.12 }
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { timeline in
-            let now = timeline.date.timeIntervalSinceReferenceDate
             Canvas { context, canvasSize in
-                drawScene(context: context, size: canvasSize, time: now)
+                let elapsed = timeline.date.timeIntervalSince(startDate)
+                drawScene(context: context, size: canvasSize, time: elapsed)
             }
         }
         .frame(width: size, height: size)
+        .onAppear { startDate = Date() }
     }
 
     private func drawScene(context: GraphicsContext, size: CGSize, time: Double) {

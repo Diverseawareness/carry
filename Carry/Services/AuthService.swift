@@ -11,6 +11,7 @@ final class AuthService: ObservableObject {
     @Published var isOnboarded = false
     @Published var isLoading = true
     @Published var isNewUser = false  // true after first sign-in, triggers profile sheet
+    @Published var identities: [UserIdentity] = []  // sign-in methods linked to current user
 
     private let client = SupabaseManager.shared.client
 
@@ -87,6 +88,7 @@ final class AuthService: ObservableObject {
         do {
             let session = try await client.auth.session
             await loadProfile(userId: session.user.id)
+            await refreshIdentities()
             isAuthenticated = true
             isOnboarded = hasValidProfile
             // Identify user in PostHog
@@ -134,6 +136,7 @@ final class AuthService: ObservableObject {
     // run onboarding. The only thing that differs is how we got the session.
     private func finishProviderSignIn(userId: UUID, providerLabel: String) async {
         await loadProfile(userId: userId)
+        await refreshIdentities()
         isAuthenticated = true
 
         if let profile = currentUser {
@@ -214,7 +217,126 @@ final class AuthService: ObservableObject {
                 accessToken: accessToken
             )
         )
+
+        // Backfill profile from Google claims. Supabase normalizes the idToken
+        // into userMetadata as `name`/`full_name` (not `given_name`/`family_name`),
+        // so we split `name` on first space.
+        let metadata = session.user.userMetadata
+        var first = ""
+        var last = ""
+        if let fullName = metadata["name"]?.stringValue, !fullName.isEmpty {
+            let parts = fullName.split(separator: " ", maxSplits: 1).map(String.init)
+            first = parts.first ?? fullName
+            last = parts.count > 1 ? parts[1] : ""
+        }
+        let avatar = metadata["picture"]?.stringValue ?? metadata["avatar_url"]?.stringValue ?? ""
+        let email = session.user.email ?? metadata["email"]?.stringValue
+
+        var update = ProfileUpdate()
+        let display = [first, last].filter { !$0.isEmpty }.joined(separator: " ")
+        if !display.isEmpty {
+            update.firstName = first
+            update.lastName = last
+            update.displayName = display
+            update.initials = String(display.prefix(2)).uppercased()
+        }
+        if let email, !email.isEmpty { update.email = email }
+        if !avatar.isEmpty { update.avatarUrl = avatar }
+
+        if update.displayName != nil || update.email != nil || update.avatarUrl != nil {
+            _ = try? await client.from("profiles")
+                .update(update)
+                .eq("id", value: session.user.id.uuidString)
+                .execute()
+        }
+
         await finishProviderSignIn(userId: session.user.id, providerLabel: "google")
+    }
+
+    // MARK: - Identity Linking
+    //
+    // Lets a signed-in user attach an additional sign-in method to the SAME
+    // account, so signing in via Apple or Google later lands on the same
+    // profile/data instead of creating a duplicate user.
+    //
+    // Backed by Supabase's `linkIdentityWithIdToken`, which takes the same
+    // OIDC credentials as `signInWithIdToken` but with the link flag set.
+
+    enum LinkError: LocalizedError {
+        case alreadyLinked
+        case alreadyLinkedToOtherUser
+        case lastIdentity
+        case underlying(Error)
+
+        var errorDescription: String? {
+            switch self {
+            case .alreadyLinked: return "This sign-in method is already connected."
+            case .alreadyLinkedToOtherUser: return "This account is already linked to a different Carry user. Sign in with that account instead."
+            case .lastIdentity: return "You can't disconnect your only sign-in method."
+            case .underlying(let error): return error.localizedDescription
+            }
+        }
+    }
+
+    func refreshIdentities() async {
+        do {
+            identities = try await client.auth.userIdentities()
+        } catch {
+            #if DEBUG
+            print("[AuthService] refreshIdentities failed: \(error)")
+            #endif
+        }
+    }
+
+    func linkAppleIdentity(idTokenString: String, nonce: String? = nil) async throws {
+        if identities.contains(where: { $0.provider == "apple" }) {
+            throw LinkError.alreadyLinked
+        }
+        do {
+            _ = try await client.auth.linkIdentityWithIdToken(
+                credentials: .init(provider: .apple, idToken: idTokenString, nonce: nonce)
+            )
+            await refreshIdentities()
+        } catch {
+            throw mapLinkError(error)
+        }
+    }
+
+    func linkGoogleIdentity(idToken: String, accessToken: String?) async throws {
+        if identities.contains(where: { $0.provider == "google" }) {
+            throw LinkError.alreadyLinked
+        }
+        do {
+            _ = try await client.auth.linkIdentityWithIdToken(
+                credentials: .init(provider: .google, idToken: idToken, accessToken: accessToken)
+            )
+            await refreshIdentities()
+        } catch {
+            throw mapLinkError(error)
+        }
+    }
+
+    func unlinkProvider(_ provider: String) async throws {
+        guard identities.count > 1 else {
+            throw LinkError.lastIdentity
+        }
+        guard let identity = identities.first(where: { $0.provider == provider }) else {
+            return
+        }
+        do {
+            try await client.auth.unlinkIdentity(identity)
+            await refreshIdentities()
+        } catch {
+            throw LinkError.underlying(error)
+        }
+    }
+
+    private func mapLinkError(_ error: Error) -> LinkError {
+        let message = error.localizedDescription.lowercased()
+        if message.contains("already") && (message.contains("linked") || message.contains("registered") || message.contains("exists")) {
+            return .alreadyLinkedToOtherUser
+        }
+        return .underlying(error)
     }
 
     // MARK: - Email Sign-Up / Sign-In
@@ -223,17 +345,98 @@ final class AuthService: ObservableObject {
     /// setting), `signUp` returns a user but no session — the user must click the
     /// confirmation link before they can sign in. We surface that as
     /// `emailConfirmationPending` so the UI can show a "Check your email" state.
-    func signUpWithEmail(email: String, password: String) async throws {
-        let response = try await client.auth.signUp(email: email, password: password)
+    ///
+    /// `firstName` / `lastName` are optional; when provided they're written straight
+    /// into the profile so onboarding can skip the name step (mirrors the Apple
+    /// flow at `signInWithApple`). Email is also stored on the profile row.
+    func signUpWithEmail(
+        email: String,
+        password: String,
+        firstName: String? = nil,
+        lastName: String? = nil
+    ) async throws {
+        // Pass first/last as Supabase user_metadata so it survives the email
+        // round-trip — when confirmation is required the user has no session
+        // and RLS would block a direct profile update. After they tap the
+        // email link, `handleAuthCallback` reads metadata and writes profile.
+        let trimmedFirst = firstName?.trimmingCharacters(in: .whitespaces) ?? ""
+        let trimmedLast = lastName?.trimmingCharacters(in: .whitespaces) ?? ""
+        var metadata: [String: AnyJSON] = [:]
+        if !trimmedFirst.isEmpty { metadata["first_name"] = .string(trimmedFirst) }
+        if !trimmedLast.isEmpty { metadata["last_name"] = .string(trimmedLast) }
+
+        let response = try await client.auth.signUp(
+            email: email,
+            password: password,
+            data: metadata.isEmpty ? nil : metadata,
+            // Trailing `.html` is required because the host (DreamHost / Apache)
+            // doesn't auto-resolve extensionless URLs — `/auth/confirm` 404s.
+            // The AASA `/auth/*` glob still matches, so iOS Universal Links work.
+            redirectTo: URL(string: "https://carryapp.site/auth/confirm.html")
+        )
+
         if response.session == nil {
             throw AuthError.emailConfirmationPending
         }
+
+        // Confirmation OFF path: session exists immediately, write profile now.
+        var update = ProfileUpdate()
+        update.email = email
+        if !trimmedFirst.isEmpty, !trimmedLast.isEmpty {
+            let display = "\(trimmedFirst) \(trimmedLast)"
+            update.firstName = trimmedFirst
+            update.lastName = trimmedLast
+            update.displayName = display
+            update.initials = "\(trimmedFirst.prefix(1))\(trimmedLast.prefix(1))".uppercased()
+        }
+        _ = try? await client.from("profiles")
+            .update(update)
+            .eq("id", value: response.user.id.uuidString)
+            .execute()
+
         await finishProviderSignIn(userId: response.user.id, providerLabel: "email")
     }
 
     func signInWithEmail(email: String, password: String) async throws {
         let session = try await client.auth.signIn(email: email, password: password)
         await finishProviderSignIn(userId: session.user.id, providerLabel: "email")
+    }
+
+    /// Exchange a Supabase auth-callback URL for a session, then run the
+    /// post-auth wrap-up. Called from `CarryApp.handleIncomingURL` when the
+    /// user taps the confirmation link in their email and iOS routes the
+    /// Universal Link back into the app.
+    ///
+    /// Backfills first/last name from `user_metadata` (set during sign-up)
+    /// when the profile row is still empty — this is the primary path on
+    /// projects where email confirmation is enabled, since the sign-up call
+    /// returns no session and we couldn't write the profile then.
+    func handleAuthCallback(url: URL) async throws {
+        let session = try await client.auth.session(from: url)
+        let userId = session.user.id
+
+        let metadata = session.user.userMetadata
+        let firstFromMeta = metadata["first_name"]?.stringValue ?? ""
+        let lastFromMeta = metadata["last_name"]?.stringValue ?? ""
+
+        if !firstFromMeta.isEmpty, !lastFromMeta.isEmpty {
+            await loadProfile(userId: userId)
+            let profileMissingName = (currentUser?.firstName.isEmpty ?? true)
+            if profileMissingName {
+                var update = ProfileUpdate()
+                update.email = session.user.email
+                update.firstName = firstFromMeta
+                update.lastName = lastFromMeta
+                update.displayName = "\(firstFromMeta) \(lastFromMeta)"
+                update.initials = "\(firstFromMeta.prefix(1))\(lastFromMeta.prefix(1))".uppercased()
+                _ = try? await client.from("profiles")
+                    .update(update)
+                    .eq("id", value: userId.uuidString)
+                    .execute()
+            }
+        }
+
+        await finishProviderSignIn(userId: userId, providerLabel: "email")
     }
 
     func sendPasswordReset(email: String) async throws {
@@ -415,6 +618,7 @@ final class AuthService: ObservableObject {
             isOnboarded = false
             isNewUser = false
             currentUser = nil
+            identities = []
         }
     }
 
@@ -438,6 +642,7 @@ final class AuthService: ObservableObject {
             isOnboarded = false
             isNewUser = false
             currentUser = nil
+            identities = []
         }
     }
 
