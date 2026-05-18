@@ -362,6 +362,14 @@ struct CarryApp: App {
                 do {
                     try await authService.handleAuthCallback(url: url)
                 } catch {
+                    // Log the actual cause so this isn't a black box on failure.
+                    // Common shape: the URL fragment carrying the recovery /
+                    // signup tokens got stripped somewhere (e.g. web fallback's
+                    // "Open Carry" link didn't preserve the hash), so
+                    // session(from:) has nothing to parse.
+                    NSLog("‼️AUTHDEBUG handleAuthCallback failed url=%@ error=%@",
+                          url.absoluteString,
+                          String(reflecting: error))
                     ToastManager.shared.error("Couldn't complete sign-in. Try signing in with your email and password.")
                 }
             }

@@ -19,7 +19,9 @@
 		6067A5C52F75E4140055DE9A /* PostHog in Frameworks */ = {isa = PBXBuildFile; productRef = 6067A5C42F75E4140055DE9A /* PostHog */; };
 		6067A5C72F75E7980055DE9A /* AnalyticsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6067A5C62F75E7980055DE9A /* AnalyticsService.swift */; };
 		606FCC162FA1BE5600C79B91 /* GoogleSignInService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 606FCC152FA1BE5600C79B91 /* GoogleSignInService.swift */; };
+		B10102 /* AuthNonce.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10101 /* AuthNonce.swift */; };
 		606FCC182FA1BEE300C79B91 /* EmailAuthSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 606FCC172FA1BEE300C79B91 /* EmailAuthSheet.swift */; };
+		B10104 /* EmailLinkSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10103 /* EmailLinkSheet.swift */; };
 		60860E3E2FA3EF4F00E6433C /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 60860E3D2FA3EF4F00E6433C /* GoogleSignIn */; };
 		60860E402FA3EF5000E6433C /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 60860E3F2FA3EF4F00E6433C /* GoogleSignInSwift */; };
 		60860E422FA4053000E6433C /* ForgotPasswordView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60860E412FA4053000E6433C /* ForgotPasswordView.swift */; };
@@ -151,7 +153,9 @@
 		6056B3532F71DA0E00943125 /* Configuration.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; name = Configuration.storekit; path = Carry/Configuration.storekit; sourceTree = "<group>"; };
 		6067A5C62F75E7980055DE9A /* AnalyticsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsService.swift; sourceTree = "<group>"; };
 		606FCC152FA1BE5600C79B91 /* GoogleSignInService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleSignInService.swift; sourceTree = "<group>"; };
+		B10101 /* AuthNonce.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthNonce.swift; sourceTree = "<group>"; };
 		606FCC172FA1BEE300C79B91 /* EmailAuthSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailAuthSheet.swift; sourceTree = "<group>"; };
+		B10103 /* EmailLinkSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailLinkSheet.swift; sourceTree = "<group>"; };
 		60860E412FA4053000E6433C /* ForgotPasswordView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForgotPasswordView.swift; sourceTree = "<group>"; };
 		608DA91A2F8A35F900B69072 /* CarryTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CarryTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		6096464C2F8F5D8B002F3BA9 /* CarryWidgetsExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = CarryWidgetsExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -387,6 +391,7 @@
 			children = (
 				60860E412FA4053000E6433C /* ForgotPasswordView.swift */,
 				606FCC172FA1BEE300C79B91 /* EmailAuthSheet.swift */,
+				B10103 /* EmailLinkSheet.swift */,
 				60385FE42F7A167800FBF213 /* SMSInviteSheet.swift */,
 				60385FE02F78D10200FBF213 /* ResultsShareCard.swift */,
 				60385FDC2F76EC5C00FBF213 /* QuickStartSheet.swift */,
@@ -444,6 +449,7 @@
 			children = (
 				600617D92FB02A8500C1CD37 /* QuickGameGuestStorage.swift */,
 				606FCC152FA1BE5600C79B91 /* GoogleSignInService.swift */,
+				B10101 /* AuthNonce.swift */,
 				609646682F8F6140002F3BA9 /* LiveActivityService.swift */,
 				60385FE22F78D12100FBF213 /* ShareCardRenderer.swift */,
 				60385FDE2F76EC9B00FBF213 /* GuestProfileService.swift */,
@@ -650,6 +656,7 @@
 				A10005 /* ScoreLabel.swift in Sources */,
 				A10006 /* RoundConfig.swift in Sources */,
 				606FCC182FA1BEE300C79B91 /* EmailAuthSheet.swift in Sources */,
+				B10104 /* EmailLinkSheet.swift in Sources */,
 				A10020 /* SupabaseModels.swift in Sources */,
 				A10007 /* RoundViewModel.swift in Sources */,
 				A10021 /* SupabaseManager.swift in Sources */,
@@ -706,6 +713,7 @@
 				C20001 /* AppRouter.swift in Sources */,
 				C20002 /* GroupInviteParser.swift in Sources */,
 				606FCC162FA1BE5600C79B91 /* GoogleSignInService.swift in Sources */,
+				B10102 /* AuthNonce.swift in Sources */,
 				C20005 /* ScoreInputSheet.swift in Sources */,
 				C20006 /* RoundCompleteView.swift in Sources */,
 				C20007 /* DebugMenuView.swift in Sources */,

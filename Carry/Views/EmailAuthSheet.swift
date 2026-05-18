@@ -23,6 +23,13 @@ struct EmailAuthSheet: View {
     @State private var isLoading = false
     @State private var showCheckEmail = false
     @State private var showForgotPassword = false
+    // Resend-email state for the checkEmailView. Cooldown prevents the user
+    // from hammering the button into Supabase's send-side rate limit (~3
+    // emails/hour on the default sender); 30s window matches what most
+    // transactional providers consider polite.
+    @State private var resendError: String?
+    @State private var isResending = false
+    @State private var resendCooldown: Int = 0
 
     enum Field: Hashable { case firstName, lastName, email, password }
     @FocusState private var focused: Field?
@@ -47,11 +54,7 @@ struct EmailAuthSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                // Form has white bg; checkEmailView paints its own welcome-bg
-                // photo + white card so we skip the white here when it's active.
-                if !showCheckEmail {
-                    Color.white.ignoresSafeArea()
-                }
+                Color.white.ignoresSafeArea()
                 if showCheckEmail {
                     checkEmailView
                 } else {
@@ -59,14 +62,13 @@ struct EmailAuthSheet: View {
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
-            // Hide the nav bar entirely on the success state — the Close pill
-            // button replaces the toolbar Cancel.
-            .toolbar(showCheckEmail ? .hidden : .visible, for: .navigationBar)
             .toolbar {
-                if !showCheckEmail {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") { dismiss() }
-                    }
+                ToolbarItem(placement: .cancellationAction) {
+                    // "Cancel" while filling the form, "Done" once the
+                    // signup has been accepted and the confirmation email
+                    // is on its way — same dismiss action, different
+                    // contextual label.
+                    Button(showCheckEmail ? "Done" : "Cancel") { dismiss() }
                 }
             }
             .navigationDestination(isPresented: $showForgotPassword) {
@@ -312,63 +314,61 @@ struct EmailAuthSheet: View {
 
     // MARK: - Email confirmation pending state
 
+    /// Continuation state shown after a successful sign-up call that returned
+    /// no session (Supabase's "confirm email" path). Lives inside the same
+    /// sheet shell as `formView` — same white background, same nav toolbar
+    /// (with "Cancel" relabeled to "Done") — so the user experiences it as
+    /// the next stage of the sign-up flow, not a separate screen.
     private var checkEmailView: some View {
-        ZStack(alignment: .top) {
-            // Welcome photo bg fills the whole sheet — the white card overlay
-            // below covers the lower portion, leaving the photo visible at top.
-            Image("welcome-bg")
-                .resizable()
-                .scaledToFill()
-                .ignoresSafeArea()
+        VStack(spacing: 0) {
+            Spacer()
 
-            // White card pinned to the bottom, content stacked at its top.
-            VStack(spacing: 0) {
-                Color.clear.frame(height: 140)
+            VStack(spacing: 16) {
+                Image(systemName: "envelope.badge")
+                    .font(.system(size: 56))
+                    .foregroundColor(Color.textPrimary)
 
-                VStack(spacing: 16) {
-                    Spacer()
+                Text("Check your email")
+                    .font(.carry.pageTitle)
+                    .foregroundColor(Color.textPrimary)
+                    .multilineTextAlignment(.center)
 
-                    Image(systemName: "envelope.badge")
-                        .font(.system(size: 56))
-                        .foregroundColor(Color.textPrimary)
-
-                    Text("Check your email")
-                        .font(.carry.pageTitle)
-                        .foregroundColor(Color.textPrimary)
-
-                    Text("We sent a confirmation link to \(email). Tap it to finish creating your account.")
-                        .font(.system(size: 15))
-                        .multilineTextAlignment(.center)
-                        .foregroundColor(Color.textTertiary)
-                        .padding(.horizontal, 24)
-
-                    Spacer()
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.white)
-            }
-            .ignoresSafeArea(edges: .bottom)
-
-            // Close pill button on the photo area — same shape as the Back
-            // button on ForgotPasswordView for consistency.
-            HStack {
-                Button { dismiss() } label: {
-                    Text("Close")
-                        .font(.system(size: 18))
-                        .foregroundColor(Color.textPrimary)
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 8)
-                        .background(
-                            Capsule()
-                                .fill(.white)
-                                .shadow(color: .black.opacity(0.08), radius: 6, y: 2)
-                        )
-                }
-                Spacer()
+                Text("We sent a confirmation link to \(email). Tap it to finish creating your account.")
+                    .font(.system(size: 15))
+                    .multilineTextAlignment(.center)
+                    .foregroundColor(Color.textTertiary)
+                    .padding(.horizontal, 8)
             }
             .padding(.horizontal, 24)
-            .padding(.top, 16)
+
+            Spacer()
+
+            // Resend gives the user a way out when the first email lands in
+            // spam or the default sender rate-limited. We re-call signUp with
+            // the same credentials; Supabase de-dupes the auth.users row and
+            // re-issues the confirmation email.
+            VStack(spacing: 12) {
+                if let resendError {
+                    Text(resendError)
+                        .font(.carry.bodySM)
+                        .foregroundColor(Color.systemRedColor)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 24)
+                }
+
+                Button { resendConfirmation() } label: {
+                    HStack(spacing: 6) {
+                        if isResending { ProgressView().tint(Color.textPrimary) }
+                        Text(resendCooldown > 0 ? "Resend in \(resendCooldown)s" : "Resend email")
+                            .font(.carry.bodySemibold)
+                            .foregroundColor(Color.textPrimary)
+                    }
+                }
+                .disabled(isResending || resendCooldown > 0)
+                .padding(.bottom, 32)
+            }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: - Logic
@@ -396,6 +396,11 @@ struct EmailAuthSheet: View {
                 let trimmedEmail = email.trimmingCharacters(in: .whitespaces)
                 if mode == .signIn {
                     try await authService.signInWithEmail(email: trimmedEmail, password: password)
+                    // If we got here from a Google-collision link prompt
+                    // (existingProvider="email"), AuthService has stashed
+                    // the Google tokens — drain now so Google auto-links to
+                    // the just-signed-in account. No-op otherwise.
+                    await authService.consumePendingLink()
                     dismiss()
                 } else {
                     try await authService.signUpWithEmail(
@@ -417,6 +422,48 @@ struct EmailAuthSheet: View {
                 self.error = humanError(error)
             }
             isLoading = false
+        }
+    }
+
+    /// Re-issue the confirmation email by calling signUp again with the same
+    /// credentials. Supabase de-dupes the auth.users row (no second user is
+    /// created) and re-sends the confirmation email. 30s cooldown afterward
+    /// so the button can't be hammered into the sender's rate limit.
+    private func resendConfirmation() {
+        resendError = nil
+        isResending = true
+        Task {
+            do {
+                try await authService.signUpWithEmail(
+                    email: email.trimmingCharacters(in: .whitespaces),
+                    password: password,
+                    firstName: firstName,
+                    lastName: lastName
+                )
+                // Supabase returned a session on the resend — confirm-email
+                // toggle flipped off mid-flight (unlikely) or the user
+                // confirmed via another device. Either way we're now signed
+                // in; close the sheet so AuthService routing takes over.
+                dismiss()
+            } catch AuthError.emailConfirmationPending {
+                // Expected path — email re-sent, still waiting on the user.
+                resendCooldown = 30
+                startResendCountdown()
+            } catch {
+                resendError = "Couldn't resend right now. Wait a minute and try again."
+                resendCooldown = 30
+                startResendCountdown()
+            }
+            isResending = false
+        }
+    }
+
+    private func startResendCountdown() {
+        Task {
+            while resendCooldown > 0 {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                if resendCooldown > 0 { resendCooldown -= 1 }
+            }
         }
     }
 

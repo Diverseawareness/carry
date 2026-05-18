@@ -71,6 +71,13 @@ struct AuthView: View {
     @State private var isSigningIn = false
     @State private var showEmailSheet = false
     @State private var appleCoordinator = AppleSignInCoordinator()
+    // Cross-provider link prompt state. When Google sign-in collides with an
+    // existing Apple/email account, AuthService stashes the Google tokens and
+    // these flip true to surface the confirmation alert. existingProvider
+    // drives the prompt copy ("sign in with Apple" vs "sign in with your
+    // password").
+    @State private var showLinkPrompt = false
+    @State private var linkPromptExistingProvider: String = ""
 
     /// Optional: in debug/test flows, tapping the sign-in button calls this instead of real Apple Sign-In.
     var onDebugSkip: (() -> Void)? = nil
@@ -259,6 +266,35 @@ struct AuthView: View {
         .preferredColorScheme(.dark)
         .statusBarHidden(false)
         .forcesLightStatusBar()
+        // Surface "We found your Carry account" prompt after a Google sign-in
+        // collides with an existing different-provider account. Tapping the
+        // primary action routes the user through the existing provider; the
+        // post-sign-in handler then auto-links Google via consumePendingLink.
+        .alert(
+            "Found your Carry account",
+            isPresented: $showLinkPrompt,
+            presenting: linkPromptExistingProvider
+        ) { provider in
+            switch provider {
+            case "apple":
+                Button("Sign in with Apple") { handleAppleSignIn() }
+                Button("Cancel", role: .cancel) { authService.pendingProviderLink = nil }
+            case "email":
+                Button("Use email & password") { showEmailSheet = true }
+                Button("Cancel", role: .cancel) { authService.pendingProviderLink = nil }
+            default:
+                Button("OK", role: .cancel) { authService.pendingProviderLink = nil }
+            }
+        } message: { provider in
+            switch provider {
+            case "apple":
+                Text("An account for this email already exists with Apple Sign-In. To add Google, sign in with Apple — we'll link Google to your account automatically.")
+            case "email":
+                Text("An account for this email already exists with email & password. Sign in with your password and we'll link Google to your account automatically.")
+            default:
+                Text("An account already exists for this email.")
+            }
+        }
         .sheet(isPresented: $showEmailSheet) {
             EmailAuthSheet()
                 .environmentObject(authService)
@@ -272,16 +308,49 @@ struct AuthView: View {
         isSigningIn = true
         error = nil
         Task {
+            // Fetch Google tokens first so we can reference them in BOTH the
+            // happy-path sign-in call AND the dedupe-collision branch below
+            // (which needs to stash them on AuthService so the subsequent
+            // Apple/email sign-in can auto-link).
+            let tokens: GoogleSignInService.Tokens
             do {
-                let tokens = try await GoogleSignInService.signIn(presenting: rootVC)
-                try await authService.signInWithGoogle(idToken: tokens.idToken, accessToken: tokens.accessToken)
+                tokens = try await GoogleSignInService.signIn(presenting: rootVC)
             } catch GoogleSignInService.Failure.cancelled {
-                // user dismissed — silent
+                isSigningIn = false
+                return  // silent
             } catch let e as GoogleSignInService.Failure {
                 self.error = e.errorDescription ?? "Sign in failed. Please try again."
+                isSigningIn = false
+                return
+            } catch {
+                self.error = "Couldn't connect to Google. Please try again."
+                isSigningIn = false
+                return
+            }
+
+            do {
+                try await authService.signInWithGoogle(
+                    idToken: tokens.idToken,
+                    accessToken: tokens.accessToken,
+                    nonce: tokens.rawNonce
+                )
+            } catch AuthError.emailAlreadyRegistered(let existingProvider) {
+                // Dedupe trigger blocked the signup because this email already
+                // has a different-provider account. Stash the Google tokens and
+                // prompt the user to sign in with the existing provider — after
+                // that sign-in succeeds, AuthService.consumePendingLink() will
+                // auto-link Google to the now-authenticated user (flow C from
+                // the auth-v2 status doc).
+                authService.pendingProviderLink = PendingProviderLink(
+                    provider: "google",
+                    idToken: tokens.idToken,
+                    accessToken: tokens.accessToken,
+                    rawNonce: tokens.rawNonce,
+                    existingProvider: existingProvider
+                )
+                self.linkPromptExistingProvider = existingProvider
+                self.showLinkPrompt = true
             } catch let e as AuthError {
-                // Includes AuthError.emailAlreadyRegistered, which carries
-                // copy directing the user to the right provider.
                 self.error = e.errorDescription ?? "Sign in failed. Please try again."
             } catch {
                 self.error = "Sign in failed. Please try again."
@@ -305,6 +374,11 @@ struct AuthView: View {
             Task {
                 do {
                     try await authService.signInWithApple(credential: credential)
+                    // If we got here from a Google-collision link prompt,
+                    // AuthService has stashed the Google tokens — drain them
+                    // now so Google auto-links to the just-signed-in user.
+                    // No-op when there's no pending link.
+                    await authService.consumePendingLink()
                 } catch {
                     self.error = "Sign in failed. Please try again."
                 }

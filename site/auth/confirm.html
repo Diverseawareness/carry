@@ -86,7 +86,7 @@
         <img src="../appicon.png" alt="Carry" class="app-icon">
         <h1>Email confirmed</h1>
         <p>You're all set. Open Carry to finish signing in.</p>
-        <a href="https://carryapp.site/auth/confirm" class="btn">Open Carry</a>
+        <a id="open-app" href="https://carryapp.site/auth/confirm" class="btn">Open Carry</a>
         <a href="https://apps.apple.com/app/id6760993864" class="btn-secondary">Don't have the app? Get Carry</a>
     </div>
 
@@ -94,8 +94,19 @@
         // iOS Universal Links typically intercept this URL before the page
         // renders. If we get here, either the user's iOS hasn't indexed the
         // AASA yet, they're on a non-iOS device, or the app isn't installed.
-        // The "Open Carry" button retries the same URL — Safari will then
-        // surface its native "Open in App" banner if Carry is installed.
+        //
+        // Critical: preserve the URL fragment (#access_token=…&type=signup&
+        // refresh_token=…) on the "Open Carry" link. Supabase puts the session
+        // tokens there, and `client.auth.session(from: url)` on the iOS side
+        // can't reconstruct the session without them. Without this script, the
+        // user taps "Open Carry", the app receives a fragment-less URL, and
+        // handleAuthCallback throws.
+        (function () {
+            var link = document.getElementById('open-app');
+            if (link && window.location.hash) {
+                link.href = 'https://carryapp.site/auth/confirm' + window.location.hash;
+            }
+        })();
     </script>
 </body>
 </html>

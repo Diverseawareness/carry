@@ -33,6 +33,11 @@ struct ProfileView: View {
     @State private var showLinkAlert = false
     @State private var isLinking = false
     @State private var appleLinkCoordinator = AppleSignInCoordinator()
+    // Email-link sheet — presented when the user taps Connect on the Email
+    // row in SIGN-IN METHODS. Different shape than Apple/Google because
+    // there's no OAuth round-trip: the email is already on the auth row,
+    // we just need to set a password (handled inside EmailLinkSheet).
+    @State private var showEmailLinkSheet = false
 
     /// Feature flag — GHIN row is hidden until USGA GPA Program approval.
     /// Code is kept in place; flip to `true` once API access is granted.
@@ -281,6 +286,12 @@ struct ProfileView: View {
                             provider: "google",
                             isConnected: authService.identities.contains(where: { $0.provider == "google" })
                         )
+                        groupDivider()
+                        signInMethodRow(
+                            label: "Email & password",
+                            provider: "email",
+                            isConnected: authService.identities.contains(where: { $0.provider == "email" })
+                        )
                     }
                     Text("Connect another sign-in method so you can sign in either way and land on the same account.")
                         .font(.system(size: 13))
@@ -404,6 +415,10 @@ struct ProfileView: View {
         }
         .sheet(isPresented: $showShareSheet) {
             ShareSheetView(items: [URL(string: "https://carryapp.site")!])
+        }
+        .sheet(isPresented: $showEmailLinkSheet) {
+            EmailLinkSheet()
+                .environmentObject(authService)
         }
         .sheet(isPresented: $showHandicapPicker) {
             HandicapPickerSheet(
@@ -708,6 +723,13 @@ struct ProfileView: View {
     }
 
     private func linkProvider(_ provider: String) async {
+        // Email is a different shape — there's no OAuth round-trip, just
+        // capture a password via a sheet. Present and exit early; the sheet
+        // owns the linkEmailIdentity call + its own toast.
+        if provider == "email" {
+            await MainActor.run { showEmailLinkSheet = true }
+            return
+        }
         isLinking = true
         defer { isLinking = false }
         do {
@@ -759,7 +781,11 @@ struct ProfileView: View {
             throw AuthService.LinkError.underlying(NSError(domain: "GoogleLink", code: -1, userInfo: [NSLocalizedDescriptionKey: "Couldn't present sign-in."]))
         }
         let tokens = try await GoogleSignInService.signIn(presenting: rootVC)
-        try await authService.linkGoogleIdentity(idToken: tokens.idToken, accessToken: tokens.accessToken)
+        try await authService.linkGoogleIdentity(
+            idToken: tokens.idToken,
+            accessToken: tokens.accessToken,
+            nonce: tokens.rawNonce
+        )
     }
 
     private func disconnect(_ provider: String) async {

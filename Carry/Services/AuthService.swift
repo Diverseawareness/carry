@@ -13,6 +13,18 @@ final class AuthService: ObservableObject {
     @Published var isNewUser = false  // true after first sign-in, triggers profile sheet
     @Published var identities: [UserIdentity] = []  // sign-in methods linked to current user
 
+    /// Set when a Google (or future provider) sign-in attempt is blocked by the
+    /// server-side dedupe trigger because the email already has a different
+    /// provider account. The Google tokens are stashed here so the UI can
+    /// route the user through the existing-provider sign-in (Apple / email)
+    /// and then auto-link Google to the now-authenticated user.
+    ///
+    /// Cleared after `consumePendingLink()` runs or after the user cancels
+    /// the confirmation prompt. Memory-only (process-local) — not persisted,
+    /// since a fresh app launch invalidates any stashed Google ID token
+    /// (~1hr expiry) anyway.
+    @Published var pendingProviderLink: PendingProviderLink?
+
     private let client = SupabaseManager.shared.client
 
     /// Int player ID derived from the profile UUID, matching Player.init(from:) conversion.
@@ -209,14 +221,15 @@ final class AuthService: ObservableObject {
     //
     // Caller (AuthView) drives the GIDSignIn flow and hands us the idToken.
     // We just exchange it with Supabase, exactly like the Apple path.
-    func signInWithGoogle(idToken: String, accessToken: String?) async throws {
+    func signInWithGoogle(idToken: String, accessToken: String?, nonce: String) async throws {
         let session: Session
         do {
             session = try await client.auth.signInWithIdToken(
                 credentials: .init(
                     provider: .google,
                     idToken: idToken,
-                    accessToken: accessToken
+                    accessToken: accessToken,
+                    nonce: nonce
                 )
             )
         } catch {
@@ -311,14 +324,37 @@ final class AuthService: ObservableObject {
         }
     }
 
-    func linkGoogleIdentity(idToken: String, accessToken: String?) async throws {
+    func linkGoogleIdentity(idToken: String, accessToken: String?, nonce: String) async throws {
         if identities.contains(where: { $0.provider == "google" }) {
             throw LinkError.alreadyLinked
         }
         do {
             _ = try await client.auth.linkIdentityWithIdToken(
-                credentials: .init(provider: .google, idToken: idToken, accessToken: accessToken)
+                credentials: .init(provider: .google, idToken: idToken, accessToken: accessToken, nonce: nonce)
             )
+            await refreshIdentities()
+        } catch {
+            throw mapLinkError(error)
+        }
+    }
+
+    /// Add an email/password identity to the already-signed-in user. Unlike
+    /// the OAuth link paths, there's no token exchange — the user is already
+    /// authenticated via Apple/Google with a verified email on their auth
+    /// row, so all we need is to SET a password. Once set, they can sign in
+    /// via the Email tab using that email + password, landing on the same
+    /// profile.
+    ///
+    /// Implementation: `client.auth.update(user: UserAttributes(password:))`
+    /// updates the current session's user. Supabase adds an `email` provider
+    /// row to `auth.identities` so `refreshIdentities()` picks it up and the
+    /// SIGN-IN METHODS row flips to "Connected ✓".
+    func linkEmailIdentity(password: String) async throws {
+        if identities.contains(where: { $0.provider == "email" }) {
+            throw LinkError.alreadyLinked
+        }
+        do {
+            _ = try await client.auth.update(user: UserAttributes(password: password))
             await refreshIdentities()
         } catch {
             throw mapLinkError(error)
@@ -346,6 +382,47 @@ final class AuthService: ObservableObject {
             return .alreadyLinkedToOtherUser
         }
         return .underlying(error)
+    }
+
+    // MARK: - Pending provider link (cross-provider auto-link after sign-in)
+
+    /// Called by sign-in handlers (Apple, Email) AFTER successful sign-in to
+    /// drain any provider tokens stashed during a blocked cross-provider
+    /// sign-in attempt. Auto-links the stashed provider to the now-current
+    /// user; success → toast, error → toast pointing user at Settings.
+    ///
+    /// No-op when `pendingProviderLink` is nil. Self-clearing so concurrent
+    /// callers can't double-link.
+    func consumePendingLink() async {
+        guard let pending = pendingProviderLink else { return }
+        pendingProviderLink = nil  // clear early — double-link guard
+
+        do {
+            switch pending.provider {
+            case "google":
+                try await linkGoogleIdentity(
+                    idToken: pending.idToken,
+                    accessToken: pending.accessToken,
+                    nonce: pending.rawNonce
+                )
+                ToastManager.shared.success("Google added to your account")
+            default:
+                // Apple/email pending-link cases not implemented yet — the
+                // pending state is only ever set by AuthView's Google handler
+                // today. Add cases here if/when other providers need the same
+                // "ask to merge" flow.
+                break
+            }
+        } catch LinkError.alreadyLinked {
+            ToastManager.shared.success("Google is already on your account")
+        } catch LinkError.alreadyLinkedToOtherUser {
+            // The stashed Google tokens are for an account that's now linked
+            // to a DIFFERENT Carry user (rare race — e.g. another device
+            // beat us to it). Don't bind it to the wrong user; tell them.
+            ToastManager.shared.error("Google is already on a different Carry account.")
+        } catch {
+            ToastManager.shared.error("Couldn't add Google. Add it from Settings → Sign-in methods.")
+        }
     }
 
     // MARK: - Email Sign-Up / Sign-In
@@ -831,6 +908,42 @@ enum AuthError: LocalizedError {
     }
 }
 
+// MARK: - Pending provider link
+
+/// Stash for OIDC provider tokens captured during a sign-in attempt that was
+/// blocked by the server-side email dedupe trigger. The UI uses this to
+/// orchestrate the "Ask to merge" flow: detect collision → prompt user → run
+/// existing-provider sign-in → AuthService.consumePendingLink() auto-links the
+/// stashed provider to the now-authenticated user.
+///
+/// Held as `@Published var pendingProviderLink` on `AuthService`.
+struct PendingProviderLink {
+    /// The blocked provider's label as Supabase reports it (`google` today;
+    /// `apple` / `email` reserved for future expansion to those flows).
+    let provider: String
+
+    /// ID token issued by the provider during the blocked sign-in attempt.
+    /// Reused at link time. Provider ID tokens are typically valid ~1 hour;
+    /// the link should happen within seconds of the block, well within that
+    /// window.
+    let idToken: String
+
+    /// Provider access token, when available. Optional because Google ID-token
+    /// sign-in works with or without it; carried through for symmetry with
+    /// the original sign-in call.
+    let accessToken: String?
+
+    /// Raw OIDC nonce that was used for the blocked sign-in. MUST match what
+    /// the ID token's `nonce` claim hashes to — Supabase verifies at link time
+    /// the same way it does at sign-in time.
+    let rawNonce: String
+
+    /// Provider the user's existing account is on (`apple` / `google` / `email`).
+    /// Drives the user-facing copy in the link prompt ("sign in with Apple"
+    /// vs "sign in with your password").
+    let existingProvider: String
+}
+
 // MARK: - Server error mapping
 //
 // Pure function (no `self`) so it stays test-friendly. Reads the trigger's
@@ -838,6 +951,15 @@ enum AuthError: LocalizedError {
 // whatever wrapping Supabase puts around it and re-throws as the typed
 // `AuthError.emailAlreadyRegistered`. Other errors pass through unchanged.
 func mapAuthSignupError(_ error: Error) -> Error {
+    // TEMP DEBUG: dump everything so we can see what Supabase actually hands
+    // us when a Postgres BEFORE INSERT trigger raises EXCEPTION. Remove once
+    // mapAuthSignupError's parsing is confirmed correct.
+    NSLog("‼️AUTHDEBUG mapAuthSignupError CALLED type=%@", String(describing: type(of: error)))
+    NSLog("‼️AUTHDEBUG localizedDescription: %@", error.localizedDescription)
+    NSLog("‼️AUTHDEBUG reflect: %@", String(reflecting: error))
+    let nsErr = error as NSError
+    NSLog("‼️AUTHDEBUG nsError domain=%@ code=%d userInfo=%@", nsErr.domain, nsErr.code, "\(nsErr.userInfo)")
+
     let msg = error.localizedDescription
     let marker = "EMAIL_ALREADY_REGISTERED:"
     guard let range = msg.range(of: marker) else { return error }
