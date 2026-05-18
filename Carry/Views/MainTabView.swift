@@ -420,7 +420,13 @@ struct MainTabView: View {
         }
 
         if authService.isNewUser {
-            selectedTab = .skinGames
+            // Land on Home so the Demo Round card is the first thing new users
+            // see — it's the interactive product preview (tap to score 3 holes,
+            // see real toasts/skin animations, then offer to create a real
+            // recurring Skins Group). Pre-Demo-Round (1.0.8), this routed to
+            // .skinGames so new users could create their first group; now Home
+            // demonstrates the product first.
+            selectedTab = .home
             authService.isNewUser = false
         }
     }
