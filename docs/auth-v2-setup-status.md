@@ -1,8 +1,8 @@
 # Auth-v2 setup — status
 
-**Last updated:** 2026-05-15 evening (end of session 2)
+**Last updated:** 2026-05-18 (mid-session 3 — paused on Email-link Supabase quirk)
 **Branch:** `feature/auth-v2` (local-only, NOT pushed to origin)
-**Target release:** 1.1.0 (App Store ships 1.0.9 today)
+**Target release:** 1.1.0 (1.0.7 live on App Store, 1.0.8 / 1.0.9 in hotfix flight)
 
 ## TL;DR
 
@@ -22,10 +22,37 @@
 - "UUID mismatch" 2026-05-03 finding was a red herring — `f1d8b8a4` and `951d4c86` are two legitimate separate Apple accounts (Daniel + Ziggy), not a split user
 
 **Not yet:**
-- Visual smoke of the Ask alert on device (requires synthesizing a fake collision row on dev — instructions in §"How to resume")
+- Visual smoke of the Ask alert on device (attempted in session 3 — see §"Session 3" — couldn't reproduce on dev because the iOS app was unintentionally on the **prod** scheme and Daniel's prod Google identity is already linked to his account, so no fresh INSERT to trip the trigger)
 - Trigger applied to prod (safe to do; held for clean audit trail)
 - `feature/auth-v2` pushed to origin
-- 5 files of code changes from session 2 still uncommitted in working tree
+- Email-link Supabase quirk unresolved — session 3 surfaced that `client.auth.update(password:nonce:)` succeeds client-side but persists nothing server-side, even after `reauthenticate()` and even with email field included. Theory: Supabase doesn't add an `email` row to `auth.identities` retroactively for OAuth users.
+
+## Session 3 status (2026-05-18)
+
+**3 commits landed locally on `feature/auth-v2`:**
+- `f6597c8` auth(ask-flow): wire OIDC nonce + pendingProviderLink + Ask-to-link UX (the session-2 bundle that had been sitting uncommitted)
+- `a7b049b` demo-round(route): land new users on Home so the Demo card is first (MainTabView isNewUser → .home; Demo Round shipped in 1.0.8)
+- `a4f05ca` docs(auth): add 1.1.0 test plan (A–F + acceptance criteria) — `docs/test-plan-1.1.0-auth.md`
+
+**Working tree (uncommitted):**
+- `Carry/Services/AuthService.swift` — Email-link diagnostic refactor:
+  - Added `requestEmailLinkCode()` calling `client.auth.reauthenticate()`
+  - Changed `linkEmailIdentity(password:)` → `linkEmailIdentity(password:, nonce:)`
+  - Latest experiment passes `UserAttributes(email: currentEmail, password: password, nonce: nonce)` — untested
+  - 6 `‼️AUTHDEBUG` NSLog lines for diagnostics (session 3 additions, on TOP of the ones from session 2)
+- `Carry/Views/EmailLinkSheet.swift` — Rewritten as 2-step flow (Send Code → enter code+password), `.toolbar` Done button removed
+
+**Open thread blocking Email-link feature:**
+The 2-step reauth flow still results in `has_password=false` and `identities=[apple, google]` (no email) on the server. AUTHDEBUG confirms the `auth.update` returns a User object with the same identities — server isn't persisting the email identity row.
+
+Hypotheses to test next session:
+1. **Supabase doesn't create email identity rows retroactively.** OAuth-only users can only have `auth.users.encrypted_password` set; the `auth.identities` table treats `email` as a signup-time provider, not a link-time one. If this is true, the "Connected ✓" row state needs a different signal (e.g., check `currentUser.hasPassword` if Supabase exposes it, or query `auth.identities` directly).
+2. **`reauthentication_sent_at` wasn't actually set** on Daniel's user — we asked for the SQL result but the session got tangled on which DB the app was hitting. Re-verify with fresh AUTHDEBUG showing user ID + direct SQL on that exact user.
+3. **Email confirmation needed.** Maybe Supabase requires `email_confirmed_at` to be set on the user row before allowing password updates. Apple OAuth users have it set; Daniel's user might not. Check.
+
+**Operational learning (session 3):**
+- Xcode scheme drift: the app was unintentionally on `Carry` (prod) scheme for much of the session. All `client.auth.*` calls hit prod auth API → `reauthenticate()` may have emailed real prod inbox. No prod SQL writes were made, and Daniel's real prod user `f1d8b8a4` shows `has_password=false` per the post-incident query, so no persistent damage. **Always verify scheme dropdown before any auth testing — add to test plan §Pre-conditions.**
+- The mystery `C39F96D3-81A3-43B2-BBA4-A777681BF484` user ID returned by the SDK doesn't exist on either prod or dev when queried. Likely a stale Keychain session pointing at a deleted user, OR a UUID misread from screenshot. Not load-bearing; ignore on resume unless it surfaces again.
 
 ## What was decided this session
 
@@ -119,7 +146,54 @@ Topmost first. All sit on top of `hotfix/1.0.9` (`b1eb1f8`).
 - ~~Pre-existing duplicate cleanup on prod~~ — Q3 returned zero rows. No duplicates on prod. The May 1 incident's dups were apparently cleaned up at some point; nothing to do.
 - ~~UUID-mismatch resolution~~ — The 2026-05-03 finding was a red herring. `f1d8b8a4` (daniel@diverseawareness.com) and `951d4c86` (hello@diverseawareness.com) are two separate, legitimate Apple-signed accounts owned by Daniel — not a split profile. Memory entry `memory/auth_v2_uuid_mismatch_finding.md` can be marked resolved.
 
-## How to resume
+## How to resume (session 4)
+
+**Verify scheme FIRST before any auth testing.** Xcode dropdown must say **Carry-Dev**, not Carry. The session-3 confusion came from a stealth scheme drift.
+
+### Pick up the Email-link debug
+
+Working tree has:
+- `Carry/Services/AuthService.swift` — `linkEmailIdentity(password:, nonce:)` currently sends `UserAttributes(email: currentEmail, password:, nonce:)`. Latest experiment — untested.
+- `Carry/Views/EmailLinkSheet.swift` — 2-step Send Code → enter code+password flow.
+- 6 fresh `‼️AUTHDEBUG` NSLog lines in AuthService (added session 3).
+
+**Step 1.** Sign out of the app → delete from phone (Keychain flush) → confirm scheme is `Carry-Dev` → Cmd+R → sign in with Apple.
+
+**Step 2.** Run the Email-link flow on Carry-Dev. Capture the new AUTHDEBUG line: `linkEmailIdentity: server response id=...`. **Note that exact user ID** — that's your real dev user.
+
+**Step 3.** Query dev (`gbhljwtbobbxervekxkg`) for that exact ID:
+```sql
+SELECT id, email, encrypted_password IS NOT NULL AS has_password,
+       reauthentication_sent_at, reauthentication_token IS NOT NULL AS has_reauth_token,
+       email_confirmed_at, raw_user_meta_data
+FROM auth.users WHERE id = '<paste-the-user-id-here>';
+```
+
+**Outcomes & next moves:**
+- If `reauthentication_sent_at` is NULL → `reauthenticate()` didn't actually fire server-side. Investigate SMTP / project config.
+- If `reauthentication_sent_at` is set but `encrypted_password` is still NULL → password update step is rejecting silently. Check Supabase Auth logs in Studio for the PUT /user request body + response.
+- If `encrypted_password` is set but `auth.identities` doesn't include email → confirmed Supabase doesn't add email identity rows retroactively. Pivot: rework `signInMethodRow` to drive the Email row's "Connected ✓" state off `currentUser.email != nil && hasPassword`, not the identities array. Add a `hasPassword: Bool` @Published to AuthService, refreshed by querying `auth.users.encrypted_password` via an RPC or by reading the user metadata directly.
+
+### Fallback if Email-link can't be cracked
+
+Pivot to path A: hide the Email row from SIGN-IN METHODS for 1.1.0, ship Apple+Google linking only. The change is small:
+- ProfileSheetView.swift L290-293: remove the `signInMethodRow(label: "Email", ...)` block
+- Optionally keep the EmailLinkSheet code path dormant for 1.1.1 (don't delete)
+
+The auth-v2 quarantine doesn't require email linking; Apple+Google linking + dedupe trigger is the load-bearing scope.
+
+### Then ship-prep (independent of Email-link decision)
+
+1. Remove ALL `‼️AUTHDEBUG` NSLog lines:
+   - `Carry/Services/AuthService.swift` lines around `mapAuthSignupError` (session 2 additions)
+   - `Carry/Services/AuthService.swift` `requestEmailLinkCode` + `linkEmailIdentity` (session 3 additions, 6 lines)
+   - `Carry/CarryApp.swift` line ~370 (session 2 addition)
+2. Apply migration `20260515000000_dedupe_email_on_signup.sql` to prod via Studio SQL Editor.
+3. Visual smoke of the Ask alert on Carry-Dev. The fake-row SQL is in §"Old how-to resume" below. Note: needs a Google account whose email matches the fake row's email, AND the Google picker must let you actually select that account (i.e., the account must NOT already be linked to your real dev user — if it is, sign out of that Google in Safari first).
+4. Push `feature/auth-v2` to origin (`git push -u origin feature/auth-v2`).
+5. Cut `release/1.1.0` from current `hotfix/1.0.9` tip, merge `feature/auth-v2`, bump `MARKETING_VERSION` → 1.1.0 + build number forward. Archive, submit.
+
+## Old how-to resume (session 2 — superseded by session 4 above)
 
 1. **Commit the session-2 work in tree**:
    - `Carry/Services/AuthNonce.swift` (new)
