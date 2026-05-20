@@ -1,8 +1,109 @@
 # Auth-v2 setup — status
 
-**Last updated:** 2026-05-19 (mid-session 5 — in-app recovery verified, §C.1 paused mid-test)
-**Branch:** `feature/auth-v2` (local-only, NOT pushed to origin)
-**Target release:** 1.1.0 (1.0.7 live on App Store, 1.0.8 / 1.0.9 in hotfix flight)
+**Last updated:** 2026-05-19 (session 6 — release-prep audit + on-device sweep done, push + archive deferred to tomorrow)
+**Branch:** `feature/auth-v2` (local has 168 commits ahead of stale origin; not pushed yet — see §"Resume tomorrow" below)
+**Target release:** 1.1.0 (1.0.7 live on App Store, 1.0.8 / 1.0.9 / 1.1.0 stacked in flight)
+
+## Session 6 status (2026-05-19, end of day)
+
+**Headline:** Two clean commits on `feature/auth-v2` (`9c03779` + `562a4c6`). On-device sweep ran end-to-end (password recovery + eye icon + email pre-fill + §D.1 Google-connect + §F.1 Apple regression). Prod Supabase config flipped: NULL token-column fix + manual-linking on + two RPC migrations applied. §C.1 declared un-testable on Daniel's device because Apple uses `daniel@diverseawareness.com` and Google uses `dsigvardsson@gmail.com` — no same-email collision exists for the trigger to fire on. Unit tests already cover the parser logic. Push to origin blocked by a stale-branch divergence; decision deferred to tomorrow morning.
+
+### What landed today
+
+- **Pre-ship blocker audit (4/4 fixed)**
+  - `unlinkProvider` last-identity guard now `count > 1 || hasPassword` (AuthService.swift:407–412). User with `[apple]` + email/password can safely unlink Apple.
+  - All `‼️AUTHDEBUG NSLog` lines wrapped in `#if DEBUG` (AuthService.swift:1046, CarryApp.swift:369, CarryApp.swift:390). Plus the welcome-email `print(...)` (AuthService.swift:755). No release-build console leakage.
+  - PKCE `flow_state_expired` catch shows tailored copy ("This reset link has expired. Request a new one…") instead of generic "Couldn't complete password reset" — CarryApp.swift:395–403.
+  - Supabase dashboard "Skip nonce checks" is no longer a separate toggle; modern Supabase auto-detects from JWT payload — verified non-issue.
+- **Logic bug fixes**
+  - AuthView `pendingProviderLink` stale-stash leak: swipe-dismiss of the Ask alert now clears the stash via `linkPromptActionTaken` + `onChange(of: showLinkPrompt)` (AuthView.swift:87–93, 286–310, 322–332).
+  - ProfileSheetView spinner-on-every-row precedence bug: replaced `disconnectProvider == provider || isConnected == false` with `disconnectProvider == provider || linkInFlightProvider == provider`. New `@State linkInFlightProvider` set/cleared in `linkProvider` (ProfileSheetView.swift:35–37, 699, 733–737).
+- **UX polish (live-tested)**
+  - Eye icon on password fields in PasswordRecoverySheet, EmailAuthSheet, EmailLinkSheet (toggles SecureField ↔ TextField with autocorrect/autocaps disabled in plaintext mode).
+  - `@Published var pendingPrefillEmail` on AuthService stashes the email at the end of `completePasswordRecovery` so the next EmailAuthSheet `.onAppear` pre-fills it. Consumed (cleared) on first appear.
+  - Post-recovery green toast "Password updated. Sign in with your new password." — without this, the forced sign-out looked like a bug to the user.
+- **Server (dev + prod)**
+  - `dev` (`gbhljwtbobbxervekxkg`): NULL-token-column UPDATE for `auth.users` + `auth.identities`, manual linking toggle ON, both `20260518` RPC migrations applied earlier.
+  - `prod` (`seeitehizboxjbnccnyd`): SAME NULL-column fix run today, manual linking toggled ON today, both `20260518` RPC migrations applied today. Trigger `check_email_dedup_before_insert` already on prod (verified `tgenabled='O'`).
+- **Version + project**
+  - MARKETING_VERSION 1.0.9 → 1.1.0 (9 sites in project.pbxproj). CURRENT_PROJECT_VERSION 83 → 84 (6 sites).
+  - `Carry.xctestplan` saved to disk (was autocreated in-memory). Code Coverage **disabled** in the test plan to dodge the PLCrashReporter `___llvm_profile_runtime` linker bug.
+  - `PasswordRecoverySheet.swift` reference repaired in pbxproj after an Xcode drag-and-drop created a stray `"PasswordRecoverySheet 2.swift"` ref (now removed via `sed`).
+  - `Carry.xcodeproj/xcshareddata/xcschemes/Carry.xcscheme` regenerated when test plan saved.
+
+### On-device test results (Daniel's iPhone 17 Pro, Carry dev scheme)
+
+- ✅ **Password recovery end-to-end** — reset email → universal link → cover slides up → set new password → signed out → eye icon + pre-filled email on next EmailAuthSheet → toast appears.
+- ✅ **Email & password sign-in** — daniel+signuptest@diverseawareness.com with new password.
+- ✅ **§D.1 Connect Google to email-only account** — Profile → SIGN-IN METHODS → Connect Google → picked `dsigvardsson@gmail.com` → row flipped to Connected ✓.
+- ✅ **§F.1 Apple sign-in regression** — Daniel's real Apple ID → Home loaded with all existing groups, no re-onboarding.
+- ⏭ **§C.1 Ask-to-merge** — un-testable with Daniel's accounts (Apple email ≠ Google email, no collision). Parser logic covered by `testMapAuthSignupError_*` unit tests (6 tests). Trigger installed + verified on dev and prod. Will surface naturally when a real user hits the cross-provider collision case.
+- ⏭ **§D.4 Last-identity guard** — unit-tested (`testLinkErrorCopy_lastIdentity`). Skipping device test.
+
+### Unit tests
+
+- `CarryTests/AuthLogicTests.swift` — **24 tests all pass** ✅ (within the 156-test CarryTests bundle).
+- Wired into CarryTests target via folder-reference (was already picked up; explicit Add Files step was unnecessary).
+- Cmd+U works on the **Carry** scheme (not Carry dev — autocreated dev scheme has no test target).
+
+### Commits (this session, on `feature/auth-v2`)
+
+- **`9c03779`** — auth-v2: 1.1.0 release prep — Google + Email + linking + recovery
+  - 12 files, +1078 / −89.
+  - Covers all audit fixes, logic bug fixes, UX polish, version bump, RPC migrations, AuthLogicTests.
+- **`562a4c6`** — auth-v2(test-wiring): fix PasswordRecoverySheet reference + save test plan
+  - 3 files, +44 / −6.
+  - pbxproj rename of the "2.swift" stray refs, Carry.xctestplan on disk with Code Coverage off, regenerated xcscheme.
+
+### Where push got blocked
+
+Origin `feature/auth-v2` has 12 ancient commits (auth scaffold, hotfix/1.0.3 bundle, dev scheme setup) that ALL have local equivalents under different SHAs. The doc had claimed "local-only, NOT pushed to origin" but origin actually has stale work from an earlier push.
+
+`git pull --rebase` flagged 3 commits as "previously applied" (`1806674`, `cf62b06`, `704d313`) and then hit a real conflict on `10280c2` (hotfix/1.0.7 bundle, which is in our local history already as a different SHA). Aborted the rebase — 165 commits × interactive conflict resolution would be brutal and pointless since the work is the same.
+
+**Tomorrow's decision:** either (A) `git push --force origin feature/auth-v2` since origin is provably stale (safe, no code loss); or (B) push to a new branch like `release/1.1.0` and leave the stale `feature/auth-v2` alone.
+
+### Resume tomorrow — pickup checklist
+
+You're at the doorstep of archive + submit. In order:
+
+1. **Push to origin** — pick path A or B above. If A: `git push --force-with-lease origin feature/auth-v2`. If B: `git push origin feature/auth-v2:release/1.1.0`.
+2. **Cut `release/1.1.0` branch** (if going path A) — `git checkout -b release/1.1.0` from current `feature/auth-v2` HEAD, `git push -u origin release/1.1.0`.
+3. **Switch Xcode scheme back to `Carry`** (currently on `Carry dev`). Required for Archive (Release config).
+4. **Clean build folder**: ⌘⇧K.
+5. **Archive**: Product → Archive. Takes ~5 min.
+6. **Distribute**: Organizer → select archive → Distribute App → App Store Connect → Upload.
+7. **App Store Connect**: confirm build appears under TestFlight. Add to internal test group.
+8. **TestFlight smoke test** on real device:
+   - Sign in with Apple (existing user) → Home loads with all data.
+   - Sign in with Google (new user creation flow if no collision).
+   - Sign in with Email & password.
+   - Demo round still works (no auth regression to that surface).
+   - Push notification delivers (live activity, scorer push).
+9. **Metadata**: update App Store What's New + Description to mention Email/Google sign-in + password recovery (per `asc_description_site_sync` TODO).
+10. **Submit for review**.
+
+### Pre-archive sanity checks
+
+- ✅ `aps-environment` = production (Carry.entitlements:6)
+- ✅ MARKETING_VERSION = 1.1.0
+- ✅ CURRENT_PROJECT_VERSION = 84 (must exceed last TestFlight upload — confirm in App Store Connect → TestFlight)
+- ✅ SIWA entitlement present (Carry.entitlements:7)
+- ✅ Associated domains: applinks:carryapp.site
+- ✅ PrivacyInfo.xcprivacy + UserDefaults CA92.1 declared
+- ✅ All AUTHDEBUG NSLog wrapped in #if DEBUG
+- ✅ No force unwraps in auth-v2 surfaces
+- ✅ Account deletion in-app (ProfileSheetView:400–414 → delete_user_account RPC)
+- ⚠ Move `~/Documents/Developer/carry/client_secret_*.googleusercontent.com.json` out of repo workdir (zsh glob errored earlier — file might already be moved; check with `ls ~/Documents/Developer/carry/ | grep client_secret`).
+
+### Website (separate ship)
+
+Not part of 1.1.0 — separate DreamHost SFTP upload, branch-independent. Files staged (untracked) in `site/`:
+- `index.html`, `style.css`, `forwebsite.mp4`, `horizon_logo.svg`, `icon-handicap.svg`
+
+The auth-v2 commit explicitly excluded these.
+
+---
 
 ## Session 5 status (2026-05-19, partway through)
 
