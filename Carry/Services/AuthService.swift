@@ -13,6 +13,15 @@ final class AuthService: ObservableObject {
     @Published var isNewUser = false  // true after first sign-in, triggers profile sheet
     @Published var identities: [UserIdentity] = []  // sign-in methods linked to current user
 
+    /// True when the current auth user has `encrypted_password` set on
+    /// `auth.users`. Drives the "Connected ✓" state of the Email row in
+    /// SIGN-IN METHODS: Supabase does NOT add an `email` row to
+    /// `auth.identities` retroactively when a password is set on an
+    /// OAuth-linked user, so `identities.contains("email")` never flips
+    /// true. This separate signal is sourced from the
+    /// `current_user_has_password()` RPC and refreshed alongside identities.
+    @Published var hasPassword: Bool = false
+
     /// Set when a Google (or future provider) sign-in attempt is blocked by the
     /// server-side dedupe trigger because the email already has a different
     /// provider account. The Google tokens are stashed here so the UI can
@@ -308,6 +317,24 @@ final class AuthService: ObservableObject {
             print("[AuthService] refreshIdentities failed: \(error)")
             #endif
         }
+        await refreshHasPassword()
+    }
+
+    /// Calls the `current_user_has_password()` SECURITY DEFINER RPC to read
+    /// `auth.users.encrypted_password IS NOT NULL` for the current user.
+    /// Folded into `refreshIdentities()` so every existing call site (sign-in,
+    /// link, unlink, session restore) keeps the Email row's connected state
+    /// in sync. The RPC returns false for unauthenticated callers, so this is
+    /// safe to call before `isAuthenticated` flips during sign-in.
+    private func refreshHasPassword() async {
+        do {
+            let result: Bool = try await client.rpc("current_user_has_password").execute().value
+            hasPassword = result
+        } catch {
+            #if DEBUG
+            print("[AuthService] refreshHasPassword failed: \(error)")
+            #endif
+        }
     }
 
     func linkAppleIdentity(idTokenString: String, nonce: String? = nil) async throws {
@@ -346,11 +373,12 @@ final class AuthService: ObservableObject {
     /// profile.
     ///
     /// Implementation: `client.auth.update(user: UserAttributes(password:))`
-    /// updates the current session's user. Supabase adds an `email` provider
-    /// row to `auth.identities` so `refreshIdentities()` picks it up and the
-    /// SIGN-IN METHODS row flips to "Connected ✓".
+    /// updates the current session's user. Supabase persists
+    /// `encrypted_password` but does NOT add an `email` row to
+    /// `auth.identities` retroactively; the "Connected ✓" state is driven
+    /// instead by `hasPassword` (sourced from `current_user_has_password()`).
     func linkEmailIdentity(password: String) async throws {
-        if identities.contains(where: { $0.provider == "email" }) {
+        if hasPassword {
             throw LinkError.alreadyLinked
         }
         do {
@@ -361,8 +389,26 @@ final class AuthService: ObservableObject {
         }
     }
 
+    /// Clear the auth user's password via SECURITY DEFINER RPC. The Email row
+    /// in SIGN-IN METHODS routes through here rather than
+    /// `client.auth.unlinkIdentity` because Supabase has no `email` identity
+    /// row to unlink — the password lives directly on `auth.users`. The RPC
+    /// guards against leaving the user with zero sign-in methods.
+    func disconnectEmailPassword() async throws {
+        guard hasPassword else { return }
+        do {
+            _ = try await client.rpc("clear_current_user_password").execute()
+            await refreshIdentities()
+        } catch {
+            throw mapLinkError(error)
+        }
+    }
+
     func unlinkProvider(_ provider: String) async throws {
-        guard identities.count > 1 else {
+        // Last-sign-in-method check must include email/password identity,
+        // not just OAuth identities. A user with [apple] + email/password is
+        // safely able to unlink apple — they still have the password row.
+        guard identities.count > 1 || hasPassword else {
             throw LinkError.lastIdentity
         }
         guard let identity = identities.first(where: { $0.provider == provider }) else {
@@ -378,6 +424,9 @@ final class AuthService: ObservableObject {
 
     private func mapLinkError(_ error: Error) -> LinkError {
         let message = error.localizedDescription.lowercased()
+        if message.contains("last_sign_in_method") {
+            return .lastIdentity
+        }
         if message.contains("already") && (message.contains("linked") || message.contains("registered") || message.contains("exists")) {
             return .alreadyLinkedToOtherUser
         }
@@ -540,6 +589,61 @@ final class AuthService: ObservableObject {
         )
     }
 
+    /// True while a password-recovery session is active (i.e. user tapped a
+    /// reset link, code was exchanged, now we need them to set a new
+    /// password before doing anything else). UI observes this to present
+    /// the PasswordRecoverySheet over whatever's onscreen.
+    @Published var isInPasswordRecovery: Bool = false
+
+    /// Email of the user whose password is being reset. Surfaced so the
+    /// recovery sheet can render a hidden `.textContentType(.username)`
+    /// field — iOS needs the username paired with `.newPassword` to offer
+    /// the iCloud Keychain save prompt.
+    @Published var recoveryEmail: String?
+
+    /// One-shot pre-fill for the EmailAuthSheet email field after the password
+    /// recovery sign-out. Saves the user from re-typing their email when
+    /// signing back in with the new password. Consumed (cleared) by the sheet
+    /// in `.onAppear`.
+    @Published var pendingPrefillEmail: String?
+
+    /// Called from `CarryApp.handleIncomingURL` when the user taps a
+    /// `/reset?code=...` Universal Link. Exchanges the PKCE code (paired
+    /// with the verifier stored in iOS Keychain when sendPasswordReset
+    /// was called) for a recovery session. Once exchanged, the user has a
+    /// temporary signed-in state with permission to update their password.
+    func beginPasswordRecovery(url: URL) async throws {
+        let session = try await client.auth.session(from: url)
+        recoveryEmail = session.user.email
+        isInPasswordRecovery = true
+    }
+
+    /// Set the new password during a recovery session. On success, signs the
+    /// user out so they re-enter via the auth flow with the new password —
+    /// cleaner than dropping them into a half-state Home screen where the
+    /// next API call would still use the recovery JWT.
+    func completePasswordRecovery(newPassword: String) async throws {
+        _ = try await client.auth.update(user: UserAttributes(password: newPassword))
+        // Stash the email so the next EmailAuthSheet pre-fills it. The forced
+        // signOut() below otherwise leaves the user staring at a blank email
+        // field with no signal of what to do next.
+        pendingPrefillEmail = recoveryEmail
+        isInPasswordRecovery = false
+        recoveryEmail = nil
+        try await signOut()
+        // Signal the forced-signout to the user — without this toast it just
+        // looks like a bug ("I reset my password and got booted to welcome?").
+        ToastManager.shared.success("Password updated. Sign in with your new password.")
+    }
+
+    /// User taps Cancel on the recovery sheet — drop the temporary recovery
+    /// session so they're back at the welcome screen.
+    func cancelPasswordRecovery() async {
+        isInPasswordRecovery = false
+        recoveryEmail = nil
+        try? await signOut()
+    }
+
     // MARK: - Dev Skip (bypass auth for testing)
 
     #if DEBUG
@@ -661,7 +765,9 @@ final class AuthService: ObservableObject {
             )
             Analytics.welcomeEmailSent()
         } catch {
+            #if DEBUG
             print("Welcome email failed (non-blocking): \(error)")
+            #endif
             Analytics.welcomeEmailFailed(reason: String(describing: error))
         }
     }
@@ -713,6 +819,7 @@ final class AuthService: ObservableObject {
             isNewUser = false
             currentUser = nil
             identities = []
+            hasPassword = false
         }
     }
 
@@ -951,14 +1058,13 @@ struct PendingProviderLink {
 // whatever wrapping Supabase puts around it and re-throws as the typed
 // `AuthError.emailAlreadyRegistered`. Other errors pass through unchanged.
 func mapAuthSignupError(_ error: Error) -> Error {
-    // TEMP DEBUG: dump everything so we can see what Supabase actually hands
-    // us when a Postgres BEFORE INSERT trigger raises EXCEPTION. Remove once
-    // mapAuthSignupError's parsing is confirmed correct.
+    #if DEBUG
     NSLog("‼️AUTHDEBUG mapAuthSignupError CALLED type=%@", String(describing: type(of: error)))
     NSLog("‼️AUTHDEBUG localizedDescription: %@", error.localizedDescription)
     NSLog("‼️AUTHDEBUG reflect: %@", String(reflecting: error))
     let nsErr = error as NSError
     NSLog("‼️AUTHDEBUG nsError domain=%@ code=%d userInfo=%@", nsErr.domain, nsErr.code, "\(nsErr.userInfo)")
+    #endif
 
     let msg = error.localizedDescription
     let marker = "EMAIL_ALREADY_REGISTERED:"

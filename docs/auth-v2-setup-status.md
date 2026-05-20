@@ -1,8 +1,205 @@
 # Auth-v2 setup — status
 
-**Last updated:** 2026-05-18 (mid-session 3 — paused on Email-link Supabase quirk)
+**Last updated:** 2026-05-19 (mid-session 5 — in-app recovery verified, §C.1 paused mid-test)
 **Branch:** `feature/auth-v2` (local-only, NOT pushed to origin)
 **Target release:** 1.1.0 (1.0.7 live on App Store, 1.0.8 / 1.0.9 in hotfix flight)
+
+## Session 5 status (2026-05-19, partway through)
+
+**Headline:** In-app password recovery verified end-to-end ✅. Unit-test scaffolding for pure auth logic landed. §C.1 Ask-to-merge stalled because the obvious dev-side collision target (`dsigvardsson@gmail.com`) isn't a real Google account Daniel can sign in with — the Google picker fell through to his main `daniel@diverseawareness.com` (already Apple+Google linked, no trigger fires). Mid-pivot to a destructive-but-safe variant.
+
+### What landed today
+
+- **PasswordRecoverySheet `.fullScreenCover` fix.** Initial `.sheet` presentation conflicted with EmailAuthSheet in the modal stack ("Currently, only presenting a single sheet is supported"). Switched to `fullScreenCover` AND added `onChange(of: authService.isInPasswordRecovery)` in AuthView that dismisses `showEmailSheet` when recovery flips true. SwiftUI then queues the cover for after the sheet animates out. Verified end-to-end: tap reset email → app opens → cover slides up → set new password → signed out → sign back in with new password works.
+- **`flow_state_expired` learning.** PKCE flow states have a short server-side TTL (~5 min), much shorter than the 1-hour email link expiry. The test plan needs a "tap within 2 min of request" note. Documented inline in `beginPasswordRecovery` once we confirmed it was the cause.
+- **`recoveryEmail` published on AuthService + hidden `.username` field** in PasswordRecoverySheet and EmailLinkSheet so iCloud Keychain offers to save the new credentials. EmailAuthSheet already had the email field next to password so it was fine.
+- **`AuthLogicTests.swift`** — 20 tests in `CarryTests/`. Covers `mapAuthSignupError` parsing (all 3 providers, passthrough, punctuation, empty tail), `AuthError.errorDescription` copy, `AuthNonce.randomString` (length, base62, randomness), `AuthNonce.sha256Hex` (known vector, deterministic, empty, length=64), `PendingProviderLink` struct round-trip, `LinkError.errorDescription` for all 3 cases. NOT YET added to the Xcode CarryTests target (right-click in navigator → Add Files → check CarryTests target box).
+- **Stripped the `beginPasswordRecovery` AUTHDEBUG logs** after recovery flow was confirmed working. Other `‼️AUTHDEBUG` lines (in `mapAuthSignupError` + `CarryApp.swift ~L370`) still pending strip — task #6.
+
+### Confidence audit (2026-05-19 session, written before §C.1 pause)
+
+For each unverified flow, ranked from highest to lowest ship-readiness:
+
+**High confidence (90%+):** §C.5 same-provider re-sign-in, §D.1 connect Google to Apple-only, §D.3 unlink Google, §E.1 OIDC nonce (unit-tested), §E.4 keychain, §E.5 relaunch, §E.6 network errors, §E.7 wrong password, §F regression (auth-v2 doesn't touch demo/groups/scoring/push), Apple/Google basic sign-in (unchanged code), prod migrations (dev/prod schema parity since baseline squash).
+
+**Medium-high (70-85%):** §C.1 Ask-to-merge Google→Apple (trigger + parser unit-tested, alert/auto-link wiring untested), §C.3 email signup on Apple, Email Disconnect button (RPC ✅ server-side, SwiftUI dialog wiring untested), §E.3 fragment preservation.
+
+**Medium (50-70%):** §C.2 Ask via email path (`consumePendingLink` in EmailAuthSheet signIn unverified), §C.4 Cancel on alert (state cleanup unexercised), §D.4 last-identity guard, §D.5 cross-account collision (both rely on fragile `.contains()` string matching in `mapLinkError`), iOS password save prompt (wired correctly but iOS sometimes silently skips), §E.2 deep-link with no app installed (web confirm page deployment unverified).
+
+**Real risk concentrated in §C.1.** That's the 2026-05-01 incident flow — medium-high isn't good enough.
+
+### Minimum must-runs before App Store ship (4 tests)
+
+These are the deterministic-must-pass set. Skip anything else from §B-§E unless time allows.
+
+1. **§C.1 Ask-to-merge Google→Apple** — see §"Resume from here" below for the exact SQL/click steps. Mid-execution.
+2. **§D.1 Connect Google to Apple-only account** — sign in as `daniel+signuptest@diverseawareness.com` (email-only user from yesterday's §B.3) → Profile → SIGN-IN METHODS → tap Connect on Google → real Google flow → expect ✅ Connected.
+3. **§D.4 Last-identity guard** — sign in as a user with only one provider → Profile → SIGN-IN METHODS → tap Disconnect on the only provider → expect error toast "You can't disconnect your only sign-in method", row stays connected.
+4. **§F.1 Apple sign-in regression** — sign out → sign in with Daniel's real Apple ID → expect Home with all existing groups/data, no re-onboarding.
+
+### Resume from here (session 6 — pick up exactly at §C.1)
+
+The previous §C.1 attempt failed silently because `dsigvardsson@gmail.com` isn't a real Google account on Daniel's device. The Google picker offered his main `daniel@diverseawareness.com` instead, which is already Apple+Google linked — no trigger fires.
+
+**Pivot:** unlink Google from `daniel@diverseawareness.com` temporarily so the same email becomes a fresh collision target. Then sign in with Google → trigger fires → Ask alert → re-link via the alert.
+
+```sql
+-- Step 1 — verify state
+SELECT id, provider FROM auth.identities
+WHERE user_id = 'c39f96d3-81a3-43b2-bba4-a777681bf484' AND provider = 'google';
+
+-- Step 2 — remove the Google identity (Apple stays — Daniel can still sign in)
+DELETE FROM auth.identities
+WHERE user_id = 'c39f96d3-81a3-43b2-bba4-a777681bf484' AND provider = 'google';
+```
+
+Then in the app:
+1. Sign out of Carry
+2. Tap **Sign in with Google** → pick `daniel@diverseawareness.com`
+3. **Expected:** alert "Found your Carry account, sign in with Apple to link"
+4. Tap **Sign in with Apple** in the alert → real Apple flow → success → expect green toast "Google added to your account"
+
+Verify after:
+```sql
+SELECT provider FROM auth.identities WHERE user_id = 'c39f96d3-81a3-43b2-bba4-a777681bf484';
+-- expect: both 'apple' and 'google'
+```
+
+Failure modes to watch for at each step:
+- Step 3 lands on Home directly → trigger didn't fire OR `mapAuthSignupError` didn't catch the typed error. Check Xcode console for `‼️AUTHDEBUG mapAuthSignupError` line.
+- Step 3 shows error toast (no alert) → mapAuthSignupError caught but pendingProviderLink wasn't set / alert binding broken in AuthView.
+- Step 4 succeeds but no toast → `consumePendingLink()` didn't fire. Check Xcode console.
+- Step 4 succeeds but Google not re-linked → linkGoogleIdentity failed inside consumePendingLink. Check Xcode console for AUTHDEBUG.
+
+### After §C.1 passes — sprint to ship
+
+1. Run must-runs §D.1, §D.4, §F.1 (combined ~15 min).
+2. Apply both 20260518 migrations to prod via Studio SQL Editor (`seeitehizboxjbnccnyd`). Confirm 20260515000000_dedupe_email_on_signup is already on prod.
+3. Strip remaining `‼️AUTHDEBUG` NSLog lines (AuthService.mapAuthSignupError + CarryApp ~L370).
+4. Add `Carry/Views/PasswordRecoverySheet.swift` to the Xcode Carry target (right-click Views → Add Files → check Carry target). Already added per yesterday's instruction; verify it's there.
+5. Add `CarryTests/AuthLogicTests.swift` to the Xcode CarryTests target (different target than #4).
+6. Cmd+U to run unit tests — expect 20 passes.
+7. Commit `feature/auth-v2` as a clean set of commits (suggested: 3 commits — "auth(hasPassword)", "auth(recovery)", "auth(ui+tests)").
+8. Push `feature/auth-v2` to origin.
+9. Cut `release/1.1.0` from `hotfix/1.0.9`, merge feature/auth-v2, bump MARKETING_VERSION, archive, submit.
+10. On TestFlight: run §F regression sweep (Apple sign-in for existing user, demo round, push delivery), then App Store submit.
+
+### Code state (uncommitted on feature/auth-v2 at session-5 pause)
+
+| File | Change |
+|---|---|
+| `Carry/Services/AuthService.swift` | Session 4 changes + session 5: `@Published var recoveryEmail`, store email in `beginPasswordRecovery`, clear in `complete`/`cancel`. `beginPasswordRecovery` AUTHDEBUG logs stripped. `sendPasswordReset` reverted to plain `redirectTo` (no `?env=dev` — abandoned). |
+| `Carry/Views/ProfileSheetView.swift` | Email row drives off `hasPassword`, disconnect routes to `disconnectEmailPassword` |
+| `Carry/Views/EmailAuthSheet.swift` | Keyboard Done removed; Forgot password? color → textPrimary |
+| `Carry/Views/EmailLinkSheet.swift` | Keyboard Done removed; hidden `.username` field for iCloud Keychain |
+| `Carry/Views/AuthView.swift` | Per-provider `SigningProvider` enum + `inFlightProvider` state; `onChange` dismisses EmailAuthSheet when `isInPasswordRecovery` flips true |
+| `Carry/Views/PasswordRecoverySheet.swift` (NEW) | Full-screen cover sheet, takes new password, hidden `.username` field, signs out after save |
+| `Carry/CarryApp.swift` | `handleIncomingURL` routes `/reset*` → `beginPasswordRecovery`; root view has `.fullScreenCover(isPresented: $authService.isInPasswordRecovery)` |
+| `CarryTests/AuthLogicTests.swift` (NEW) | 20 tests, needs Xcode target wiring |
+| `site/.well-known/apple-app-site-association` | paths now `["/invite*", "/auth/*", "/reset*"]`. DEPLOYED to carryapp.site as of yesterday |
+| `site/reset/index.html` | Env-aware code from a now-abandoned branch — dead code for installed-app users since AASA intercepts `/reset`. Keep as "no app installed" fallback. Cleanup later. |
+| `supabase/migrations/20260518000000_current_user_has_password.sql` (NEW) | Applied to dev only |
+| `supabase/migrations/20260518000001_clear_current_user_password.sql` (NEW) | Applied to dev only |
+
+### Tasks state at pause
+
+- #4 — Apply migration to prod Supabase (pending; 2 migrations + verify dedupe is on prod)
+- #5 — Commit hasPassword changes on feature/auth-v2 (pending)
+- #6 — Strip ‼️AUTHDEBUG NSLog lines (pending; `beginPasswordRecovery` already done)
+- #7 — Push feature/auth-v2 to origin (pending)
+- #8 — Cut release/1.1.0 + archive + submit (pending)
+- #9 — Test Email Disconnect end-to-end (in-progress; server-side RPC ✅, button UX untested)
+- #13 — §C.1 Cross-provider Ask-to-merge (pending → IN-PROGRESS, resume per "Resume from here")
+- #15 — Switch forgot-password to in-app recovery (in-progress; flow verified, sheet conflict resolved)
+- #16 — Build auth unit test suite (in-progress; tests written, target wiring pending)
+
+---
+
+## Session 4 status (2026-05-18, evening)
+
+**Headline:** Email-link Supabase quirk RESOLVED + most §B/D flows verified on dev. Forgot-password flow pivoted from web-page to in-app due to PKCE flow incompatibility. Code is written but NOT YET tested end-to-end.
+
+### Email-link diagnosis (session 3 unblock)
+- Cause: `auth.update(password:)` **does** persist `encrypted_password` server-side but Supabase does NOT add an `email` row to `auth.identities` retroactively for OAuth-linked users. So `identities.contains("email")` never flips → UI stayed on "Connect" forever.
+- Structural fix: `current_user_has_password()` SECURITY DEFINER RPC reads `auth.users.encrypted_password IS NOT NULL` for the calling user. AuthService exposes `@Published var hasPassword`, refreshed alongside `identities`. ProfileSheetView Email row drives `isConnected` off `hasPassword`. Verified: `has_password=true` for `daniel@diverseawareness.com` (UUID `c39f96d3-…`) → Email row correctly shows Connected ✓.
+- Session 3's mystery UUID `C39F96D3-…` was real — it's Daniel's dev user. Doc was wrong about "doesn't exist on either DB".
+- The 2-step OTP flow in `stash@{0}` is no longer needed and was NOT applied. EmailLinkSheet stays as the simple single-password form on HEAD.
+
+### Email Disconnect built
+- `clear_current_user_password()` SECURITY DEFINER RPC clears `encrypted_password` with a foot-gun guard: refuses if user has zero OAuth identities (would strand them).
+- `AuthService.disconnectEmailPassword()` calls the RPC + `refreshIdentities`.
+- ProfileSheetView's `disconnect()` routes `provider == "email"` to the new path instead of `unlinkProvider` (which would silently no-op since there's no email identity row to unlink).
+- `mapLinkError` maps `last_sign_in_method` exception → `LinkError.lastIdentity` so the existing alert UI works.
+- NOT yet exercised end-to-end via the in-app Disconnect button (#9 task).
+
+### Verified on dev today (§B, partial §D)
+- Email row shows **Connected ✓** for existing users with passwords (§D.2 backbone)
+- Email row flips Connected ✓ → Connect after `UPDATE auth.users SET encrypted_password = NULL ...` + sign-in refresh
+- §B.4 Email sign-in works after password set (proved persistence end-to-end without 2-step OTP)
+- §B.3 Email sign-up works: throwaway plus-alias → confirmation email → tap link → `carryapp.site/auth/confirm.html` → Open Carry → onboarding completes
+- §A.1 + §A.2 dedupe trigger present + raises `EMAIL_ALREADY_REGISTERED: apple` on collision
+- Daniel had to deploy `site/reset/index.html` (was 404 before; first deploy this session)
+
+### Forgot-password root cause + pivot
+- §B.5 attempts failed: every fresh email link landed on the in-app ForgotPasswordView instead of the web reset page.
+- After ruling out AASA cache, allowlist gaps, and Mail-browser quirks, **root cause** is the iOS SDK uses **PKCE flow** (default in newer `supabase-swift`). PKCE recovery puts a `?code=` query in the redirect, and exchanging the code requires the **verifier** generated on the iOS side and stored in iOS Keychain. The web `site/reset/index.html` cannot complete the exchange because it doesn't have the verifier.
+- Pivot (Daniel's call): **drop the web reset page; make recovery purely in-app.** Email link opens app via Universal Link, app exchanges the code using its own verifier, presents a sheet for the new password.
+
+### Code written this session (NOT YET TESTED end-to-end)
+- `supabase/migrations/20260518000000_current_user_has_password.sql` — applied to dev only
+- `supabase/migrations/20260518000001_clear_current_user_password.sql` — applied to dev only
+- `Carry/Services/AuthService.swift`:
+  - `@Published var hasPassword: Bool`
+  - `refreshHasPassword()` folded into `refreshIdentities()`
+  - `linkEmailIdentity` alreadyLinked guard switched from `identities.contains("email")` to `hasPassword`
+  - `disconnectEmailPassword()` calling `clear_current_user_password` RPC
+  - `mapLinkError` adds `last_sign_in_method` → `.lastIdentity` mapping
+  - `signOut()` resets `hasPassword = false`
+  - `sendPasswordReset` reverted to plain `https://carryapp.site/reset` (the `?env=dev` experiment was abandoned after the PKCE realization)
+  - NEW: `@Published var isInPasswordRecovery: Bool`
+  - NEW: `beginPasswordRecovery(url:)` calls `client.auth.session(from:)` (the PKCE exchange) and flips the flag
+  - NEW: `completePasswordRecovery(newPassword:)` calls `auth.update(password:)` + `signOut()` so user re-enters cleanly
+  - NEW: `cancelPasswordRecovery()` dumps the recovery session
+- `Carry/Views/ProfileSheetView.swift`:
+  - Email row `isConnected` → `authService.hasPassword`
+  - `disconnect()` helper routes `provider == "email"` to `disconnectEmailPassword`
+- `Carry/Views/EmailAuthSheet.swift` — removed redundant keyboard-toolbar Done button
+- `Carry/Views/EmailLinkSheet.swift` — removed redundant keyboard-toolbar Done button
+- `Carry/Views/AuthView.swift` — replaced single `isSigningIn: Bool` with per-provider `enum SigningProvider; @State inFlightProvider: SigningProvider?`. Spinner now scoped: tapping Apple no longer spins the Google button. `isSigningIn` kept as a computed bool so opacity/disabled across all three buttons stays a single source.
+- `Carry/Views/EmailAuthSheet.swift` — "Forgot password?" link recolored from `textTertiary` → `textPrimary` (Daniel's call for visibility)
+- NEW: `Carry/Views/PasswordRecoverySheet.swift` — clone of EmailLinkSheet's form, calls `completePasswordRecovery`. NOT yet added to Xcode project file.
+- `Carry/CarryApp.swift`:
+  - `handleIncomingURL` adds `/reset` path branch calling `authService.beginPasswordRecovery`
+  - Root view adds `.sheet(isPresented: $authService.isInPasswordRecovery) { PasswordRecoverySheet() }`
+- `site/.well-known/apple-app-site-association` — paths now `["/invite*", "/auth/*", "/reset*"]`. NOT yet redeployed.
+- `site/reset/index.html` — has env-aware code from an earlier branch of this session. Now effectively dead code for installed-app users since iOS will intercept `/reset` via the AASA. Worth keeping for "no Carry installed" fallback, but not on the critical path. Re-delete or simplify later.
+
+### Open thread — what session 5 has to do FIRST
+1. **Add `Carry/Views/PasswordRecoverySheet.swift` to the Xcode project** — right-click `Views` in the navigator → Add Files to "Carry" → select the file → Add. Without this Xcode won't compile it.
+2. **Re-deploy `site/.well-known/apple-app-site-association`** to carryapp.site. Verify with `curl -s https://carryapp.site/.well-known/apple-app-site-association | grep reset` — must show `/reset*`.
+3. **Clean build + uninstall + reinstall.** iOS caches AASA at install time. To force re-fetch: Product → Clean Build Folder → delete the app from device → Cmd+R.
+4. **Smoke-test §B.5 end-to-end on dev:** Sign Out → Email → Sign In → Forgot password? → enter `daniel+signuptest@diverseawareness.com` → tap fresh email link → expect app to open with PasswordRecoverySheet → enter new password → Save → expect sign-out → sign back in with new password works.
+
+### Then the remaining unfinished work
+5. **§C.1 Cross-provider Ask-to-merge** — pending. Daniel's main dev user already has Apple + Google linked, so a Google sign-in won't trigger the dedupe trigger. Need a fresh email or planted-fake-row setup per the test plan §"Old how-to resume" #2.
+6. **Test Email Disconnect button end-to-end** (#9 task). Sign in → ProfileSheet → SIGN-IN METHODS → tap Connected ✓ on Email → confirm → expect toast + row reverts + server `encrypted_password IS NULL`.
+7. **Apply both new migrations to prod** (`20260518000000_current_user_has_password.sql`, `20260518000001_clear_current_user_password.sql`). And re-confirm `20260515000000_dedupe_email_on_signup.sql` is on prod.
+8. **Strip `‼️AUTHDEBUG` NSLog lines** from AuthService.swift + CarryApp.swift.
+9. **Commit all uncommitted work** on `feature/auth-v2` as a clean set of commits (suggest 3: "auth(hasPassword): expose RPC + UI signal + disconnect", "auth(recovery): in-app PKCE recovery sheet + AASA /reset*", "auth(ui): per-provider sign-in spinner + drop keyboard Done buttons").
+10. **Push `feature/auth-v2` to origin**.
+11. **Cut `release/1.1.0` from `hotfix/1.0.9`** + merge feature/auth-v2 + bump MARKETING_VERSION + archive + submit.
+
+### Operational notes from this session
+- The Site URL in dev Supabase is `https://carryapp.site` (bare root). If a `redirect_to` ever fails the allowlist match, that's where the user lands. Not the cause of any of today's symptoms; documenting for context.
+- Removing the keyboard toolbar Done button from sheets is safe — `scrollDismissesKeyboard(.interactively)` + `.onTapGesture { focused = nil }` + Return-key submit cover keyboard dismissal.
+- The reset page deployment turned up that nothing under `/auth/` is deployed on carryapp.site either — `/auth/confirm.html` returned 404 in earlier curl checks. Yet §B.3 worked end-to-end, meaning Supabase's verify endpoint deep-links straight into the app via AASA's `/auth/*` glob without ever needing the page to render. Worth keeping in mind: `site/auth/confirm.html` is unreachable from real flows; it's a fallback for "no app installed" scenarios.
+
+### Cleanup that can land alongside or after 1.1.0
+- Remove `https://carryapp.site/reset` + `https://carryapp.site/reset?env=dev` + `https://carryapp.site/reset/**` from both dev and prod Redirect URLs allowlists once in-app recovery is verified — the web page is no longer the redirect target.
+- Decide whether to delete `site/reset/index.html` + the `/reset*` AASA path entry (currently both still useful for "app not installed" fallback).
+- Drop the two duplicate plus-alias email users on dev (`daniel+confirm@...`, `daniel+testresend@...`) once they're confirmed dead.
+
+---
 
 ## TL;DR
 

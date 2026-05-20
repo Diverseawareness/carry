@@ -19,6 +19,7 @@ struct EmailAuthSheet: View {
     @State private var lastName = ""
     @State private var email = ""
     @State private var password = ""
+    @State private var showPassword = false
     @State private var error: String?
     @State private var isLoading = false
     @State private var showCheckEmail = false
@@ -73,6 +74,15 @@ struct EmailAuthSheet: View {
             }
             .navigationDestination(isPresented: $showForgotPassword) {
                 ForgotPasswordView(prefillEmail: email)
+            }
+            .onAppear {
+                // After password recovery, AuthService stashes the user's
+                // email in pendingPrefillEmail so they don't have to retype
+                // it on the way back in. One-shot — consumed and cleared.
+                if let prefill = authService.pendingPrefillEmail {
+                    email = prefill
+                    authService.pendingPrefillEmail = nil
+                }
             }
         }
         // Override the default system blue tint everywhere within this sheet —
@@ -134,14 +144,6 @@ struct EmailAuthSheet: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .onTapGesture { focused = nil }
-        .toolbar {
-            ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button("Done") { focused = nil }
-                    .font(.carry.bodySemibold)
-                    .foregroundColor(Color.textPrimary)
-            }
-        }
     }
 
     private var nameFields: some View {
@@ -218,17 +220,42 @@ struct EmailAuthSheet: View {
                 .font(.carry.bodySMBold)
                 .foregroundColor(Color.textPrimary)
                 .padding(.leading, 4)
-            SecureField(
-                "",
-                text: $password,
-                prompt: Text("Password").foregroundColor(Color.textDisabled)
-            )
+            Group {
+                if showPassword {
+                    TextField(
+                        "",
+                        text: $password,
+                        prompt: Text("Password").foregroundColor(Color.textDisabled)
+                    )
+                    .autocorrectionDisabled(true)
+                    .textInputAutocapitalization(.never)
+                } else {
+                    SecureField(
+                        "",
+                        text: $password,
+                        prompt: Text("Password").foregroundColor(Color.textDisabled)
+                    )
+                }
+            }
                 .font(.system(size: 16))
                 .textContentType(mode == .signUp ? .newPassword : .password)
                 .submitLabel(.go)
                 .focused($focused, equals: .password)
                 .onSubmit { if canSubmit { submit() } }
                 .carryInput(focused: focused == .password)
+                .overlay(alignment: .trailing) {
+                    Button {
+                        showPassword.toggle()
+                    } label: {
+                        Image(systemName: showPassword ? "eye.slash" : "eye")
+                            .font(.system(size: 16))
+                            .foregroundColor(Color.textSecondary)
+                            .padding(.trailing, 14)
+                            .frame(maxHeight: .infinity)
+                            .contentShape(Rectangle())
+                    }
+                    .accessibilityLabel(showPassword ? "Hide password" : "Show password")
+                }
 
             passwordRequirementsView
         }
@@ -265,7 +292,7 @@ struct EmailAuthSheet: View {
         Button { showForgotPassword = true } label: {
             Text("Forgot password?")
                 .font(.carry.bodySM)
-                .foregroundColor(Color.textTertiary)
+                .foregroundColor(Color.textPrimary)
         }
         .padding(.leading, 4)
         .padding(.top, 2)

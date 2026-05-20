@@ -65,10 +65,18 @@ final class AppleSignInCoordinator: NSObject, ASAuthorizationControllerDelegate,
     }
 }
 
+enum SigningProvider {
+    case apple, google, email
+}
+
 struct AuthView: View {
     @EnvironmentObject var authService: AuthService
     @State private var error: String?
-    @State private var isSigningIn = false
+    /// Which provider is currently authenticating. nil = idle. Per-provider so
+    /// the spinner shows on the tapped button only; the other buttons just
+    /// dim+disable so the user can't double-tap during a flow.
+    @State private var inFlightProvider: SigningProvider?
+    private var isSigningIn: Bool { inFlightProvider != nil }
     @State private var showEmailSheet = false
     @State private var appleCoordinator = AppleSignInCoordinator()
     // Cross-provider link prompt state. When Google sign-in collides with an
@@ -78,6 +86,12 @@ struct AuthView: View {
     // password").
     @State private var showLinkPrompt = false
     @State private var linkPromptExistingProvider: String = ""
+    // Set true when the user taps a button inside the link-prompt alert
+    // (positive action or Cancel). If the alert dismisses without any
+    // button tap — swipe-down, app backgrounding — this stays false and the
+    // onChange handler below clears the stale pendingProviderLink so a
+    // later sign-in attempt doesn't auto-link a stash from a prior session.
+    @State private var linkPromptActionTaken = false
 
     /// Optional: in debug/test flows, tapping the sign-in button calls this instead of real Apple Sign-In.
     var onDebugSkip: (() -> Void)? = nil
@@ -158,7 +172,7 @@ struct AuthView: View {
                         // buttons up.
                         Button(action: handleGoogleSignIn) {
                             ZStack {
-                                if isSigningIn {
+                                if inFlightProvider == .google {
                                     ProgressView()
                                         .tint(.black)
                                 } else {
@@ -277,13 +291,28 @@ struct AuthView: View {
         ) { provider in
             switch provider {
             case "apple":
-                Button("Sign in with Apple") { handleAppleSignIn() }
-                Button("Cancel", role: .cancel) { authService.pendingProviderLink = nil }
+                Button("Sign in with Apple") {
+                    linkPromptActionTaken = true
+                    handleAppleSignIn()
+                }
+                Button("Cancel", role: .cancel) {
+                    linkPromptActionTaken = true
+                    authService.pendingProviderLink = nil
+                }
             case "email":
-                Button("Use email & password") { showEmailSheet = true }
-                Button("Cancel", role: .cancel) { authService.pendingProviderLink = nil }
+                Button("Use email & password") {
+                    linkPromptActionTaken = true
+                    showEmailSheet = true
+                }
+                Button("Cancel", role: .cancel) {
+                    linkPromptActionTaken = true
+                    authService.pendingProviderLink = nil
+                }
             default:
-                Button("OK", role: .cancel) { authService.pendingProviderLink = nil }
+                Button("OK", role: .cancel) {
+                    linkPromptActionTaken = true
+                    authService.pendingProviderLink = nil
+                }
             }
         } message: { provider in
             switch provider {
@@ -299,13 +328,31 @@ struct AuthView: View {
             EmailAuthSheet()
                 .environmentObject(authService)
         }
+        // When a recovery link is tapped while EmailAuthSheet is open, the
+        // SwiftUI modal stack rejects stacking the recovery sheet over it
+        // ("only presenting a single sheet is supported"). Dismiss this
+        // sheet first; CarryApp's fullScreenCover then mounts cleanly.
+        .onChange(of: authService.isInPasswordRecovery) { _, recovering in
+            if recovering { showEmailSheet = false }
+        }
+        .onChange(of: showLinkPrompt) { _, isPresented in
+            if !isPresented {
+                if !linkPromptActionTaken {
+                    // Alert dismissed without a button tap (swipe-down or
+                    // app backgrounding). Clear the stash so a later sign-in
+                    // doesn't unexpectedly auto-link.
+                    authService.pendingProviderLink = nil
+                }
+                linkPromptActionTaken = false
+            }
+        }
     }
 
     private func handleGoogleSignIn() {
         guard let rootVC = UIApplication.shared.connectedScenes
             .compactMap({ ($0 as? UIWindowScene)?.keyWindow?.rootViewController })
             .first else { return }
-        isSigningIn = true
+        inFlightProvider = .google
         error = nil
         Task {
             // Fetch Google tokens first so we can reference them in BOTH the
@@ -316,15 +363,15 @@ struct AuthView: View {
             do {
                 tokens = try await GoogleSignInService.signIn(presenting: rootVC)
             } catch GoogleSignInService.Failure.cancelled {
-                isSigningIn = false
+                inFlightProvider = nil
                 return  // silent
             } catch let e as GoogleSignInService.Failure {
                 self.error = e.errorDescription ?? "Sign in failed. Please try again."
-                isSigningIn = false
+                inFlightProvider = nil
                 return
             } catch {
                 self.error = "Couldn't connect to Google. Please try again."
-                isSigningIn = false
+                inFlightProvider = nil
                 return
             }
 
@@ -355,7 +402,7 @@ struct AuthView: View {
             } catch {
                 self.error = "Sign in failed. Please try again."
             }
-            isSigningIn = false
+            inFlightProvider = nil
         }
     }
 
@@ -369,7 +416,7 @@ struct AuthView: View {
         switch result {
         case .success(let auth):
             guard let credential = auth.credential as? ASAuthorizationAppleIDCredential else { return }
-            isSigningIn = true
+            inFlightProvider = .apple
             error = nil
             Task {
                 do {
@@ -382,7 +429,7 @@ struct AuthView: View {
                 } catch {
                     self.error = "Sign in failed. Please try again."
                 }
-                isSigningIn = false
+                inFlightProvider = nil
             }
         case .failure(let err):
             // Error 1001 = user cancelled — don't show anything

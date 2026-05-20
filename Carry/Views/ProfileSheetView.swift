@@ -32,6 +32,10 @@ struct ProfileView: View {
     @State private var linkAlertMessage: String? = nil
     @State private var showLinkAlert = false
     @State private var isLinking = false
+    // Tracks which provider is mid-link so the spinner only shows on that
+    // row. Without this, the row condition fell back to `isConnected == false`
+    // which made every disconnected row spin during any link/unlink.
+    @State private var linkInFlightProvider: String? = nil
     @State private var appleLinkCoordinator = AppleSignInCoordinator()
     // Email-link sheet — presented when the user taps Connect on the Email
     // row in SIGN-IN METHODS. Different shape than Apple/Google because
@@ -290,7 +294,7 @@ struct ProfileView: View {
                         signInMethodRow(
                             label: "Email & password",
                             provider: "email",
-                            isConnected: authService.identities.contains(where: { $0.provider == "email" })
+                            isConnected: authService.hasPassword
                         )
                     }
                     Text("Connect another sign-in method so you can sign in either way and land on the same account.")
@@ -696,7 +700,7 @@ struct ProfileView: View {
                     .font(.system(size: 16))
                     .foregroundColor(Color.textPrimary)
                 Spacer(minLength: 8)
-                if isLinking, disconnectProvider == provider || isConnected == false {
+                if isLinking, disconnectProvider == provider || linkInFlightProvider == provider {
                     ProgressView().scaleEffect(0.8)
                 } else if isConnected {
                     Text("Connected")
@@ -731,7 +735,11 @@ struct ProfileView: View {
             return
         }
         isLinking = true
-        defer { isLinking = false }
+        linkInFlightProvider = provider
+        defer {
+            isLinking = false
+            linkInFlightProvider = nil
+        }
         do {
             switch provider {
             case "apple":
@@ -792,9 +800,16 @@ struct ProfileView: View {
         isLinking = true
         defer { isLinking = false }
         do {
-            try await authService.unlinkProvider(provider)
-            await MainActor.run {
-                ToastManager.shared.success("\(provider.capitalized) disconnected")
+            if provider == "email" {
+                try await authService.disconnectEmailPassword()
+                await MainActor.run {
+                    ToastManager.shared.success("Email & password disconnected")
+                }
+            } else {
+                try await authService.unlinkProvider(provider)
+                await MainActor.run {
+                    ToastManager.shared.success("\(provider.capitalized) disconnected")
+                }
             }
         } catch let e as AuthService.LinkError {
             linkAlertMessage = e.errorDescription

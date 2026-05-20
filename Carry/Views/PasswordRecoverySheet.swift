@@ -1,17 +1,16 @@
 import SwiftUI
 
-/// Sheet for adding an email/password identity to an already-signed-in user.
+/// In-app password reset sheet. Presented when the user taps a recovery
+/// email link, `CarryApp.handleIncomingURL` routes the Universal Link to
+/// `AuthService.beginPasswordRecovery`, the PKCE code is exchanged for a
+/// temporary recovery session, and `isInPasswordRecovery` flips true.
 ///
-/// Reached from the SIGN-IN METHODS section in ProfileSheetView when the user
-/// taps the **Email** "Connect" row. Captures a single password (the email
-/// address is implicit — it's already on the auth row from the original
-/// Apple/Google sign-in) and calls `AuthService.linkEmailIdentity(password:)`.
-///
-/// Password requirements mirror `EmailAuthSheet`'s signup form (8+ chars +
-/// digit) so users who sign in via email later get a consistent floor.
-struct EmailLinkSheet: View {
+/// After Save: `completePasswordRecovery` updates the password and signs
+/// the user out, so they re-enter via the welcome screen with the new
+/// password — no half-state where the next API call would still use the
+/// recovery JWT.
+struct PasswordRecoverySheet: View {
     @EnvironmentObject var authService: AuthService
-    @Environment(\.dismiss) var dismiss
 
     @State private var password: String = ""
     @State private var isLoading = false
@@ -42,26 +41,27 @@ struct EmailLinkSheet: View {
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
-                        Text("Add email & password")
+                        Text("Set a new password")
                             .font(.carry.pageTitle)
                             .foregroundColor(Color.textPrimary)
 
-                        Text("Set a password so you can sign in with \(authService.currentUser?.email ?? "your email") and password in addition to your current method.")
+                        Text("Enter a new password for your Carry account. You'll be signed back in with it.")
                             .font(.system(size: 15))
                             .foregroundColor(Color.textTertiary)
                             .padding(.bottom, 8)
 
-                        // Hidden username field — iCloud Keychain needs a
-                        // .username field paired with .newPassword to offer
-                        // to save the credentials.
-                        TextField("", text: .constant(authService.currentUser?.email ?? ""))
+                        // Hidden username field — iOS needs a focusable
+                        // TextField with .textContentType(.username) paired
+                        // with the .newPassword field below for iCloud
+                        // Keychain to offer to save the new credentials.
+                        TextField("", text: .constant(authService.recoveryEmail ?? ""))
                             .textContentType(.username)
                             .frame(height: 0)
                             .opacity(0)
                             .disabled(true)
                             .accessibilityHidden(true)
 
-                        Text("Password")
+                        Text("New password")
                             .font(.carry.bodySMBold)
                             .foregroundColor(Color.textPrimary)
                             .padding(.leading, 4)
@@ -132,7 +132,7 @@ struct EmailLinkSheet: View {
                                 if isLoading {
                                     ProgressView().tint(.white)
                                 } else {
-                                    Text("Save")
+                                    Text("Save password")
                                         .font(.carry.headlineBold)
                                         .foregroundColor(canSubmit ? .white : Color.textDisabled)
                                 }
@@ -157,10 +157,13 @@ struct EmailLinkSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        Task { await authService.cancelPasswordRecovery() }
+                    }
                 }
             }
             .onAppear { focused = true }
+            .interactiveDismissDisabled(true)
         }
         .tint(Color.textPrimary)
         .carryToastOverlay()
@@ -172,17 +175,12 @@ struct EmailLinkSheet: View {
         errorMessage = nil
         Task {
             do {
-                try await authService.linkEmailIdentity(password: password)
-                ToastManager.shared.success("Email connected")
-                dismiss()
-            } catch AuthService.LinkError.alreadyLinked {
-                errorMessage = "Email is already connected to your account."
-            } catch let e as AuthService.LinkError {
-                errorMessage = e.errorDescription ?? "Couldn't connect email. Please try again."
+                try await authService.completePasswordRecovery(newPassword: password)
+                ToastManager.shared.success("Password updated. Sign in with your new password.")
             } catch {
-                errorMessage = "Couldn't connect email. Please try again."
+                errorMessage = "Couldn't update password. Try requesting a new reset link."
+                isLoading = false
             }
-            isLoading = false
         }
     }
 }

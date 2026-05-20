@@ -10,6 +10,7 @@
 		552AF7443964484AA3D2F35A /* SkinConfettiBurst.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E4B1697B91D41F1A81D3762 /* SkinConfettiBurst.swift */; };
 		5FCAFE1A2B3C4D5E6F7E8901 /* PhoneInviteFinderSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FCAFE1A2B3C4D5E6F7E8902 /* PhoneInviteFinderSheet.swift */; };
 		600617DA2FB02A8500C1CD37 /* QuickGameGuestStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 600617D92FB02A8500C1CD37 /* QuickGameGuestStorage.swift */; };
+		600D7C2A2FBCAAAE00371DBB /* PasswordRecoverySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 600D7C292FBCAAAE00371DBB /* PasswordRecoverySheet.swift */; };
 		602CE33D2F747A2F0028D0AF /* TeeTimePickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 602CE33C2F747A2F0028D0AF /* TeeTimePickerSheet.swift */; };
 		60385FDD2F76EC5C00FBF213 /* QuickStartSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60385FDC2F76EC5C00FBF213 /* QuickStartSheet.swift */; };
 		60385FDF2F76EC9B00FBF213 /* GuestProfileService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60385FDE2F76EC9B00FBF213 /* GuestProfileService.swift */; };
@@ -19,9 +20,7 @@
 		6067A5C52F75E4140055DE9A /* PostHog in Frameworks */ = {isa = PBXBuildFile; productRef = 6067A5C42F75E4140055DE9A /* PostHog */; };
 		6067A5C72F75E7980055DE9A /* AnalyticsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6067A5C62F75E7980055DE9A /* AnalyticsService.swift */; };
 		606FCC162FA1BE5600C79B91 /* GoogleSignInService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 606FCC152FA1BE5600C79B91 /* GoogleSignInService.swift */; };
-		B10102 /* AuthNonce.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10101 /* AuthNonce.swift */; };
 		606FCC182FA1BEE300C79B91 /* EmailAuthSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 606FCC172FA1BEE300C79B91 /* EmailAuthSheet.swift */; };
-		B10104 /* EmailLinkSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10103 /* EmailLinkSheet.swift */; };
 		60860E3E2FA3EF4F00E6433C /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 60860E3D2FA3EF4F00E6433C /* GoogleSignIn */; };
 		60860E402FA3EF5000E6433C /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 60860E3F2FA3EF4F00E6433C /* GoogleSignInSwift */; };
 		60860E422FA4053000E6433C /* ForgotPasswordView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60860E412FA4053000E6433C /* ForgotPasswordView.swift */; };
@@ -78,6 +77,8 @@
 		A20199 /* FinalResultsComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20199 /* FinalResultsComponents.swift */; };
 		A20200 /* DisclaimerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20200 /* DisclaimerView.swift */; };
 		A20201 /* ImageCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20201 /* ImageCache.swift */; };
+		B10102 /* AuthNonce.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10101 /* AuthNonce.swift */; };
+		B10104 /* EmailLinkSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10103 /* EmailLinkSheet.swift */; };
 		B5263A87AFF44D4C95F2CB91 /* CourseSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7A80C81F7A84402810B5460 /* CourseSelectionView.swift */; };
 		C20001 /* AppRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20001 /* AppRouter.swift */; };
 		C20002 /* GroupInviteParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20002 /* GroupInviteParser.swift */; };
@@ -85,6 +86,11 @@
 		C20006 /* RoundCompleteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20006 /* RoundCompleteView.swift */; };
 		C20007 /* DebugMenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20007 /* DebugMenuView.swift */; };
 		D20008 /* LaunchSplashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20009 /* LaunchSplashView.swift */; };
+		DA0001 /* DemoSeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB0001 /* DemoSeed.swift */; };
+		DA0002 /* DemoRoundController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB0002 /* DemoRoundController.swift */; };
+		DA0003 /* DemoRoundCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB0003 /* DemoRoundCard.swift */; };
+		DA0004 /* DemoConvertSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB0004 /* DemoConvertSheet.swift */; };
+		DC0001 /* CoachMark.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD0001 /* CoachMark.swift */; };
 		E30001 /* GroupStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = E40001 /* GroupStorage.swift */; };
 		E30002 /* ScoreStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = E40002 /* ScoreStorage.swift */; };
 		E30003 /* GameEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = E40003 /* GameEvent.swift */; };
@@ -103,11 +109,6 @@
 		N10002 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = N10001 /* NotificationService.swift */; };
 		QR0001 /* QRScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = QR0002 /* QRScannerView.swift */; };
 		S10002 /* SyncQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = S10001 /* SyncQueue.swift */; };
-		DA0001 /* DemoSeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB0001 /* DemoSeed.swift */; };
-		DA0002 /* DemoRoundController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB0002 /* DemoRoundController.swift */; };
-		DA0003 /* DemoRoundCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB0003 /* DemoRoundCard.swift */; };
-		DA0004 /* DemoConvertSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB0004 /* DemoConvertSheet.swift */; };
-		DC0001 /* CoachMark.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD0001 /* CoachMark.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -144,6 +145,7 @@
 /* Begin PBXFileReference section */
 		5FCAFE1A2B3C4D5E6F7E8902 /* PhoneInviteFinderSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneInviteFinderSheet.swift; sourceTree = "<group>"; };
 		600617D92FB02A8500C1CD37 /* QuickGameGuestStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickGameGuestStorage.swift; sourceTree = "<group>"; };
+		600D7C292FBCAAAE00371DBB /* PasswordRecoverySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasswordRecoverySheet.swift; sourceTree = "<group>"; };
 		602CE33C2F747A2F0028D0AF /* TeeTimePickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeeTimePickerSheet.swift; sourceTree = "<group>"; };
 		60385FDC2F76EC5C00FBF213 /* QuickStartSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickStartSheet.swift; sourceTree = "<group>"; };
 		60385FDE2F76EC9B00FBF213 /* GuestProfileService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuestProfileService.swift; sourceTree = "<group>"; };
@@ -153,9 +155,7 @@
 		6056B3532F71DA0E00943125 /* Configuration.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; name = Configuration.storekit; path = Carry/Configuration.storekit; sourceTree = "<group>"; };
 		6067A5C62F75E7980055DE9A /* AnalyticsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsService.swift; sourceTree = "<group>"; };
 		606FCC152FA1BE5600C79B91 /* GoogleSignInService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleSignInService.swift; sourceTree = "<group>"; };
-		B10101 /* AuthNonce.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthNonce.swift; sourceTree = "<group>"; };
 		606FCC172FA1BEE300C79B91 /* EmailAuthSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailAuthSheet.swift; sourceTree = "<group>"; };
-		B10103 /* EmailLinkSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailLinkSheet.swift; sourceTree = "<group>"; };
 		60860E412FA4053000E6433C /* ForgotPasswordView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForgotPasswordView.swift; sourceTree = "<group>"; };
 		608DA91A2F8A35F900B69072 /* CarryTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CarryTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		6096464C2F8F5D8B002F3BA9 /* CarryWidgetsExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = CarryWidgetsExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -202,6 +202,8 @@
 		B10034 /* GroupsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupsListView.swift; sourceTree = "<group>"; };
 		B10035 /* ProfileSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileSheetView.swift; sourceTree = "<group>"; };
 		B10100 /* GolfBallLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GolfBallLoader.swift; sourceTree = "<group>"; };
+		B10101 /* AuthNonce.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthNonce.swift; sourceTree = "<group>"; };
+		B10103 /* EmailLinkSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailLinkSheet.swift; sourceTree = "<group>"; };
 		B20001 /* StoreService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreService.swift; sourceTree = "<group>"; };
 		B20002 /* PaywallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaywallView.swift; sourceTree = "<group>"; };
 		B20003 /* CarryInputModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarryInputModifier.swift; sourceTree = "<group>"; };
@@ -218,6 +220,11 @@
 		D20006 /* RoundCompleteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoundCompleteView.swift; sourceTree = "<group>"; };
 		D20007 /* DebugMenuView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugMenuView.swift; sourceTree = "<group>"; };
 		D20009 /* LaunchSplashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchSplashView.swift; sourceTree = "<group>"; };
+		DB0001 /* DemoSeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoSeed.swift; sourceTree = "<group>"; };
+		DB0002 /* DemoRoundController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoRoundController.swift; sourceTree = "<group>"; };
+		DB0003 /* DemoRoundCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoRoundCard.swift; sourceTree = "<group>"; };
+		DB0004 /* DemoConvertSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoConvertSheet.swift; sourceTree = "<group>"; };
+		DD0001 /* CoachMark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachMark.swift; sourceTree = "<group>"; };
 		E40001 /* GroupStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupStorage.swift; sourceTree = "<group>"; };
 		E40002 /* ScoreStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoreStorage.swift; sourceTree = "<group>"; };
 		E40003 /* GameEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameEvent.swift; sourceTree = "<group>"; };
@@ -238,11 +245,6 @@
 		QR0002 /* QRScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRScannerView.swift; sourceTree = "<group>"; };
 		S10001 /* SyncQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncQueue.swift; sourceTree = "<group>"; };
 		SC0001 /* Secrets.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Secrets.xcconfig; sourceTree = "<group>"; };
-		DB0001 /* DemoSeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoSeed.swift; sourceTree = "<group>"; };
-		DB0002 /* DemoRoundController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoRoundController.swift; sourceTree = "<group>"; };
-		DB0003 /* DemoRoundCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoRoundCard.swift; sourceTree = "<group>"; };
-		DB0004 /* DemoConvertSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoConvertSheet.swift; sourceTree = "<group>"; };
-		DD0001 /* CoachMark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachMark.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -320,6 +322,7 @@
 		C10001 = {
 			isa = PBXGroup;
 			children = (
+				600D7C292FBCAAAE00371DBB /* PasswordRecoverySheet.swift */,
 				6056B3532F71DA0E00943125 /* Configuration.storekit */,
 				C10002 /* Carry */,
 				608DA91B2F8A35F900B69072 /* CarryTests */,
@@ -722,6 +725,7 @@
 				E30002 /* ScoreStorage.swift in Sources */,
 				E30003 /* GameEvent.swift in Sources */,
 				E30004 /* GameToastView.swift in Sources */,
+				600D7C2A2FBCAAAE00371DBB /* PasswordRecoverySheet.swift in Sources */,
 				60385FDD2F76EC5C00FBF213 /* QuickStartSheet.swift in Sources */,
 				5FCAFE1A2B3C4D5E6F7E8901 /* PhoneInviteFinderSheet.swift in Sources */,
 				E30005 /* CarryToast.swift in Sources */,
@@ -828,7 +832,7 @@
 				CODE_SIGN_ENTITLEMENTS = Carry/Carry.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 83;
+				CURRENT_PROJECT_VERSION = 84;
 				INFOPLIST_FILE = Carry/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -837,7 +841,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.9;
+				MARKETING_VERSION = 1.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.diverseawareness.carry;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -861,7 +865,7 @@
 				GCC_WARN_UNDECLARED_SELECTOR = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.0.9;
+				MARKETING_VERSION = 1.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.diverseawareness.CarryTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -887,7 +891,7 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 83;
+				CURRENT_PROJECT_VERSION = 84;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = CarryWidgets/Info.plist;
@@ -899,7 +903,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.9;
+				MARKETING_VERSION = 1.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.diverseawareness.carry.CarryWidgets;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -927,7 +931,7 @@
 				GCC_WARN_UNDECLARED_SELECTOR = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.0.9;
+				MARKETING_VERSION = 1.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.diverseawareness.CarryTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -956,7 +960,7 @@
 				GCC_WARN_UNDECLARED_SELECTOR = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.0.9;
+				MARKETING_VERSION = 1.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.diverseawareness.CarryTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -982,7 +986,7 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 83;
+				CURRENT_PROJECT_VERSION = 84;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = CarryWidgets/Info.plist;
@@ -994,7 +998,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.9;
+				MARKETING_VERSION = 1.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.diverseawareness.carry.CarryWidgets;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -1019,7 +1023,7 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 83;
+				CURRENT_PROJECT_VERSION = 84;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = CarryWidgets/Info.plist;
@@ -1031,7 +1035,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.9;
+				MARKETING_VERSION = 1.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.diverseawareness.carry.CarryWidgets;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -1054,7 +1058,7 @@
 				CODE_SIGN_ENTITLEMENTS = Carry/Carry.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 83;
+				CURRENT_PROJECT_VERSION = 84;
 				INFOPLIST_FILE = Carry/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -1063,7 +1067,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.9;
+				MARKETING_VERSION = 1.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.diverseawareness.carry;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1082,7 +1086,7 @@
 				CODE_SIGN_ENTITLEMENTS = Carry/Carry.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 83;
+				CURRENT_PROJECT_VERSION = 84;
 				INFOPLIST_FILE = Carry/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -1091,7 +1095,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.9;
+				MARKETING_VERSION = 1.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.diverseawareness.carry;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";

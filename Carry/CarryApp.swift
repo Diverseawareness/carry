@@ -268,6 +268,10 @@ struct CarryApp: App {
             .environmentObject(authService)
             .environmentObject(appRouter)
             .environmentObject(storeService)
+            .fullScreenCover(isPresented: $authService.isInPasswordRecovery) {
+                PasswordRecoverySheet()
+                    .environmentObject(authService)
+            }
             .onReceive(NotificationCenter.default.publisher(for: .didTapGroupInviteNotification)) { _ in
                 // Navigate to Home tab where invite cards will appear
                 appRouter.navigateToTab = "home"
@@ -362,15 +366,44 @@ struct CarryApp: App {
                 do {
                     try await authService.handleAuthCallback(url: url)
                 } catch {
-                    // Log the actual cause so this isn't a black box on failure.
-                    // Common shape: the URL fragment carrying the recovery /
-                    // signup tokens got stripped somewhere (e.g. web fallback's
-                    // "Open Carry" link didn't preserve the hash), so
-                    // session(from:) has nothing to parse.
+                    #if DEBUG
                     NSLog("‼️AUTHDEBUG handleAuthCallback failed url=%@ error=%@",
                           url.absoluteString,
                           String(reflecting: error))
+                    #endif
                     ToastManager.shared.error("Couldn't complete sign-in. Try signing in with your email and password.")
+                }
+            }
+            return
+        }
+
+        // Password recovery: tapping the email reset link lands here via
+        // Universal Link (AASA `/reset*`). The URL carries a PKCE `?code=`
+        // whose verifier lives in this device's Keychain (originated from
+        // sendPasswordReset). Exchange for a temporary recovery session, then
+        // present the in-app set-password sheet.
+        if url.host == "carryapp.site", url.path.hasPrefix("/reset") {
+            Task {
+                do {
+                    try await authService.beginPasswordRecovery(url: url)
+                } catch {
+                    #if DEBUG
+                    NSLog("‼️AUTHDEBUG beginPasswordRecovery failed url=%@ error=%@",
+                          url.absoluteString,
+                          String(reflecting: error))
+                    #endif
+                    // PKCE flow_state has a ~5 min TTL, much shorter than the 1h
+                    // email-link expiry, so an expired flow is the most common
+                    // failure mode. Tailor the copy so users know to request a
+                    // new link (vs the generic "couldn't complete" we used to
+                    // show). Substring match on the error description is
+                    // fragile to SDK wording changes — refine if needed.
+                    let desc = String(reflecting: error).lowercased()
+                    let isExpired = desc.contains("flow_state_expired") || desc.contains("flow_state_not_found")
+                    let copy = isExpired
+                        ? "This reset link has expired. Request a new one from Sign in → Forgot password."
+                        : "Couldn't complete password reset. Request a new link from the app."
+                    ToastManager.shared.error(copy)
                 }
             }
             return
