@@ -10,7 +10,7 @@
 		552AF7443964484AA3D2F35A /* SkinConfettiBurst.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E4B1697B91D41F1A81D3762 /* SkinConfettiBurst.swift */; };
 		5FCAFE1A2B3C4D5E6F7E8901 /* PhoneInviteFinderSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FCAFE1A2B3C4D5E6F7E8902 /* PhoneInviteFinderSheet.swift */; };
 		600617DA2FB02A8500C1CD37 /* QuickGameGuestStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 600617D92FB02A8500C1CD37 /* QuickGameGuestStorage.swift */; };
-		600D7C2A2FBCAAAE00371DBB /* PasswordRecoverySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 600D7C292FBCAAAE00371DBB /* PasswordRecoverySheet.swift */; };
+		600D85102FBD696500371DBB /* PasswordRecoverySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 600D850F2FBD696500371DBB /* PasswordRecoverySheet.swift */; };
 		602CE33D2F747A2F0028D0AF /* TeeTimePickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 602CE33C2F747A2F0028D0AF /* TeeTimePickerSheet.swift */; };
 		60385FDD2F76EC5C00FBF213 /* QuickStartSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60385FDC2F76EC5C00FBF213 /* QuickStartSheet.swift */; };
 		60385FDF2F76EC9B00FBF213 /* GuestProfileService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60385FDE2F76EC9B00FBF213 /* GuestProfileService.swift */; };
@@ -145,7 +145,7 @@
 /* Begin PBXFileReference section */
 		5FCAFE1A2B3C4D5E6F7E8902 /* PhoneInviteFinderSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneInviteFinderSheet.swift; sourceTree = "<group>"; };
 		600617D92FB02A8500C1CD37 /* QuickGameGuestStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickGameGuestStorage.swift; sourceTree = "<group>"; };
-		600D7C292FBCAAAE00371DBB /* PasswordRecoverySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasswordRecoverySheet.swift; sourceTree = "<group>"; };
+		600D850F2FBD696500371DBB /* PasswordRecoverySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasswordRecoverySheet.swift; sourceTree = "<group>"; };
 		602CE33C2F747A2F0028D0AF /* TeeTimePickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeeTimePickerSheet.swift; sourceTree = "<group>"; };
 		60385FDC2F76EC5C00FBF213 /* QuickStartSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickStartSheet.swift; sourceTree = "<group>"; };
 		60385FDE2F76EC9B00FBF213 /* GuestProfileService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuestProfileService.swift; sourceTree = "<group>"; };
@@ -162,6 +162,7 @@
 		6096464E2F8F5D8B002F3BA9 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		609646502F8F5D8B002F3BA9 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		609646682F8F6140002F3BA9 /* LiveActivityService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityService.swift; sourceTree = "<group>"; };
+		60C5D65C2FBD6D07009F14E6 /* Carry.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = file; path = Carry.xctestplan; sourceTree = "<group>"; };
 		9E4B1697B91D41F1A81D3762 /* SkinConfettiBurst.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkinConfettiBurst.swift; sourceTree = "<group>"; };
 		A298F2722FC1DED0209E5BB2 /* VenmoLogo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VenmoLogo.swift; sourceTree = "<group>"; };
 		A3B7E2D419CF4FA8B1C60D72 /* PlayerSearchService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerSearchService.swift; sourceTree = "<group>"; };
@@ -322,7 +323,7 @@
 		C10001 = {
 			isa = PBXGroup;
 			children = (
-				600D7C292FBCAAAE00371DBB /* PasswordRecoverySheet.swift */,
+				60C5D65C2FBD6D07009F14E6 /* Carry.xctestplan */,
 				6056B3532F71DA0E00943125 /* Configuration.storekit */,
 				C10002 /* Carry */,
 				608DA91B2F8A35F900B69072 /* CarryTests */,
@@ -443,6 +444,7 @@
 				DB0003 /* DemoRoundCard.swift */,
 				DB0004 /* DemoConvertSheet.swift */,
 				DD0001 /* CoachMark.swift */,
+				600D850F2FBD696500371DBB /* PasswordRecoverySheet.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -725,8 +727,8 @@
 				E30002 /* ScoreStorage.swift in Sources */,
 				E30003 /* GameEvent.swift in Sources */,
 				E30004 /* GameToastView.swift in Sources */,
-				600D7C2A2FBCAAAE00371DBB /* PasswordRecoverySheet.swift in Sources */,
 				60385FDD2F76EC5C00FBF213 /* QuickStartSheet.swift in Sources */,
+				600D85102FBD696500371DBB /* PasswordRecoverySheet.swift in Sources */,
 				5FCAFE1A2B3C4D5E6F7E8901 /* PhoneInviteFinderSheet.swift in Sources */,
 				E30005 /* CarryToast.swift in Sources */,
 				F50001 /* TypeRamp.swift in Sources */,
