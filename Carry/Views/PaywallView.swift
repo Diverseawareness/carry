@@ -45,14 +45,24 @@ struct PaywallView: View {
     /// get the reassuring framing (you had this, you can have it back)
     /// instead of a cold first-time pitch.
     private var heroTitle: String {
-        storeService.hadPremium ? "Trial Ended" : "Start Your Free Trial"
+        // Post-trial: "Trial Ended" (warmer than first-time pitch).
+        // First-time: "Subscribe to Carry" — neutral, action-focused.
+        // Used to be "Start Your Free Trial" but Apple flagged this under
+        // 3.1.2(c) — trial-first framing made the trial more prominent than
+        // the billed amount. New copy removes the trial promotion from the
+        // hero entirely; trial is mentioned only in the CTA summary +
+        // bottom auto-renewal disclosure.
+        storeService.hadPremium ? "Trial Ended" : "Subscribe to Carry"
     }
 
-    /// CTA button label flips for post-trial users — "Try It Free" would
-    /// be false advertising since Apple won't grant a second trial on the
-    /// same Apple ID.
+    /// CTA button label — always "Subscribe" now. Previously "Try It Free"
+    /// for first-timers, but Apple's 3.1.2(c) rejection flagged the most
+    /// prominent screen element being trial-framed. "Subscribe" is neutral
+    /// and works for both pre-trial and post-trial users — the trial copy
+    /// lives in the summary line above the button (pre-trial only) + the
+    /// bottom auto-renewal disclosure (required legal text).
     private var ctaButtonLabel: String {
-        storeService.hadPremium ? "Subscribe" : "Try It Free"
+        "Subscribe"
     }
 
     /// Auto-renewal disclosure (required by App Store Guideline 3.1.2).
@@ -177,16 +187,16 @@ struct PaywallView: View {
                             if storeService.annualProduct != nil {
                                 planCard(
                                     type: .annual,
-                                    title: "Annual",
-                                    subtitle: annualSubtitle,
+                                    price: annualPrice,
+                                    secondaryLine: annualSecondaryLine,
                                     detail: "Best value — full season coverage"
                                 )
                             }
                             if storeService.monthlyProduct != nil {
                                 planCard(
                                     type: .monthly,
-                                    title: "Monthly",
-                                    subtitle: monthlySubtitle,
+                                    price: monthlyPrice,
+                                    secondaryLine: monthlySecondaryLine,
                                     detail: "Full access, cancel anytime"
                                 )
                             }
@@ -229,9 +239,24 @@ struct PaywallView: View {
                         .padding(.top, 24)
                     }
 
-                    // CTA (only when products loaded). The price/trial
-                    // context already lives on the plan card, so we skip
-                    // a duplicate summary line above the button.
+                    // Summary line above the CTA — pre-trial only. Price-first
+                    // per Apple 3.1.2(c): the billed amount leads, trial copy
+                    // is subordinate at the end of the line. Post-trial users
+                    // skip this entirely (preCTASummary returns nil) since
+                    // their cards already display the prices and they don't
+                    // qualify for the trial.
+                    if let summary = preCTASummary {
+                        Text(summary)
+                            .font(.system(size: 13))
+                            .foregroundColor(Color.textTertiary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 24)
+                            .padding(.top, 16)
+                    }
+
+                    // CTA button. Label is always "Subscribe" — the trial
+                    // mention is intentionally absent from the most-tapped
+                    // element on the screen, per the 3.1.2(c) fix.
                     if !storeService.products.isEmpty {
                         Button {
                             purchaseSelected()
@@ -285,8 +310,9 @@ struct PaywallView: View {
 
     // MARK: - Plan Card
 
-    private func planCard(type: PlanType, title: String, subtitle: String, detail: String) -> some View {
+    private func planCard(type: PlanType, price: String, secondaryLine: String, detail: String) -> some View {
         let isSelected = selectedPlan == type
+        let planName = type == .annual ? "Annual" : "Monthly"
 
         return Button {
             withAnimation(.easeInOut(duration: 0.2)) {
@@ -296,11 +322,19 @@ struct PaywallView: View {
             VStack(spacing: 0) {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(title)
-                            .font(.system(size: 20, weight: .bold))
+                        // PRICE is the visually dominant element per Apple
+                        // 3.1.2(c). 24pt heavy primary, the largest text on
+                        // the card. Plan name + trial copy are subordinate
+                        // beneath it.
+                        Text(price)
+                            .font(.system(size: 24, weight: .heavy))
                             .foregroundColor(Color.textPrimary)
-                        Text(subtitle)
-                            .font(.system(size: 15))
+                        // Secondary line: plan name ("Annual" / "Monthly")
+                        // for post-trial users, or trial copy ("30 days free,
+                        // then $X/year") for first-timers. Smaller + lower
+                        // contrast so the price reads first.
+                        Text(secondaryLine)
+                            .font(.system(size: 14))
                             .foregroundColor(Color.textTertiary)
                     }
                     Spacer()
@@ -349,7 +383,7 @@ struct PaywallView: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(title) plan, \(subtitle)")
+        .accessibilityLabel("\(planName) plan, \(price), \(secondaryLine)")
         .accessibilityValue(isSelected ? "Selected" : "Not selected")
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
         .accessibilityHint("Double tap to select this plan")
@@ -370,31 +404,53 @@ struct PaywallView: View {
 
     // MARK: - Computed Text
 
-    private var annualSubtitle: String {
+    // MARK: - Plan card text (Apple 3.1.2(c) compliance)
+    //
+    // The billed price MUST be the visually dominant element. Plan name
+    // ("Annual" / "Monthly") and trial copy are subordinate. We split the
+    // old single "subtitle" property into two: `*Price` (the big bold price
+    // string with period — the hero of the card) and `*SecondaryLine` (the
+    // small grey label below — trial copy pre-trial, plan name post-trial).
+    //
+    // Post-trial users see the plan name only — they do NOT qualify for a
+    // second free trial (Apple enforces one per Apple ID), so showing "30
+    // days free" to them would be both false advertising AND a 3.1.2(c)
+    // violation in its own right.
+
+    private var annualPrice: String {
         guard let product = storeService.annualProduct else { return "" }
-        // Post-trial users no longer qualify for the free trial — Apple
-        // enforces one per Apple ID. Showing "30 days free" to them would
-        // be misleading (the system purchase sheet charges them immediately).
-        if storeService.hadPremium {
-            return "\(product.displayPrice)/year"
-        }
-        return "30 days free, then \(product.displayPrice)/year"
+        return "\(product.displayPrice)/year"
     }
 
-    private var monthlySubtitle: String {
+    private var monthlyPrice: String {
         guard let product = storeService.monthlyProduct else { return "" }
-        if storeService.hadPremium {
-            return "\(product.displayPrice)/month"
-        }
-        return "30 days free, then \(product.displayPrice)/month"
+        return "\(product.displayPrice)/month"
     }
 
-    private var ctaSummary: String {
-        if selectedPlan == .annual {
-            return annualSubtitle
-        } else {
-            return monthlySubtitle
-        }
+    private var annualSecondaryLine: String {
+        guard let product = storeService.annualProduct else { return "" }
+        return storeService.hadPremium
+            ? "Annual"
+            : "30 days free, then \(product.displayPrice)/year"
+    }
+
+    private var monthlySecondaryLine: String {
+        guard let product = storeService.monthlyProduct else { return "" }
+        return storeService.hadPremium
+            ? "Monthly"
+            : "30 days free, then \(product.displayPrice)/month"
+    }
+
+    /// Summary line shown above the CTA button, pre-trial only. Price-first
+    /// per Apple 3.1.2(c) — trial is subordinate at the end of the line.
+    /// Returns nil for post-trial users (cards already show the prices and
+    /// they don't get the trial).
+    private var preCTASummary: String? {
+        guard !storeService.hadPremium else { return nil }
+        guard storeService.annualProduct != nil || storeService.monthlyProduct != nil else { return nil }
+        let parts = [annualPrice, monthlyPrice].filter { !$0.isEmpty }
+        guard !parts.isEmpty else { return nil }
+        return "\(parts.joined(separator: " or ")) · Free 30-day trial"
     }
 
     // MARK: - Purchase
