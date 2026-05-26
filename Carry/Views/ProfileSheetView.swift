@@ -72,11 +72,22 @@ struct ProfileView: View {
     private var homeClub: String? { authService.currentUser?.homeClub }
     private var avatarUrl: String? { authService.currentUser?.avatarUrl }
     private var hasPhoto: Bool { profileImage != nil || avatarUrl != nil }
+    /// Profile header subtitle. Profile v2 (2026-05-25): drops the inline
+    /// "HCP X.X" segment that used to sit next to the club — the handicap
+    /// now has its own prominent slot in the stats row below, plus the
+    /// existing HC Index row inside ACCOUNT. Keeps the subtitle focused on
+    /// who-and-where, the stats row carries the numbers.
+    ///
+    /// Phrasing branches on `isClubMember` (set in the Edit Profile sheet
+    /// when the user picks a club; defaults to nil for legacy users who
+    /// haven't re-saved their profile). True/nil → "Member at <club>" (we
+    /// treat nil as member to preserve existing copy for legacy users).
+    /// Explicit false → "Home Club, <club>" — the user picked a course as
+    /// their home but isn't a member there.
     private var profileSubtitle: String {
-        var parts: [String] = []
-        if let homeClub, !homeClub.isEmpty { parts.append(homeClub) }
-        parts.append("HCP \(formatHandicap(handicap))")
-        return parts.joined(separator: " · ")
+        guard let homeClub, !homeClub.isEmpty else { return "" }
+        let isMember = authService.currentUser?.isClubMember ?? true
+        return isMember ? "Member at \(homeClub)" : "Home Club, \(homeClub)"
     }
     private var totalGamesPlayed: Int {
         skinGameGroups.reduce(0) { $0 + $1.roundHistory.count }
@@ -92,8 +103,12 @@ struct ProfileView: View {
     var body: some View {
         VStack(spacing: 0) {
 
-            // MARK: Profile Header (sticky)
-            HStack(spacing: 20) {
+            // MARK: Profile Header (sticky) — profile v2
+            // Centered layout: avatar (86pt) above name + subtitle, with a
+            // 3-column stats row underneath (Games / Skins / HC Index, with
+            // a small pencil on HC Index since tapping the stat opens the
+            // handicap picker — same drawer the ACCOUNT > HC Index row opens.
+            VStack(spacing: 8) {
                 // Avatar — tappable
                 Button {
                     showPhotoOptions = true
@@ -143,30 +158,63 @@ struct ProfileView: View {
                 .accessibilityLabel("Profile photo")
                 .accessibilityHint("Double tap to change your profile photo")
 
-                // Name + subtitle + stats
-                VStack(alignment: .leading, spacing: 2) {
+                // Name + subtitle (centered)
+                VStack(spacing: 4) {
                     Text(fullName)
-                        .font(.system(size: 20, weight: .bold))
-                        .foregroundColor(Color(hexString: "171D28"))
+                        .font(.system(size: 21, weight: .semibold))
+                        .foregroundColor(Color(hexString: "1C1C1C"))
+                        .multilineTextAlignment(.center)
                         .lineLimit(1)
 
-                    Text(profileSubtitle)
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundColor(Color(hexString: "7A7A7E"))
-                        .lineLimit(1)
-
-                    Text("\(totalGamesPlayed) Games · \(totalSkinsWon) Skins")
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundColor(Color(hexString: "171D28"))
-                        .padding(.top, 2)
-                        .accessibilityLabel("\(totalGamesPlayed) games played, \(totalSkinsWon) skins won")
+                    if !profileSubtitle.isEmpty {
+                        Text(profileSubtitle)
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(Color(hexString: "7A7A7D"))
+                            .multilineTextAlignment(.center)
+                            .lineLimit(1)
+                    }
                 }
+                .padding(.top, 8)
 
-                Spacer()
+                // 3-column stats row — Games / Skins / HC Index. The HC Index
+                // column is tappable (opens the handicap picker, same drawer
+                // as the ACCOUNT > HC Index row). Two entry points by design.
+                HStack(spacing: 14) {
+                    statsColumn(value: "\(totalGamesPlayed)", label: "Games")
+                    statsDivider()
+                    statsColumn(value: "\(totalSkinsWon)", label: "Skins")
+                    statsDivider()
+                    Button {
+                        hcPickerValue = handicap
+                        hcPickerIsPlus = handicap < 0
+                        showHandicapPicker = true
+                    } label: {
+                        VStack(spacing: 4) {
+                            HStack(spacing: 6) {
+                                Text(formatHandicap(handicap))
+                                    .font(.system(size: 28, weight: .medium))
+                                    .foregroundColor(Color(hexString: "1C1C1C"))
+                                Image(systemName: "pencil")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundColor(Color(hexString: "A3A3A3"))
+                            }
+                            Text("HC Index")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(Color(hexString: "A3A3A3"))
+                        }
+                        .frame(width: 99)
+                        .padding(.vertical, 16)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Handicap index \(formatHandicap(handicap))")
+                    .accessibilityHint("Double tap to edit your handicap")
+                }
+                .padding(.top, 2)
             }
+            .frame(maxWidth: .infinity)
             .padding(.horizontal, 22)
             .padding(.top, 16)
-            .padding(.bottom, 24)
+            .padding(.bottom, 16)
             .background(.white)
 
             ScrollView {
@@ -332,23 +380,20 @@ struct ProfileView: View {
                     }
                     .padding(.top, 16)
 
-                    // MARK: Version (standalone card with white background;
-                    // version + build inlined together in lighter gray —
-                    // meta info, not an actionable row)
+                    // MARK: Version — profile v2 (2026-05-25): inline meta
+                    // info, no card background. Used to be wrapped in a
+                    // 16pt rounded white card; the Figma redesign drops the
+                    // chrome so it reads as plain footer info instead of
+                    // another tappable row. Same content, same color, just
+                    // the background and padding removed.
                     HStack {
                         Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"))")
                             .font(.system(size: 16))
                             .foregroundColor(Color.textSecondary)
                         Spacer()
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 18)
-                    .background(
-                        RoundedRectangle(cornerRadius: 16)
-                            .fill(.white)
-                    )
-                    .padding(.horizontal, 20)
-                    .padding(.top, 8)
+                    .padding(.horizontal, 32)
+                    .padding(.top, 16)
 
                     // MARK: Disclaimer
                     Text("Carry is a scorekeeper only. Dollar amounts are for tracking friendly skins games. No real money is processed, held, or transferred through this app. Players settle up independently and are responsible for complying with local laws.")
@@ -607,6 +652,35 @@ struct ProfileView: View {
     // Old handicapPickerSheet removed — uses shared HandicapPickerSheet component
 
     // MARK: - Components
+
+    // MARK: - Stats Row Helpers (profile v2 header)
+
+    /// One column in the 3-up stats row under the profile header. Large
+    /// number on top, small gray label below. Used for Games + Skins; the
+    /// HC Index column is inlined in the header (with pencil + tap target)
+    /// since it's the only stat that's actionable.
+    private func statsColumn(value: String, label: String) -> some View {
+        VStack(spacing: 4) {
+            Text(value)
+                .font(.system(size: 28, weight: .medium))
+                .foregroundColor(Color(hexString: "1C1C1C"))
+            Text(label)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(Color(hexString: "A3A3A3"))
+        }
+        .frame(width: 99)
+        .padding(.vertical, 16)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(value) \(label)")
+    }
+
+    /// Thin vertical divider between stat columns. Matches the Figma
+    /// "Line 38" element (1px wide, 31pt tall, light gray).
+    private func statsDivider() -> some View {
+        Rectangle()
+            .fill(Color(hexString: "E5E7EB"))
+            .frame(width: 1, height: 31)
+    }
 
     // MARK: - Settings Helpers
 
