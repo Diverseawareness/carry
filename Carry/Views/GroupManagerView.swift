@@ -14,53 +14,9 @@ private extension View {
     }
 }
 
-/// Consolidates the lapsed-user gate's sheet + state-sync hooks behind a
-/// single modifier slot on GroupManagerView's already-long modifier chain.
-/// Adding three separate modifiers (.sheet + two .onChange) inline tipped
-/// the type-checker past its budget on the rootBody chain. This collapses
-/// them into one .modifier(...) slot, which the type-checker resolves
-/// independently from the parent chain.
-fileprivate struct LapsedGateSheetModifier: ViewModifier {
-    @Binding var showLapsedSheet: Bool
-    @Binding var lapsedSubscribeTapped: Bool
-    let isPremium: Bool
-    let hadPremium: Bool
-    let onDismiss: () -> Void
-
-    func body(content: Content) -> some View {
-        content
-            .sheet(isPresented: $showLapsedSheet, onDismiss: onDismiss) {
-                SubscriptionGateSheet(onSubscribe: {
-                    lapsedSubscribeTapped = true
-                    showLapsedSheet = false
-                })
-                .presentationDetents([.fraction(0.55)])
-                .presentationDragIndicator(.visible)
-                .presentationBackground(.white)
-            }
-            .onChange(of: isPremium) { _, newValue in
-                // Subscription just activated (paywall purchase or restore).
-                // Drop the gate so the user lands on the now-unlocked screen.
-                if newValue && showLapsedSheet {
-                    showLapsedSheet = false
-                }
-            }
-            .onChange(of: hadPremium) { _, newValue in
-                // hadPremium can replicate async on first launch after a
-                // trial-ended state. If the view was already on-screen when
-                // it flipped, raise the sheet now.
-                if newValue && !isPremium && !showLapsedSheet {
-                    showLapsedSheet = true
-                }
-            }
-    }
-}
-
 /// Centered "Start Your Free Trial" pitch shown to first-time users
-/// (`!isPremium && !hadPremium`) inside GroupManagerView. Lives as its own
-/// view so the type-checker doesn't have to swallow it inline inside the
-/// already-huge `rootBody` VStack. Lapsed users see SubscriptionGateSheet
-/// instead, not this — see GroupManagerView.canViewContent.
+/// (`!isPremium && !hadPremium`) inside GroupManagerView. Lapsed users
+/// see SubscriptionGateSheet instead — see GroupManagerView.canViewContent.
 fileprivate struct FirstTimerEmptyState: View {
     var onTryFree: () -> Void
 
@@ -1565,12 +1521,148 @@ struct GroupManagerView: View {
     /// content should render. First-time users (`!isPremium && !hadPremium`)
     /// see the centered empty-state instead; lapsed users see content behind
     /// the slide-up SubscriptionGateSheet.
-    ///
-    /// Hoisted out of the body to help SwiftUI's type-checker. With the
-    /// expression inlined as `storeService.isPremium || storeService.hadPremium`
-    /// inside the body's ~1000-line `VStack`, the type-checker times out.
     private var canViewContent: Bool {
         storeService.isPremium || storeService.hadPremium
+    }
+
+    /// "Tee Times" section — the header row + the ScrollView of tee group
+    /// cards. Rendered for both premium and lapsed users (lapsed users see
+    /// their real data behind the slide-up gate sheet, which is the whole
+    /// point of the lapsed-UX redesign). First-time users get nothing here;
+    /// the FirstTimerEmptyState overlay carries the upgrade pitch instead.
+    ///
+    /// Hit-testing is gated on `isPremium` so lapsed users can see-but-not-
+    /// touch — the SubscriptionGateSheet on top owns interaction. Modifier
+    /// lives on the inner VStack here (not on a `Group{}` wrapper at the
+    /// call site) so the gate semantics travel with the section.
+    @ViewBuilder
+    private var teeTimesSection: some View {
+        if canViewContent {
+            VStack(spacing: 0) {
+                // "Tee Times" header — pinned above scroll
+                HStack {
+                    Text("Tee Times")
+                        .font(.system(size: 18, weight: .heavy))
+                        .foregroundColor(Color.deepNavy)
+                    Spacer()
+                    if isCreator && !isLiveRound && !roundStarted && selectedCount > 0 {
+                        Button {
+                            if isQuickGame {
+                                showPlayerGroups = true
+                            } else {
+                                showManageMembers = true
+                            }
+                        } label: {
+                            Text("Invite & Manage")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(Color.textPrimary)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 4)
+                                .background(Capsule().strokeBorder(Color.textPrimary, lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Invite and manage players")
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 16)
+
+                ScrollView {
+                    VStack(spacing: 0) {
+                        // Green tip banner (admin only, dismissible)
+                        if isCreator && showTipBanner && selectedCount > 0 {
+                            VStack(spacing: 0) {
+                                HStack(alignment: .top, spacing: 8) {
+                                    Text("Press a player to change the player order, or move players between groups")
+                                        .font(.carry.bodySM)
+                                        .foregroundColor(Color.successGreen)
+                                        .lineSpacing(2)
+                                    Spacer()
+                                    Button {
+                                        withAnimation { showTipBanner = false }
+                                    } label: {
+                                        Image(systemName: "xmark")
+                                            .font(.system(size: 10.5, weight: .semibold))
+                                            .foregroundColor(Color.successGreen)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityLabel("Dismiss tip")
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 10)
+                            }
+                            .padding(.vertical, 7)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(Color.concludedGreen)
+                            )
+                            .padding(.horizontal, 20)
+                            .padding(.bottom, 12)
+                        }
+
+                        // Groups section
+                        if selectedCount > 0 {
+                            // Hide groups with zero displayable players. Empty
+                            // groups happen when:
+                            //   - All members assigned to that group_num are
+                            //     still pending (e.g. Quick Game → Skins Group
+                            //     conversion before invitees accept)
+                            //   - All members in that slot were swiped off
+                            //
+                            // Showing an empty card looked broken — testers
+                            // reported "why is Group 2 sitting there empty?"
+                            // The underlying `groups` array stays intact (so
+                            // `groupIdx` keeps mapping to the correct position
+                            // in scorerIDs / teeTimes / round_players); we only
+                            // skip rendering. As soon as a member becomes active
+                            // (auto-add via the refresh union in v55), they
+                            // populate `groups[groupIdx]` and the card appears.
+                            ForEach(Array(groups.enumerated()).filter { !$0.element.isEmpty }, id: \.offset) { groupIdx, group in
+                                groupCard(index: groupIdx, players: group)
+                                    .id(group.map(\.id))  // force re-render when players change
+                                    .padding(.horizontal, 20)
+                                    .padding(.bottom, 12)
+                            }
+                            // Drag-to-create-new-tee-group affordance.
+                            // Appears as a dotted drop target ONLY while
+                            // the user is dragging a player, when:
+                            //   - Creator is editing (members can't reshape)
+                            //   - Pre-round (live rounds lock the roster)
+                            //   - groups.count < 5 (matches the existing
+                            //     PlayerGroupsSheet QG cap)
+                            //   - Source group has >1 player (dragging the
+                            //     only player out leaves an empty source
+                            //     that gets stripped — net effect is just
+                            //     a rename, confusing UX. Gate it out.)
+                            // Drop creates groups[N] = [draggedPlayer] and
+                            // syncs the parallel arrays. Closes the
+                            // 2026-05-10 SG gap where SG with ≤4 players
+                            // couldn't get a second tee group at all
+                            // because autoGroup forced n=1.
+                            if isCreator,
+                               !isLiveRound,
+                               dragPlayer != nil,
+                               let src = dragSourceGroup,
+                               src < groups.count,
+                               groups[src].count > 1,
+                               groups.count < 5 {
+                                addTeeGroupDropTarget
+                                    .padding(.horizontal, 20)
+                                    .padding(.bottom, 12)
+                            }
+                        } else {
+                            Text("Add players above to create groups & tee times")
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundColor(Color.textSecondary)
+                                .padding(.top, 20)
+                        }
+
+                        Spacer().frame(height: 100)
+                    }
+                }
+            }
+            .allowsHitTesting(storeService.isPremium)  // lapsed users see content but can't interact
+        }
     }
 
     private var rootBody: some View {
@@ -1855,148 +1947,12 @@ struct GroupManagerView: View {
                     .opacity(canViewContent ? 1.0 : 0.5)
                 }
 
-                // Tee Times section renders for premium AND lapsed users. For
-                // lapsed users, .allowsHitTesting(false) below blocks interaction
-                // while the slide-up SubscriptionGateSheet sits on top. The sheet
-                // is half-detent so the top half of this content is visible —
-                // that's the "show what they're missing" UX.
-                //
-                // Wrapped in `Group { ... }` so the .allowsHitTesting modifier
-                // after the if-block has a single View to attach to. Without
-                // the wrapper, the modifier would dangle after a bare `}` —
-                // Swift can't apply modifiers directly to `if` statements.
-                Group {
-                if canViewContent {
-                // "Tee Times" header — pinned above scroll
-                HStack {
-                    Text("Tee Times")
-                        .font(.system(size: 18, weight: .heavy))
-                        .foregroundColor(Color.deepNavy)
-                    Spacer()
-                    if isCreator && !isLiveRound && !roundStarted && selectedCount > 0 {
-                        Button {
-                            if isQuickGame {
-                                showPlayerGroups = true
-                            } else {
-                                showManageMembers = true
-                            }
-                        } label: {
-                            Text("Invite & Manage")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(Color.textPrimary)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 4)
-                                .background(Capsule().strokeBorder(Color.textPrimary, lineWidth: 1))
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Invite and manage players")
-                    }
-                }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 16)
-
-                ScrollView {
-                VStack(spacing: 0) {
-                    // Green tip banner (admin only, dismissible)
-                    if isCreator && showTipBanner && selectedCount > 0 {
-                        VStack(spacing: 0) {
-                            HStack(alignment: .top, spacing: 8) {
-                                Text("Press a player to change the player order, or move players between groups")
-                                    .font(.carry.bodySM)
-                                    .foregroundColor(Color.successGreen)
-                                    .lineSpacing(2)
-                                Spacer()
-                                Button {
-                                    withAnimation { showTipBanner = false }
-                                } label: {
-                                    Image(systemName: "xmark")
-                                        .font(.system(size: 10.5, weight: .semibold))
-                                        .foregroundColor(Color.successGreen)
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel("Dismiss tip")
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-                        }
-                        .padding(.vertical, 7)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(Color.concludedGreen)
-                        )
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, 12)
-                    }
-
-                    // Groups section
-                    if selectedCount > 0 {
-                        // Hide groups with zero displayable players. Empty
-                        // groups happen when:
-                        //   - All members assigned to that group_num are
-                        //     still pending (e.g. Quick Game → Skins Group
-                        //     conversion before invitees accept)
-                        //   - All members in that slot were swiped off
-                        //
-                        // Showing an empty card looked broken — testers
-                        // reported "why is Group 2 sitting there empty?"
-                        // The underlying `groups` array stays intact (so
-                        // `groupIdx` keeps mapping to the correct position
-                        // in scorerIDs / teeTimes / round_players); we only
-                        // skip rendering. As soon as a member becomes active
-                        // (auto-add via the refresh union in v55), they
-                        // populate `groups[groupIdx]` and the card appears.
-                        ForEach(Array(groups.enumerated()).filter { !$0.element.isEmpty }, id: \.offset) { groupIdx, group in
-                            groupCard(index: groupIdx, players: group)
-                                .id(group.map(\.id))  // force re-render when players change
-                                .padding(.horizontal, 20)
-                                .padding(.bottom, 12)
-                        }
-                        // Drag-to-create-new-tee-group affordance.
-                        // Appears as a dotted drop target ONLY while
-                        // the user is dragging a player, when:
-                        //   - Creator is editing (members can't reshape)
-                        //   - Pre-round (live rounds lock the roster)
-                        //   - groups.count < 5 (matches the existing
-                        //     PlayerGroupsSheet QG cap)
-                        //   - Source group has >1 player (dragging the
-                        //     only player out leaves an empty source
-                        //     that gets stripped — net effect is just
-                        //     a rename, confusing UX. Gate it out.)
-                        // Drop creates groups[N] = [draggedPlayer] and
-                        // syncs the parallel arrays. Closes the
-                        // 2026-05-10 SG gap where SG with ≤4 players
-                        // couldn't get a second tee group at all
-                        // because autoGroup forced n=1.
-                        if isCreator,
-                           !isLiveRound,
-                           dragPlayer != nil,
-                           let src = dragSourceGroup,
-                           src < groups.count,
-                           groups[src].count > 1,
-                           groups.count < 5 {
-                            addTeeGroupDropTarget
-                                .padding(.horizontal, 20)
-                                .padding(.bottom, 12)
-                        }
-                    } else {
-                        Text("Add players above to create groups & tee times")
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundColor(Color.textSecondary)
-                            .padding(.top, 20)
-                    }
-
-                    Spacer().frame(height: 100)
-                }
-            }
-                }
-                } // end Group wrapping the if canViewContent block
-                .allowsHitTesting(storeService.isPremium)  // lapsed users see content but can't interact
-                // First-timer (never had a subscription) gets the centered
-                // empty-state below — they have no real tee-time data to look
-                // at, so a faded empty sheet behind a gate would tell them
-                // nothing. Lapsed users get the slide-up SubscriptionGateSheet
-                // (presented via .sheet modifier on the view body) over their
-                // actual tee-time content.
+                // Tee Times section — extracted to its own subview so the
+                // hit-testing gate (lapsed users see-but-don't-touch) lives
+                // on real content instead of a Group{} wrapper, and so the
+                // type-checker doesn't have to chew through 120 lines of
+                // nested view tree inline inside this already-long VStack.
+                teeTimesSection
             } // end floating header VStack
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
@@ -2715,23 +2671,22 @@ struct GroupManagerView: View {
         .sheet(isPresented: $showPaywall) {
             PaywallView(trigger: paywallTrigger)
         }
-        // Lapsed-user slide-up gate sheet + state-sync hooks. Collapsed into
-        // a single ViewModifier (.sheet + two .onChange handlers behind one
-        // .modifier(...) slot) so the rootBody modifier chain doesn't blow
-        // past the SwiftUI type-checker's budget. Half-detent (~55%) so the
-        // user's real group/round content stays visible behind it — making
-        // the "subscribe to get this back" value concrete instead of
-        // abstract. Only shown for hadPremium=true && !isPremium; first-time
-        // users see the centered empty-state in the body instead.
-        .modifier(
-            LapsedGateSheetModifier(
-                showLapsedSheet: $showLapsedSheet,
-                lapsedSubscribeTapped: $lapsedSubscribeTapped,
-                isPremium: storeService.isPremium,
-                hadPremium: storeService.hadPremium,
-                onDismiss: handleLapsedSheetDismiss
-            )
-        )
+        // Lapsed-user slide-up gate sheet. Half-detent (~55%) so the user's
+        // real group/round content stays visible behind it — making the
+        // "subscribe to get this back" value concrete instead of abstract.
+        // Only shown for hadPremium=true && !isPremium; first-time users
+        // see the centered empty-state in the body instead. State is synced
+        // via .onAppear (raises on entry) + the .onChange hooks below
+        // (drops on purchase, raises on async hadPremium replication).
+        .sheet(isPresented: $showLapsedSheet, onDismiss: handleLapsedSheetDismiss) {
+            SubscriptionGateSheet(onSubscribe: {
+                lapsedSubscribeTapped = true
+                showLapsedSheet = false
+            })
+            .presentationDetents([.fraction(0.55)])
+            .presentationDragIndicator(.visible)
+            .presentationBackground(.white)
+        }
         .alert("Edit Name", isPresented: $showNameEditor) {
             TextField("Friday Skins", text: $editingName)
             Button("Save") {
@@ -2818,109 +2773,26 @@ struct GroupManagerView: View {
             QuickGameGuestStorage.clear(groupId: groupId)
             Task { await refreshGroupData() }
         }
-        .onAppear {
-            // Quick Game guest persistence: hydrate any locally-snapshotted
-            // guests before the first refresh fires. Quick Game guests live
-            // only in `round_players` server-side (architectural invariant);
-            // when the round isn't active (fresh QG pre-start, or post-Restart-
-            // Round) they have nowhere to live across app process death. The
-            // UserDefaults snapshot fills that gap. See QuickGameGuestStorage
-            // for the strategy + cleanup contracts.
-            //
-            // IMPORTANT: hydrate into `allMembers` (not the `guests` bucket).
-            // refreshGroupData's preservedGuests filter looks at allMembers;
-            // putting restored guests there means they survive the 3s post-
-            // appear refresh + the 30s polling refresh. Hydrating into the
-            // `guests` bucket instead would let the refresh's groups[][]
-            // rebuild silently drop them after a few seconds.
-            if isQuickGame, let groupId = supabaseGroupId {
-                let saved = QuickGameGuestStorage.load(groupId: groupId)
-                if !saved.isEmpty {
-                    // Override existing entries' fields from the saved
-                    // snapshot. Necessary because parent's `group.members`
-                    // (used for `initialMembers`) may carry stale
-                    // `Player.group` from before the user's last edit if the
-                    // server `guest_roster_json` write hadn't completed when
-                    // parent last refreshed. The saved snapshot is local
-                    // truth (UserDefaults written synchronously by
-                    // `QuickGameGuestStorage.save`).
-                    let savedById = Dictionary(uniqueKeysWithValues: saved.map { ($0.id, $0) })
-                    for i in allMembers.indices {
-                        if allMembers[i].isGuest, let s = savedById[allMembers[i].id] {
-                            allMembers[i].group = s.group
-                        }
-                    }
-                    for i in guests.indices {
-                        if let s = savedById[guests[i].id] {
-                            guests[i].group = s.group
-                        }
-                    }
-                    // Append any guests missing entirely
-                    let existingIds = Set(allMembers.map(\.id) + guests.map(\.id))
-                    let toRestore = saved.filter { !existingIds.contains($0.id) }
-                    if !toRestore.isEmpty {
-                        allMembers.append(contentsOf: toRestore)
-                        for p in toRestore { selectedIDs.insert(p.id) }
-                    }
-                    // Re-derive groups[][] from the now-correct Player.group
-                    // values across allMembers + guests.
-                    regroup()
-                }
-                // Also save current state — captures QuickStartSheet guests
-                // that arrived in `allMembers` via initialMembers and are
-                // not yet in the snapshot.
-                QuickGameGuestStorage.save(
-                    groupId: groupId,
-                    isQuickGame: true,
-                    allRosterPlayers: allMembers + guests
-                )
-            }
-            // Fresh load on appear and start 30s polling
-            if supabaseGroupId != nil {
-                // Quick Games: delay first refresh to let Supabase writes settle
-                let delay: Double = isQuickGame ? 3.0 : 0
-                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                    Task { await refreshGroupData() }
-                }
-                startDetailAutoRefresh()
-            }
-            // Pre-warm the QR code off the main thread so the first tap of
-            // the QR icon presents instantly. Cold-start cost is the CIContext
-            // GPU init + the initial CIQRCodeGenerator render — both ~hundreds
-            // of ms on first use. Generating it now (cached by payload + colors
-            // in QRCodeGenerator) means the sheet animates in with the image
-            // already ready.
-            if let groupId = supabaseGroupId {
-                Task.detached(priority: .utility) {
-                    _ = QRCodeGenerator.image(
-                        for: GroupInviteLink.url(for: groupId).absoluteString,
-                        foreground: UIColor(Color.successGreen),
-                        background: UIColor(Color.successBgLight)
-                    )
-                }
-            }
-            // Post-conversion "bring your crew" UX lives in the convert
-            // sheet's invite-crew phase in GroupsListView. When that sheet
-            // dismisses and the user lands here, auto-open the group name
-            // editor so they can give the auto-generated name a real name.
-            if showInviteCrewOnAppear && isCreator {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                    editingName = groupName
-                    showNameEditor = true
-                }
-            }
-            // Lapsed-user gate: present the slide-up sheet on entry if the
-            // user once had premium but doesn't now. Tiny delay so the entry
-            // transition doesn't fight the sheet's slide-up animation; lets
-            // the screen settle first, then the sheet rises over real content.
-            if storeService.hadPremium && !storeService.isPremium {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                    showLapsedSheet = true
-                }
-            }
-        }
+        .onAppear(perform: handleRootBodyAppear)
         .onDisappear {
             stopDetailAutoRefresh()
+        }
+        .onChange(of: storeService.isPremium) { _, newValue in
+            // Subscription just activated (paywall purchase or restore-
+            // purchases). Drop the gate so the user lands on the now-
+            // unlocked screen. handleLapsedSheetDismiss is a no-op in this
+            // path because isPremium is now true.
+            if newValue && showLapsedSheet {
+                showLapsedSheet = false
+            }
+        }
+        .onChange(of: storeService.hadPremium) { _, newValue in
+            // hadPremium can replicate async on first launch after a trial-
+            // ended state. If the view was already on-screen when it
+            // flipped, raise the sheet now.
+            if newValue && !storeService.isPremium && !showLapsedSheet {
+                showLapsedSheet = true
+            }
         }
         .onChange(of: groups) { _, _ in
             // Single source of truth contract for tee-group arrangement
@@ -4476,16 +4348,121 @@ struct GroupManagerView: View {
         showPaywall = true
     }
 
+    /// Body of `rootBody`'s `.onAppear` — guest hydration, refresh kickoff,
+    /// QR pre-warm, post-conversion name-editor prompt, and the lapsed-user
+    /// gate sheet raise. Lives as a method (rather than an inline closure
+    /// on the modifier) because it's imperative setup logic, not view
+    /// composition, and inlining it forces the SwiftUI type-checker to
+    /// resolve a hundred lines of control flow as part of the rootBody
+    /// modifier-chain inference.
+    private func handleRootBodyAppear() {
+        // Quick Game guest persistence: hydrate any locally-snapshotted
+        // guests before the first refresh fires. Quick Game guests live
+        // only in `round_players` server-side (architectural invariant);
+        // when the round isn't active (fresh QG pre-start, or post-Restart-
+        // Round) they have nowhere to live across app process death. The
+        // UserDefaults snapshot fills that gap. See QuickGameGuestStorage
+        // for the strategy + cleanup contracts.
+        //
+        // IMPORTANT: hydrate into `allMembers` (not the `guests` bucket).
+        // refreshGroupData's preservedGuests filter looks at allMembers;
+        // putting restored guests there means they survive the 3s post-
+        // appear refresh + the 30s polling refresh. Hydrating into the
+        // `guests` bucket instead would let the refresh's groups[][]
+        // rebuild silently drop them after a few seconds.
+        if isQuickGame, let groupId = supabaseGroupId {
+            let saved = QuickGameGuestStorage.load(groupId: groupId)
+            if !saved.isEmpty {
+                // Override existing entries' fields from the saved
+                // snapshot. Necessary because parent's `group.members`
+                // (used for `initialMembers`) may carry stale
+                // `Player.group` from before the user's last edit if the
+                // server `guest_roster_json` write hadn't completed when
+                // parent last refreshed. The saved snapshot is local
+                // truth (UserDefaults written synchronously by
+                // `QuickGameGuestStorage.save`).
+                let savedById = Dictionary(uniqueKeysWithValues: saved.map { ($0.id, $0) })
+                for i in allMembers.indices {
+                    if allMembers[i].isGuest, let s = savedById[allMembers[i].id] {
+                        allMembers[i].group = s.group
+                    }
+                }
+                for i in guests.indices {
+                    if let s = savedById[guests[i].id] {
+                        guests[i].group = s.group
+                    }
+                }
+                // Append any guests missing entirely
+                let existingIds = Set(allMembers.map(\.id) + guests.map(\.id))
+                let toRestore = saved.filter { !existingIds.contains($0.id) }
+                if !toRestore.isEmpty {
+                    allMembers.append(contentsOf: toRestore)
+                    for p in toRestore { selectedIDs.insert(p.id) }
+                }
+                // Re-derive groups[][] from the now-correct Player.group
+                // values across allMembers + guests.
+                regroup()
+            }
+            // Also save current state — captures QuickStartSheet guests
+            // that arrived in `allMembers` via initialMembers and are
+            // not yet in the snapshot.
+            QuickGameGuestStorage.save(
+                groupId: groupId,
+                isQuickGame: true,
+                allRosterPlayers: allMembers + guests
+            )
+        }
+        // Fresh load on appear and start 30s polling
+        if supabaseGroupId != nil {
+            // Quick Games: delay first refresh to let Supabase writes settle
+            let delay: Double = isQuickGame ? 3.0 : 0
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                Task { await refreshGroupData() }
+            }
+            startDetailAutoRefresh()
+        }
+        // Pre-warm the QR code off the main thread so the first tap of
+        // the QR icon presents instantly. Cold-start cost is the CIContext
+        // GPU init + the initial CIQRCodeGenerator render — both ~hundreds
+        // of ms on first use. Generating it now (cached by payload + colors
+        // in QRCodeGenerator) means the sheet animates in with the image
+        // already ready.
+        if let groupId = supabaseGroupId {
+            Task.detached(priority: .utility) {
+                _ = QRCodeGenerator.image(
+                    for: GroupInviteLink.url(for: groupId).absoluteString,
+                    foreground: UIColor(Color.successGreen),
+                    background: UIColor(Color.successBgLight)
+                )
+            }
+        }
+        // Post-conversion "bring your crew" UX lives in the convert
+        // sheet's invite-crew phase in GroupsListView. When that sheet
+        // dismisses and the user lands here, auto-open the group name
+        // editor so they can give the auto-generated name a real name.
+        if showInviteCrewOnAppear && isCreator {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                editingName = groupName
+                showNameEditor = true
+            }
+        }
+        // Lapsed-user gate: present the slide-up sheet on entry if the
+        // user once had premium but doesn't now. Tiny delay so the entry
+        // transition doesn't fight the sheet's slide-up animation; lets
+        // the screen settle first, then the sheet rises over real content.
+        if storeService.hadPremium && !storeService.isPremium {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                showLapsedSheet = true
+            }
+        }
+    }
+
     /// Handles dismiss for the lapsed-subscription gate sheet. Two paths
     /// converge here, differentiated by `lapsedSubscribeTapped`:
     ///   - Subscribe tapped → chain into PaywallView once the gate sheet
     ///     finishes its dismiss animation (sheet-stacking races otherwise).
     ///   - Swipe-down → that IS the "not now" affordance, bounce back to
     ///     Games tab via `onBack`.
-    ///
-    /// Extracted into a method (vs. inline in the `.sheet(onDismiss:)`
-    /// closure) so the type-checker doesn't have to resolve nested control
-    /// flow inside SwiftUI's complex sheet-modifier generics.
     private func handleLapsedSheetDismiss() {
         if lapsedSubscribeTapped {
             lapsedSubscribeTapped = false
