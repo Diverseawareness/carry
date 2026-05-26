@@ -66,6 +66,7 @@
 		A10033 /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10033 /* MainTabView.swift */; };
 		A10034 /* GroupsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10034 /* GroupsListView.swift */; };
 		A10035 /* ProfileSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10035 /* ProfileSheetView.swift */; };
+		A20203 /* SubscriptionGateSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20203 /* SubscriptionGateSheet.swift */; };
 		A10100 /* GolfBallLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10100 /* GolfBallLoader.swift */; };
 		A20001 /* StoreService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001 /* StoreService.swift */; };
 		A20002 /* PaywallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20002 /* PaywallView.swift */; };
@@ -202,6 +203,7 @@
 		B10033 /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
 		B10034 /* GroupsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupsListView.swift; sourceTree = "<group>"; };
 		B10035 /* ProfileSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileSheetView.swift; sourceTree = "<group>"; };
+		B20203 /* SubscriptionGateSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionGateSheet.swift; sourceTree = "<group>"; };
 		B10100 /* GolfBallLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GolfBallLoader.swift; sourceTree = "<group>"; };
 		B10101 /* AuthNonce.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthNonce.swift; sourceTree = "<group>"; };
 		B10103 /* EmailLinkSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailLinkSheet.swift; sourceTree = "<group>"; };
@@ -432,6 +434,7 @@
 				B10034 /* GroupsListView.swift */,
 				A298F2722FC1DED0209E5BB2 /* VenmoLogo.swift */,
 				B10035 /* ProfileSheetView.swift */,
+				B20203 /* SubscriptionGateSheet.swift */,
 				A7A80C81F7A84402810B5460 /* CourseSelectionView.swift */,
 				D20005 /* ScoreInputSheet.swift */,
 				F90004 /* ManageMembersSheet.swift */,
@@ -676,6 +679,7 @@
 				A20001 /* StoreService.swift in Sources */,
 				60860E422FA4053000E6433C /* ForgotPasswordView.swift in Sources */,
 				A20002 /* PaywallView.swift in Sources */,
+				A20203 /* SubscriptionGateSheet.swift in Sources */,
 				S10002 /* SyncQueue.swift in Sources */,
 				N10002 /* NotificationService.swift in Sources */,
 				A10023 /* RoundService.swift in Sources */,
