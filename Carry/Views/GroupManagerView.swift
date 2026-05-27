@@ -14,43 +14,6 @@ private extension View {
     }
 }
 
-/// Centered "Start Your Free Trial" pitch shown to first-time users
-/// (`!isPremium && !hadPremium`) inside GroupManagerView. Lapsed users
-/// see SubscriptionGateSheet instead — see GroupManagerView.canViewContent.
-fileprivate struct FirstTimerEmptyState: View {
-    var onTryFree: () -> Void
-
-    var body: some View {
-        VStack(spacing: 16) {
-            VStack(spacing: 12) {
-                Text("Start Your Free Trial")
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundColor(Color.textPrimary)
-                    .multilineTextAlignment(.center)
-                Text("Try Carry free for 30 days. Start games, invite players, and keep your leaderboard going.")
-                    .font(.carry.bodySM)
-                    .foregroundColor(Color.textTertiary)
-                    .multilineTextAlignment(.center)
-            }
-            Button(action: onTryFree) {
-                Text("Try It Free")
-                    .font(.carry.bodyLGSemibold)
-                    .foregroundColor(Color.textPrimary)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 52)
-                    .contentShape(Rectangle())
-                    .background(
-                        RoundedRectangle(cornerRadius: 14)
-                            .strokeBorder(Color.textPrimary, lineWidth: 1)
-                    )
-            }
-            .buttonStyle(.plain)
-            .padding(.top, 4)
-        }
-        .padding(.horizontal, 24)
-    }
-}
-
 struct GroupManagerView: View {
     @EnvironmentObject var storeService: StoreService
     @State private var allMembers: [Player]
@@ -92,15 +55,15 @@ struct GroupManagerView: View {
     @State private var showPaywall = false
     @State private var paywallTrigger: PaywallTrigger = .general
     @State private var showQRInvite = false
-    // Lapsed-subscription gate sheet. Fires only when isPremium=false AND
-    // hadPremium=true (returning user whose subscription expired). First-time
-    // users keep the existing centered empty-state — a faded empty tee sheet
-    // behind a gate tells a brand-new user nothing useful. lapsedSubscribeTapped
-    // differentiates the dismiss reasons in onDismiss: swipe-down → bounce back
-    // to Games tab via onBack; Subscribe-tap → present paywall after the sheet
-    // unmounts (paywall stacking on top of an active sheet is fragile across
-    // iOS versions; dismissing first + presenting via DispatchQueue.main.async
-    // is the bulletproof path).
+    // Non-subscriber slide-up gate sheet. Fires for any !isPremium user
+    // (first-time invited member or lapsed). The `lapsed*` identifiers
+    // are kept from when the sheet was lapsed-only — name is historical,
+    // semantics now cover both audiences. lapsedSubscribeTapped
+    // differentiates the dismiss reasons in onDismiss: swipe-down →
+    // bounce back to Games tab via onBack; Subscribe-tap → present
+    // paywall after the sheet unmounts (paywall stacking on top of an
+    // active sheet is fragile across iOS versions; dismissing first +
+    // presenting via DispatchQueue.main.async is the bulletproof path).
     @State private var showLapsedSheet = false
     @State private var lapsedSubscribeTapped = false
     /// First-group QR coach mark — fires once per game TYPE (Quick Game and
@@ -1517,10 +1480,12 @@ struct GroupManagerView: View {
     }
 
     /// True when the user is currently subscribed OR has lapsed (i.e. ever
-    /// had a subscription). Used to decide whether the header + tee-time
-    /// content should render. First-time users (`!isPremium && !hadPremium`)
-    /// see the centered empty-state instead; lapsed users see content behind
-    /// the slide-up SubscriptionGateSheet.
+    /// had a subscription). Drives header opacity + whether teeTimesSection
+    /// renders. The slide-up SubscriptionGateSheet fires for all
+    /// non-subscribers, but lapsed users (`hadPremium=true`) get to see
+    /// their real tee-time data behind it — the "see what you're missing"
+    /// pitch. First-time invited members (`hadPremium=false`) have no
+    /// meaningful data yet, so the sheet sits over a dimmed header.
     private var canViewContent: Bool {
         storeService.isPremium || storeService.hadPremium
     }
@@ -1956,13 +1921,12 @@ struct GroupManagerView: View {
             } // end floating header VStack
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
-            // First-timer centered empty-state — only when the user has NEVER
-            // had a subscription. Lapsed users (hadPremium=true) get the
-            // slide-up SubscriptionGateSheet instead, attached to the view body
-            // via .sheet(isPresented: $showLapsedSheet).
-            if !storeService.isPremium && !storeService.hadPremium {
-                FirstTimerEmptyState(onTryFree: { presentPaywall(.general) })
-            }
+            // Non-subscribers get the slide-up SubscriptionGateSheet
+            // (attached to the view body via .sheet). Same gate for
+            // first-time invited members and lapsed users; the difference
+            // is only what sits behind it — lapsed users see their real
+            // tee-time data, first-timers see a dimmed header (no data
+            // yet). No separate centered empty-state any more.
 
             // CTA button pinned to bottom — all roles. Hidden in the gated
             // state since the empty-state screen above carries the CTA.
@@ -2671,18 +2635,22 @@ struct GroupManagerView: View {
         .sheet(isPresented: $showPaywall) {
             PaywallView(trigger: paywallTrigger)
         }
-        // Lapsed-user slide-up gate sheet. Half-detent (~55%) so the user's
-        // real group/round content stays visible behind it — making the
-        // "subscribe to get this back" value concrete instead of abstract.
-        // Only shown for hadPremium=true && !isPremium; first-time users
-        // see the centered empty-state in the body instead. State is synced
-        // via .onAppear (raises on entry) + the .onChange hooks below
-        // (drops on purchase, raises on async hadPremium replication).
+        // Non-subscriber slide-up gate sheet. Half-detent (~55%) so when
+        // there IS data behind (lapsed users with their old tee groups)
+        // it stays visible — making the "subscribe to keep playing"
+        // value concrete. First-time invited members see the sheet over
+        // a dimmed header (no data yet). State is synced via .onAppear
+        // (raises on entry for any !isPremium user) and the .onChange
+        // below (drops on purchase, re-raises if subscription deactivates
+        // mid-session).
         .sheet(isPresented: $showLapsedSheet, onDismiss: handleLapsedSheetDismiss) {
-            SubscriptionGateSheet(onSubscribe: {
-                lapsedSubscribeTapped = true
-                showLapsedSheet = false
-            })
+            SubscriptionGateSheet(
+                onSubscribe: {
+                    lapsedSubscribeTapped = true
+                    showLapsedSheet = false
+                },
+                hasUsedTrial: storeService.hadPremium
+            )
             .presentationDetents([.fraction(0.55)])
             .presentationDragIndicator(.visible)
             .presentationBackground(.white)
@@ -2778,20 +2746,19 @@ struct GroupManagerView: View {
             stopDetailAutoRefresh()
         }
         .onChange(of: storeService.isPremium) { _, newValue in
-            // Subscription just activated (paywall purchase or restore-
-            // purchases). Drop the gate so the user lands on the now-
-            // unlocked screen. handleLapsedSheetDismiss is a no-op in this
-            // path because isPremium is now true.
-            if newValue && showLapsedSheet {
-                showLapsedSheet = false
-            }
-        }
-        .onChange(of: storeService.hadPremium) { _, newValue in
-            // hadPremium can replicate async on first launch after a trial-
-            // ended state. If the view was already on-screen when it
-            // flipped, raise the sheet now.
-            if newValue && !storeService.isPremium && !showLapsedSheet {
-                showLapsedSheet = true
+            // Subscription state flipped while the view is on-screen.
+            //  - Activated (paywall purchase / restore-purchases): drop
+            //    the gate so the user lands on the now-unlocked screen.
+            //    handleLapsedSheetDismiss is a no-op in this path because
+            //    isPremium is now true.
+            //  - Deactivated mid-session: raise the gate so the user
+            //    can't keep editing tee times they no longer have access
+            //    to. Covers the rare trial-just-expired-while-app-open
+            //    case.
+            if newValue {
+                if showLapsedSheet { showLapsedSheet = false }
+            } else {
+                if !showLapsedSheet { showLapsedSheet = true }
             }
         }
         .onChange(of: groups) { _, _ in
@@ -4446,11 +4413,13 @@ struct GroupManagerView: View {
                 showNameEditor = true
             }
         }
-        // Lapsed-user gate: present the slide-up sheet on entry if the
-        // user once had premium but doesn't now. Tiny delay so the entry
-        // transition doesn't fight the sheet's slide-up animation; lets
-        // the screen settle first, then the sheet rises over real content.
-        if storeService.hadPremium && !storeService.isPremium {
+        // Subscription gate: present the slide-up sheet on entry for any
+        // non-subscriber — covers both lapsed users (their old groups
+        // with real data behind the sheet) and first-time invited members
+        // (no data yet, sheet sits over the dimmed header). Tiny delay
+        // so the entry transition doesn't fight the sheet's slide-up
+        // animation; lets the screen settle first, then the sheet rises.
+        if !storeService.isPremium {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
                 showLapsedSheet = true
             }

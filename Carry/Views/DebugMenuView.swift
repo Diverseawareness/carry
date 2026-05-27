@@ -170,16 +170,23 @@ struct DebugMenuView: View {
                 .environmentObject(storeService)
         }
         .sheet(isPresented: $showLapsedGatePreview) {
-            SubscriptionGateSheet(onSubscribe: {
-                // Chain into the paywall after the gate sheet's dismiss
-                // animation settles — same DispatchQueue.main.async pattern
-                // GroupManagerView uses to avoid SwiftUI sheet-stacking
-                // races across iOS versions.
-                showLapsedGatePreview = false
-                DispatchQueue.main.async {
-                    showPaywallPreview = true
-                }
-            })
+            SubscriptionGateSheet(
+                onSubscribe: {
+                    // Chain into the paywall after the gate sheet's dismiss
+                    // animation settles — same DispatchQueue.main.async pattern
+                    // GroupManagerView uses to avoid SwiftUI sheet-stacking
+                    // races across iOS versions.
+                    showLapsedGatePreview = false
+                    DispatchQueue.main.async {
+                        showPaywallPreview = true
+                    }
+                },
+                // Mirrors the current `hadPremium` toggle so flipping the
+                // sticky flag in SUBSCRIPTION above changes which copy the
+                // preview shows (first-timer "Start Your Free Trial" pitch
+                // vs. lapsed "Subscribe to Carry" pitch).
+                hasUsedTrial: storeService.hadPremium
+            )
             .presentationDetents([.fraction(0.55)])
             .presentationDragIndicator(.visible)
             .presentationBackground(.white)

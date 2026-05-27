@@ -1,13 +1,16 @@
 import SwiftUI
 
-/// Half-detent sheet presented to LAPSED users (storeService.hadPremium == true
-/// && storeService.isPremium == false) when they enter a Skins Group or Quick
-/// Game detail screen they no longer have access to.
+/// Half-detent sheet presented to any non-subscriber (storeService.isPremium
+/// == false) when they enter a Skins Group or Quick Game detail screen.
+/// Covers both audiences with one gate experience:
 ///
-/// UX intent: rather than a centered empty-state that hides the user's actual
-/// data, this sheet slides up from the bottom at ~55% screen height. The user
-/// can see their real group/round behind it (non-interactive), which makes
-/// the value of subscribing concrete instead of abstract.
+///   - Lapsed users (storeService.hadPremium == true): GroupManagerView
+///     keeps the tee-time content rendered behind the sheet so they see
+///     their real data through the dimmed background — "subscribe to keep
+///     your groups going" reads concrete instead of abstract.
+///   - First-time invited members (storeService.hadPremium == false): no
+///     real data yet, so the sheet sits over a dimmed header. The gate
+///     still fires so they don't see broken/empty editing affordances.
 ///
 /// Dismiss behavior:
 /// - Swipe down → onDismiss fires → caller bounces back to Games tab. The
@@ -15,16 +18,21 @@ import SwiftUI
 /// - Tap Subscribe → presents the PaywallView; on successful purchase,
 ///   `storeService.isPremium` flips true and the parent un-presents the sheet,
 ///   leaving the user on the now-unlocked detail screen.
-///
-/// First-time users (hadPremium == false) do NOT see this sheet — they get
-/// the existing centered empty-state with the trial pitch. Reasoning: a
-/// faded empty tee sheet behind a gate tells a brand-new user nothing useful.
 struct SubscriptionGateSheet: View {
     /// Tapped when the user taps the primary CTA. The caller is responsible
     /// for presenting the PaywallView. We don't present it here so the sheet
     /// only owns its own surface — keeps the sheet → paywall transition
     /// fully under the parent's control.
     var onSubscribe: () -> Void
+
+    /// True if the user has previously been on a subscription (lapsed),
+    /// false for first-time invited members who've never started a trial.
+    /// Drives the hero + subhero copy: first-timers see the trial pitch
+    /// ("Start Your Free Trial" + "Try Carry free for 30 days…") so the
+    /// 30-day-free offer is explicit, lapsed users see the subscribe
+    /// pitch ("Subscribe to Carry" + "Subscribe to start games…") since
+    /// offering them a trial they already used would mislead.
+    var hasUsedTrial: Bool
 
     var body: some View {
         VStack(spacing: 20) {
@@ -44,12 +52,14 @@ struct SubscriptionGateSheet: View {
             }
 
             VStack(spacing: 10) {
-                Text("Subscribe to Carry")
+                Text(hasUsedTrial ? "Subscribe to Carry" : "Start Your Free Trial")
                     .font(.system(size: 22, weight: .bold))
                     .foregroundColor(Color.textPrimary)
                     .multilineTextAlignment(.center)
 
-                Text("Subscribe to start games, invite players, and keep your leaderboard going.")
+                Text(hasUsedTrial
+                     ? "Subscribe to start games, invite players, and keep your leaderboard going."
+                     : "Try Carry free for 30 days. Start games, invite players, and keep your leaderboard going.")
                     .font(.system(size: 15))
                     .foregroundColor(Color.textSecondary)
                     .multilineTextAlignment(.center)
