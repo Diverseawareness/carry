@@ -97,11 +97,13 @@ struct PaywallView: View {
                     .padding(.trailing, 20)
 
                     // Hero — title flips based on hadPremium so returning
-                    // users see "Your Premium trial ended" framing instead
-                    // of the first-time pitch. Contextual line appears only
-                    // when a specific trigger was set.
+                    // users see the trial-ended framing instead of the
+                    // first-time pitch. Contextual line appears only when
+                    // a specific trigger was set. Glyph swapped from the
+                    // old "premium-crown" to the Carry brand glyph —
+                    // Carry doesn't market a "premium" tier any more.
                     VStack(spacing: 8) {
-                        Image("premium-crown")
+                        Image("carry-glyph")
                             .resizable()
                             .scaledToFit()
                             .frame(width: 44, height: 44)

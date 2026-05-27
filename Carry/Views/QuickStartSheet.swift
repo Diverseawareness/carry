@@ -711,7 +711,7 @@ struct QuickGameSheet: View {
                         .foregroundColor(Color.textPrimary)
                     if !storeService.isPremium {
                         HStack(spacing: 4) {
-                            Image("premium-crown")
+                            Image("carry-glyph")
                                 .renderingMode(.template)
                                 .resizable()
                                 .scaledToFit()
@@ -817,7 +817,7 @@ struct QuickGameSheet: View {
                 }
                 if !storeService.isPremium {
                     HStack(spacing: 4) {
-                        Image("premium-crown")
+                        Image("carry-glyph")
                             .renderingMode(.template)
                             .resizable()
                             .scaledToFit()

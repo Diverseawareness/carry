@@ -41,7 +41,7 @@ struct PremiumGatedButton<Label: View>: View {
                     .opacity(storeService.isPremium ? 1.0 : 0.5)
 
                 if !storeService.isPremium {
-                    Image("premium-crown")
+                    Image("carry-glyph")
                         .resizable()
                         .renderingMode(.template)
                         .scaledToFit()

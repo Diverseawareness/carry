@@ -5360,7 +5360,7 @@ struct GroupOptionsSheet: View {
                                     .font(.carry.bodySemibold)
                                     .foregroundColor(Color.textPrimary)
                                 if isCreator && !storeService.isPremium {
-                                    Image("premium-crown")
+                                    Image("carry-glyph")
                                         .resizable()
                                         .renderingMode(.template)
                                         .scaledToFit()
@@ -5444,7 +5444,7 @@ struct GroupOptionsSheet: View {
                         showPaywall = true
                     } label: {
                         HStack(spacing: 10) {
-                            Image("premium-crown")
+                            Image("carry-glyph")
                                 .resizable()
                                 .renderingMode(.template)
                                 .scaledToFit()
@@ -5676,7 +5676,7 @@ struct GroupOptionsSheet: View {
                             }
                             if isQuickGame && !storeService.isPremium {
                                 HStack(spacing: 4) {
-                                    Image("premium-crown")
+                                    Image("carry-glyph")
                                         .renderingMode(.template)
                                         .resizable()
                                         .scaledToFit()
@@ -5775,7 +5775,7 @@ struct GroupOptionsSheet: View {
                                 .foregroundColor(Color.textPrimary)
                             if isQuickGame && !storeService.isPremium {
                                 HStack(spacing: 4) {
-                                    Image("premium-crown")
+                                    Image("carry-glyph")
                                         .renderingMode(.template)
                                         .resizable()
                                         .scaledToFit()

@@ -30,15 +30,17 @@ struct SubscriptionGateSheet: View {
         VStack(spacing: 20) {
             Spacer().frame(height: 4)
 
-            // Bell-in-mint-circle hero glyph. Matches the icon style used
-            // on the welcome / empty-state screens elsewhere in the app.
+            // Carry brand glyph in a mint chip. Bell was the original
+            // placeholder; the brand mark reads as "Carry asks you to
+            // subscribe" instead of generic notification iconography.
             ZStack {
                 Circle()
                     .fill(Color.mintLight)
                     .frame(width: 88, height: 88)
-                Image(systemName: "bell.fill")
-                    .font(.system(size: 36, weight: .semibold))
-                    .foregroundColor(Color.greenDark)
+                Image("carry-glyph")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 44, height: 44)
             }
 
             VStack(spacing: 10) {

@@ -191,7 +191,7 @@ struct PlayerGroupsSheet: View {
                                 .font(.carry.bodySemibold)
                                 .foregroundColor(canSave ? Color.textPrimary : Color.textDisabled)
                             if !storeService.isPremium {
-                                Image("premium-crown")
+                                Image("carry-glyph")
                                     .resizable()
                                     .renderingMode(.template)
                                     .scaledToFit()
@@ -220,7 +220,7 @@ struct PlayerGroupsSheet: View {
                             showPaywall = true
                         } label: {
                             HStack(spacing: 10) {
-                                Image("premium-crown")
+                                Image("carry-glyph")
                                     .resizable()
                                     .renderingMode(.template)
                                     .scaledToFit()
