@@ -160,11 +160,14 @@ final class StoreService: ObservableObject {
     /// testers to launch without premium. Flipping `grantPremiumInTestFlight` to
     /// false before App Store archive is the only safeguard needed.
     private var shouldForceTestFlightPremium: Bool {
-        #if DEBUG
-        return true
-        #else
+        // DEBUG no longer auto-grants premium — was previously `return true`
+        // to bypass StoreKit flakiness on dev devices, but it makes
+        // pre-trial / lapsed state testing impossible (isPremium keeps
+        // flipping back to true on every checkEntitlements call, fighting
+        // the Debug Menu's `isPremium` toggle). Devs who actually want
+        // premium for testing should flip the Debug Menu toggle OR set up
+        // a StoreKit Configuration file in their scheme.
         return Self.grantPremiumInTestFlight
-        #endif
     }
 
     // MARK: - Transaction Listener
