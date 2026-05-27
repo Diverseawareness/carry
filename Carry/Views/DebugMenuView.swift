@@ -313,6 +313,38 @@ struct DebugMenuView: View {
                     appRouter.debugClearGroups = true
                 }
                 divider
+                // One-tap seed for the lapsed-gate test flow. Creates a
+                // minimal Skins Group attached to the current signed-in user
+                // (creator only, no other members, no scheduled date) so you
+                // can then flip isPremium=OFF in the SUBSCRIPTION section
+                // above and tap into it to verify SubscriptionGateSheet
+                // wires up correctly over real group content. Cheaper than
+                // the toggle-on → "+" → set up → toggle-off dance.
+                actionRow("Seed Test Skins Group", icon: "person.3.fill") {
+                    guard let userId = authService.currentUser?.id else {
+                        print("[Debug] Seed Test Skins Group: no signed-in user")
+                        return
+                    }
+                    Task {
+                        do {
+                            let group = try await GroupService().createGroup(
+                                name: "Debug Group",
+                                createdBy: userId,
+                                memberIds: []
+                            )
+                            print("[Debug] Seed Test Skins Group OK: \(group.id)")
+                            await MainActor.run {
+                                dismiss()
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                                    appRouter.navigateToTab = "skinGames"
+                                }
+                            }
+                        } catch {
+                            print("[Debug] Seed Test Skins Group failed: \(error)")
+                        }
+                    }
+                }
+                divider
                 actionRow("Show Recurring Prompt", icon: "arrow.triangle.2.circlepath") {
                     dismiss()
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
