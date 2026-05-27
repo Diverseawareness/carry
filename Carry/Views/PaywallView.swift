@@ -39,20 +39,17 @@ struct PaywallView: View {
 
     private enum PlanType { case annual, monthly }
 
-    /// Hero title — flips to "Your Premium trial ended" for users who were
-    /// previously premium, regardless of which action triggered the sheet.
-    /// This is the main UX promise of the v2 free tier: post-trial users
-    /// get the reassuring framing (you had this, you can have it back)
-    /// instead of a cold first-time pitch.
+    /// Hero title — unified across audiences. Used to flip to "Trial Ended"
+    /// for post-trial users, but the gate sheet (SubscriptionGateSheet)
+    /// that funnels into this paywall now uses the same "Subscribe to
+    /// Carry" copy, so the two surfaces match instead of disagreeing on
+    /// framing mid-flow. Also was originally "Start Your Free Trial" for
+    /// first-timers but Apple flagged that under 3.1.2(c) — trial-first
+    /// framing made the trial more prominent than the billed amount. Trial
+    /// mention now lives in the CTA summary (pre-trial only) + the bottom
+    /// auto-renewal disclosure (required legal text).
     private var heroTitle: String {
-        // Post-trial: "Trial Ended" (warmer than first-time pitch).
-        // First-time: "Subscribe to Carry" — neutral, action-focused.
-        // Used to be "Start Your Free Trial" but Apple flagged this under
-        // 3.1.2(c) — trial-first framing made the trial more prominent than
-        // the billed amount. New copy removes the trial promotion from the
-        // hero entirely; trial is mentioned only in the CTA summary +
-        // bottom auto-renewal disclosure.
-        storeService.hadPremium ? "Trial Ended" : "Subscribe to Carry"
+        "Subscribe to Carry"
     }
 
     /// CTA button label — always "Subscribe" now. Previously "Try It Free"

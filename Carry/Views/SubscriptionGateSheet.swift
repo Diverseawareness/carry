@@ -44,7 +44,7 @@ struct SubscriptionGateSheet: View {
             }
 
             VStack(spacing: 10) {
-                Text("Your subscription has ended")
+                Text("Subscribe to Carry")
                     .font(.system(size: 22, weight: .bold))
                     .foregroundColor(Color.textPrimary)
                     .multilineTextAlignment(.center)
