@@ -9,6 +9,7 @@ struct DebugMenuView: View {
     @EnvironmentObject var storeService: StoreService
     @Environment(\.dismiss) var dismiss
     @State private var showPaywallPreview = false
+    @State private var showLapsedGatePreview = false
     @State private var showShareCardPreview = false
     @State private var shareCardDarkMode = true
     // Spectator-mode previews — the spectator Home card itself lives on
@@ -145,6 +146,19 @@ struct DebugMenuView: View {
                     showPaywallPreview = true
                 }
                 divider
+                // Standalone preview of the lapsed-user slide-up gate
+                // sheet — lets you eyeball the layout/copy/detent height
+                // without needing a real Skins Group or Quick Game to land
+                // on. Subscribe button is wired to chain into the paywall
+                // so the full lapsed → subscribe handoff is exercisable
+                // from a fresh install. For end-to-end behavior on a real
+                // game (swipe-down → onBack, .onChange auto-dismiss on
+                // isPremium flip), flip the isPremium / hadPremium toggles
+                // above and enter a Group from the Games tab instead.
+                actionRow("Show Lapsed Gate Sheet", icon: "bell.fill") {
+                    showLapsedGatePreview = true
+                }
+                divider
                 actionRow("Show Share Card", icon: "square.and.arrow.up") {
                     showShareCardPreview = true
                 }
@@ -154,6 +168,21 @@ struct DebugMenuView: View {
         .sheet(isPresented: $showPaywallPreview) {
             PaywallView()
                 .environmentObject(storeService)
+        }
+        .sheet(isPresented: $showLapsedGatePreview) {
+            SubscriptionGateSheet(onSubscribe: {
+                // Chain into the paywall after the gate sheet's dismiss
+                // animation settles — same DispatchQueue.main.async pattern
+                // GroupManagerView uses to avoid SwiftUI sheet-stacking
+                // races across iOS versions.
+                showLapsedGatePreview = false
+                DispatchQueue.main.async {
+                    showPaywallPreview = true
+                }
+            })
+            .presentationDetents([.fraction(0.55)])
+            .presentationDragIndicator(.visible)
+            .presentationBackground(.white)
         }
         .sheet(isPresented: $showShareCardPreview) {
             shareCardPreview
