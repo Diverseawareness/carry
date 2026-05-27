@@ -56,7 +56,7 @@ struct PaywallView: View {
     /// for first-timers, but Apple's 3.1.2(c) rejection flagged the most
     /// prominent screen element being trial-framed. "Subscribe" is neutral
     /// and works for both pre-trial and post-trial users — the trial copy
-    /// lives in the summary line above the button (pre-trial only) + the
+    /// lives on each price card ("30 days free, then $X/year") and in the
     /// bottom auto-renewal disclosure (required legal text).
     private var ctaButtonLabel: String {
         "Subscribe"
@@ -238,24 +238,14 @@ struct PaywallView: View {
                         .padding(.top, 24)
                     }
 
-                    // Summary line above the CTA — pre-trial only. Price-first
-                    // per Apple 3.1.2(c): the billed amount leads, trial copy
-                    // is subordinate at the end of the line. Post-trial users
-                    // skip this entirely (preCTASummary returns nil) since
-                    // their cards already display the prices and they don't
-                    // qualify for the trial.
-                    if let summary = preCTASummary {
-                        Text(summary)
-                            .font(.system(size: 13))
-                            .foregroundColor(Color.textTertiary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 24)
-                            .padding(.top, 16)
-                    }
-
                     // CTA button. Label is always "Subscribe" — the trial
                     // mention is intentionally absent from the most-tapped
-                    // element on the screen, per the 3.1.2(c) fix.
+                    // element on the screen, per the 3.1.2(c) fix. The
+                    // billed amount + trial framing live (a) on each price
+                    // card title/subtitle and (b) in the bottom auto-renew
+                    // disclosure, so the redundant "$X/year or $Y/month ·
+                    // Free 30-day trial" summary line we used to render
+                    // above the CTA was dropped.
                     if !storeService.products.isEmpty {
                         Button {
                             purchaseSelected()
@@ -271,6 +261,7 @@ struct PaywallView: View {
                                 )
                         }
                         .buttonStyle(.plain)
+                        .padding(.top, 16)  // preserves the gap the now-removed summary line used to provide
                         .disabled(isPurchasing)
                         .opacity(isPurchasing ? 0.6 : 1)
                         .padding(.horizontal, 20)
@@ -438,18 +429,6 @@ struct PaywallView: View {
         return storeService.hadPremium
             ? "Monthly"
             : "30 days free, then \(product.displayPrice)/month"
-    }
-
-    /// Summary line shown above the CTA button, pre-trial only. Price-first
-    /// per Apple 3.1.2(c) — trial is subordinate at the end of the line.
-    /// Returns nil for post-trial users (cards already show the prices and
-    /// they don't get the trial).
-    private var preCTASummary: String? {
-        guard !storeService.hadPremium else { return nil }
-        guard storeService.annualProduct != nil || storeService.monthlyProduct != nil else { return nil }
-        let parts = [annualPrice, monthlyPrice].filter { !$0.isEmpty }
-        guard !parts.isEmpty else { return nil }
-        return "\(parts.joined(separator: " or ")) · Free 30-day trial"
     }
 
     // MARK: - Purchase
