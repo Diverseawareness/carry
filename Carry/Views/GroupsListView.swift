@@ -21,6 +21,18 @@ struct GroupsListView: View {
     @State private var showCreateGroup = false
     @State private var showQuickStart = false
     @State private var showPaywall = false
+    /// Context for the next paywall presentation. Defaults to `.general`
+    /// so existing call sites (create-group blocks at lines ~2338/2377/2447)
+    /// keep their existing behavior without explicit set. New gate sites
+    /// set this before flipping showPaywall=true and the sheet's onDisappear
+    /// resets it so the next opening starts clean.
+    @State private var paywallTrigger: PaywallTrigger = .general
+    /// Active-card scorer gate: when a non-subscribed scorer taps a live
+    /// round card, the paywall fires with the group stashed here. After
+    /// successful purchase, the paywall's onDisappear routes them directly
+    /// onto the scorecard for THIS group — no re-tap required. Cleared
+    /// regardless of purchase outcome so cancelled paywall doesn't leak.
+    @State private var pendingActiveCardGroup: SavedGroup? = nil
     @State private var showNewGamePicker = false
     @State private var showQRScanner = false
     @State private var activeGroup: SavedGroup? = nil
@@ -1099,6 +1111,37 @@ struct GroupsListView: View {
 
     private func groupCard(_ group: SavedGroup) -> some View {
         Button {
+            // Scorer-on-live-round gate: a non-subscribed user who's the
+            // designated scorer for this active round gets the paywall
+            // upfront, before landing on the scorecard. Prevents the
+            // mid-round stall where they'd reach the scorecard, try to
+            // enter a score, and only then hit the existing tap-cell
+            // paywall — bad UX in-person when the whole tee group is
+            // standing around waiting. Non-scoring members (spectator
+            // path) keep the free viewing preview. Pre-start cards
+            // (`activeRound == nil`) fall through to the normal flow
+            // which mounts GroupManagerView (its own slide-up gate
+            // covers !isPremium for that surface).
+            if let activeRound = group.activeRound, !storeService.isPremium {
+                // "Anyone can score" model — any player in the round has
+                // write permission, regardless of game type or designated
+                // scorer field. Gate fires for any non-subscribed player
+                // who'd reach the scorecard with write affordance. Group
+                // members NOT in the round's player list (spectators)
+                // fall through to the normal flow → scorecard view-only.
+                let myPlayerId = authService.currentPlayerId
+                let isPlayer = activeRound.players.contains(where: { $0.id == myPlayerId })
+                if isPlayer {
+                    // Stash the group so the paywall's onDisappear can
+                    // mount the round coordinator directly after a
+                    // successful subscription — user lands on scorecard
+                    // without re-tapping the card.
+                    pendingActiveCardGroup = group
+                    paywallTrigger = .scoreRound
+                    showPaywall = true
+                    return
+                }
+            }
             withAnimation(.spring(response: 0.45, dampingFraction: 0.9)) {
                 activeGroup = group
             }
@@ -2198,9 +2241,26 @@ struct GroupsListView: View {
         }
         .ignoresSafeArea(edges: .top)
         .allowsHitTesting(false)
-        .sheet(isPresented: $showPaywall) {
-            PaywallView()
+        .sheet(isPresented: $showPaywall, onDismiss: { paywallTrigger = .general }) {
+            PaywallView(trigger: paywallTrigger)
                 .onDisappear {
+                    // Scorer-gate post-subscribe routing. Capture and clear
+                    // first so a cancelled paywall doesn't leak state.
+                    let pendingScorerGroup = pendingActiveCardGroup
+                    pendingActiveCardGroup = nil
+                    if pendingScorerGroup != nil {
+                        // Scorer gate fired. Only mount the coordinator on
+                        // successful subscription; don't fall through to
+                        // the create-group default below — the user wasn't
+                        // trying to create, they were trying to score.
+                        if storeService.isPremium, let group = pendingScorerGroup {
+                            withAnimation(.spring(response: 0.45, dampingFraction: 0.9)) {
+                                activeGroup = group
+                            }
+                        }
+                        return
+                    }
+                    // Existing create-group / quick-start post-paywall routing.
                     guard storeService.isPremium else { return }
                     if pendingQuickStartAfterPaywall {
                         pendingQuickStartAfterPaywall = false

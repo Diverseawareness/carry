@@ -355,6 +355,17 @@ struct HomeView: View {
     var isLoadingGroups: Bool = false
     @Binding var pendingActiveGroupId: UUID?
     @State private var showPaywall = false
+    /// Context for the next paywall presentation. Defaults to `.general`
+    /// so existing call sites keep their existing behavior. New gate sites
+    /// set this before flipping showPaywall=true; sheet's onDismiss resets
+    /// so the next opening starts clean.
+    @State private var paywallTrigger: PaywallTrigger = .general
+    /// Active-card scorer gate: when a non-subscribed scorer taps a live
+    /// round card on Home, the paywall fires with the round stashed here.
+    /// After successful purchase, the paywall's onDismiss routes them
+    /// directly onto the scorecard — no re-tap required. Cleared regardless
+    /// of purchase outcome so cancelled paywall doesn't leak.
+    @State private var pendingActiveCardRound: HomeRound? = nil
     @State private var showCreateGroup = false
     @State private var showQRScanner = false
     // Pre-1.0.3 clipboard-invite-detection paths removed in 1.0.9.
@@ -831,8 +842,21 @@ struct HomeView: View {
                 .presentationDragIndicator(.visible)
                 .presentationBackground(.white)
         }
-        .sheet(isPresented: $showPaywall) {
-            PaywallView()
+        .sheet(isPresented: $showPaywall, onDismiss: {
+            // Scorer-gate post-subscribe routing on Home tab. Capture and
+            // clear first so a cancelled paywall doesn't leak state. If
+            // the user successfully subscribed during the paywall, mount
+            // the scorecard for the round they originally tried to open.
+            let pendingScorerRound = pendingActiveCardRound
+            pendingActiveCardRound = nil
+            if let round = pendingScorerRound, storeService.isPremium {
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                    selectedRound = round
+                }
+            }
+            paywallTrigger = .general
+        }) {
+            PaywallView(trigger: paywallTrigger)
         }
         .sheet(isPresented: $showPhoneMigrationEdit, onDismiss: {
             // Once they've engaged with the sheet, hide the banner regardless
@@ -1314,6 +1338,33 @@ struct HomeView: View {
                 // reserved for players actually in the round.
                 return
             } else {
+                // Scorer-on-live-round gate: a non-subscribed user who's
+                // the designated scorer for this active round gets the
+                // paywall upfront, before landing on the scorecard.
+                // Prevents the mid-round stall where they'd reach the
+                // scorecard, try to enter a score, and only then hit the
+                // existing tap-cell paywall. Non-scoring members fall
+                // through to the normal scorecard mount (free viewing
+                // preview). isQuickGame inferred from scorerPlayerIds
+                // being populated (Skins Group rounds use single
+                // scorerPlayerId).
+                if !storeService.isPremium {
+                    // "Anyone can score" model — any player in the round
+                    // has write permission, regardless of designated-
+                    // scorer field. isSpectator earlier-returned already,
+                    // so we know currentUser IS in round.players here.
+                    // Gate fires unconditionally for non-subscribers who
+                    // reach this branch.
+                    //
+                    // Stash the round so the paywall's onDismiss can
+                    // mount the scorecard directly after a successful
+                    // subscription — user lands on scorecard without
+                    // re-tapping the card.
+                    pendingActiveCardRound = round
+                    paywallTrigger = .scoreRound
+                    showPaywall = true
+                    return
+                }
                 // Live scoring → Go to scorecard
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
                     selectedRound = round
