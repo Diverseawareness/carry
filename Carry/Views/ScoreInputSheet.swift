@@ -51,6 +51,22 @@ struct ScoreInputSheet: View {
 
     private var totalH: CGFloat { itemH * 3 }
 
+    /// Intrinsic height (pt) this sheet needs to render in full without
+    /// clipping its action buttons. Summed from the same fixed layout blocks
+    /// the `body` lays out below, kept here next to the constants that define
+    /// them so any dial change updates the floor in lock-step. EXCLUDES the
+    /// host drawer's grab handle — the presenter adds that and takes the max
+    /// of this vs. its proportional height. Fonts are fixed-size (no Dynamic
+    /// Type scaling in this view), so this constant is exact per device.
+    static func minimumContentHeight(extraBottomPadding: CGFloat) -> CGFloat {
+        let header: CGFloat   = 44 + 16        // avatar (44) + .padding(.top, 16)
+        let spacers: CGFloat  = 24 * 2         // two Spacer(minLength: 24)
+        let dial: CGFloat     = 96 * 3         // itemH * 3 (totalH)
+        let buttons: CGFloat  = 18 * 2 + 24    // .padding(.vertical,18) + ~24pt label
+        let bottomPad: CGFloat = 30 + extraBottomPadding
+        return header + spacers + dial + buttons + bottomPad
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             // Header — Figma: gap-16 between handle and header, then gap-48 to dial

@@ -1358,19 +1358,24 @@ final class GroupService {
            let json = group.guestRosterJson,
            let data = json.data(using: .utf8),
            let snapshots = try? JSONDecoder().decode([QuickGameGuestStorage.GuestSnapshot].self, from: data) {
-            let existingIds = Set(players.map(\.id))
+            // Membership test by canonicalKey (1.1.2 duplicate-guest fix): a
+            // snapshot guest already present as a server-backed member must NOT
+            // be re-synthesized. Keying on raw Int id missed the case where the
+            // member arrived with a different id representation than the snapshot
+            // stored → the same guest appeared twice in the Games-tab pills.
+            let existingKeys = Set(players.map(\.canonicalKey))
             // Corruption-cycle filter (mirrors QuickGameGuestStorage.load):
             // strip any "Guest" / whitespace-only entries that legacy server
             // payloads may carry. Without this, a server snapshot from before
             // the 2026-05-10 cycle-fix would resurrect "Guest"+0.0 into
             // Games-tab pills. See guest-lifecycle.md §"Disease string rule".
             let synthesized = snapshots
-                .filter { !existingIds.contains($0.id) }
-                .filter { snap in
-                    let trimmed = snap.name.trimmingCharacters(in: .whitespaces)
+                .map(\.asPlayer)
+                .filter { player in
+                    let trimmed = player.name.trimmingCharacters(in: .whitespaces)
                     return !trimmed.isEmpty && trimmed != "Guest"
                 }
-                .map(\.asPlayer)
+                .filter { !existingKeys.contains($0.canonicalKey) }
             players.append(contentsOf: synthesized)
             #if DEBUG
             if !synthesized.isEmpty {

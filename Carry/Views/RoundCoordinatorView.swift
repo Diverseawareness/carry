@@ -559,11 +559,21 @@ struct RoundCoordinatorView: View {
                     guard newUUIDs.count == missing.count else {
                         throw NSError(domain: "RoundCoordinator", code: 1, userInfo: [NSLocalizedDescriptionKey: "Guest profile recreate count mismatch: expected \(missing.count), got \(newUUIDs.count)"])
                     }
-                    // Apply new profileIds + canonical name/handicap to configForRound.players
+                    // Apply new profileIds + canonical name/handicap to configForRound.players.
+                    // Canonical-id remap (1.1.2 duplicate-guest fix): also rewrite
+                    // `p.id` to stableId(serverUUID). `create_guest_profiles` mints
+                    // a FRESH server UUID, so without this the Player keeps its old
+                    // id (derived from the now-deleted profile's UUID or a local
+                    // UUID) while its profileId points at the new one. Every later
+                    // server load-back computes stableId(newUUID) → the guest
+                    // splits into two ids = the single-device duplicate. Remapping
+                    // here keeps id and profileId in lock-step. (`Player.id` is now
+                    // `var` to allow this in place — 1.1.2.)
                     var updatedPlayers = configForRound.players
                     for (i, entry) in missing.enumerated() {
                         var p = updatedPlayers[entry.idx]
                         p.profileId = newUUIDs[i]
+                        p.id = Player.stableId(from: newUUIDs[i])
                         p.name = names[i]
                         p.handicap = handicaps[i]
                         updatedPlayers[entry.idx] = p
@@ -582,12 +592,27 @@ struct RoundCoordinatorView: View {
             }
         }
 
-        // 3b. Map players to Supabase UUIDs with group numbers
+        // 3b. Map players to Supabase UUIDs with group numbers.
+        // Money safety net (1.1.2 duplicate-guest fix): dedup by profileId so a
+        // duplicate roster entry can NEVER create a second round_players row.
+        // The DB has UNIQUE(round_id, player_id) for the same-UUID case, but the
+        // cross-device case (two scorer devices → two profileIds for one human)
+        // would otherwise insert both → inflated pot + phantom payee. This is
+        // the last line of defense before the insert; identity canonicalization
+        // upstream should already prevent dupes, but money correctness warrants
+        // a hard guard here regardless.
         var playerTuples: [(userId: UUID, group: Int)] = []
+        var seenProfileIds = Set<UUID>()
         for gc in configForRound.groups {
             for playerId in gc.playerIDs {
                 guard let player = configForRound.players.first(where: { $0.id == playerId }),
                       let profileId = player.profileId else { continue }
+                guard seenProfileIds.insert(profileId).inserted else {
+                    #if DEBUG
+                    print("[RoundCoordinator] Skipped duplicate roster entry for profileId \(profileId) (\(player.name)) before round_players insert")
+                    #endif
+                    continue
+                }
                 playerTuples.append((userId: profileId, group: gc.id))
             }
         }

@@ -76,8 +76,14 @@ enum QuickGameGuestStorage {
         }
 
         var asPlayer: Player {
+            // Canonical-id self-heal (1.1.2): when the snapshot carries a server
+            // profileId, derive the Int id FROM it rather than trusting the
+            // stored `id`. Legacy snapshots (pre-fix) may hold a stale local-
+            // counter id; re-deriving makes the restored Player's id match every
+            // server load-back, so it dedups by canonicalKey AND lines up with
+            // scorerIDs.
             Player(
-                id: id,
+                id: profileId.map(Player.stableId(from:)) ?? id,
                 name: name,
                 initials: initials,
                 color: color,
@@ -151,13 +157,22 @@ enum QuickGameGuestStorage {
         // (QuickStartSheet.swift:1393), so the `isGuest` flag alone catches
         // them — without false positives on Carry users.
         let guestsOnly = allRosterPlayers.filter { $0.isGuest }
-        var seen = Set<Int>()
-        let deduped = guestsOnly.filter { seen.insert($0.id).inserted }
-        let cleaned = deduped.filter {
+        // Disease-string clean FIRST (2026-05-10 corruption guard): drop any
+        // "Guest"/whitespace-only entries before de-duplication. Order matters —
+        // if a corrupted "Guest" copy and the good copy share a canonicalKey,
+        // cleaning first guarantees the good copy is the one that survives dedup.
+        let cleaned = guestsOnly.filter {
             let trimmed = $0.name.trimmingCharacters(in: .whitespaces)
             return !trimmed.isEmpty && trimmed != "Guest"
         }
-        let snapshots = cleaned.map(GuestSnapshot.init)
+        // Dedup by canonicalKey (1.1.2 duplicate-guest fix — was `Set<Int>` on
+        // id). This is the DURABLE amplifier: if both a guest's local-id copy
+        // and its server-id copy reached here, the old id-dedup persisted BOTH
+        // into guest_roster_json, making the duplicate permanent + cross-device.
+        // canonicalKey collapses them to the profileId-bearing copy.
+        var seen = Set<String>()
+        let deduped = cleaned.filter { seen.insert($0.canonicalKey).inserted }
+        let snapshots = deduped.map(GuestSnapshot.init)
         guard let data = try? JSONEncoder().encode(snapshots) else { return }
         UserDefaults.standard.set(data, forKey: key(groupId))
         // Stamp BEFORE the async server write fires. Otherwise a refresh

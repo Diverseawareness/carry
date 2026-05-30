@@ -187,7 +187,7 @@ struct GroupManagerView: View {
     @State private var inviteShareLink: String = ""
     @State private var cachedHoles: [Hole]? = nil  // preserves API holes across Supabase refreshes
     @State private var invitePhones: [Int: String] = [:]  // playerId → phone number
-    @State private var recentlyRemovedIds: Set<Int> = []  // players manually deleted; refresh skips re-merging them
+    @State private var recentlyRemovedIds: Set<String> = []  // canonicalKeys of players manually deleted; refresh skips re-merging them (1.1.2: was Set<Int> — a guest removed under one id representation resurrected under the other)
 
     /// Only the group creator can manage settings, players and tee times.
     private var isCreator: Bool { currentUserId == creatorId }
@@ -352,17 +352,17 @@ struct GroupManagerView: View {
     }
 
     private var allAvailable: [Player] {
-        // Dedup by Player.id — `allMembers` and `guests` can each carry a
-        // copy of the same guest after a save round-trip (PlayerGroupsSheet
-        // inserts to server + appends locally; the next refresh pulls the
-        // same guest back in `allMembers`). Without this filter, the
-        // downstream `Dictionary(uniqueKeysWithValues:)` at
-        // `leaderboardPlayers` crashes with `Duplicate values for key: N`
-        // and SwiftUI's ForEach trips its own duplicate-id check. First
-        // occurrence wins so the `allMembers` record (freshest server data)
-        // is preferred over any locally-appended copy.
-        var seen = Set<Int>()
-        return (allMembers + guests).filter { seen.insert($0.id).inserted }
+        // Dedup by canonicalKey (1.1.2 duplicate-guest fix — was `Set<Int>` on
+        // `$0.id`). `allMembers` and `guests` can each carry a copy of the same
+        // guest after a save round-trip (PlayerGroupsSheet inserts to server +
+        // appends locally; the next refresh pulls the same guest back in
+        // `allMembers`) — and those two copies can hold DIFFERENT int ids (local
+        // vs server-derived), so the old `Set<Int>` let both through → duplicate
+        // pills + a `Duplicate values for key` crash in the downstream
+        // `leaderboardPlayers` dictionary. canonicalKey collapses them. First
+        // occurrence wins, and `allMembers` is first, so the server-backed
+        // (profileId-bearing) record is preferred over the local copy.
+        return (allMembers + guests).dedupedByCanonicalKey()
     }
 
     // MARK: - Player Groups Sheet (extracted to PlayerGroupsSheet.swift)
@@ -801,7 +801,7 @@ struct GroupManagerView: View {
         // sum across all rounds (the migrated QG counts toward Daniel /
         // Emese / Ziggy's totals); we just don't render rows for players
         // who aren't in the current roster.
-        let rosterById = Dictionary(uniqueKeysWithValues: allAvailable.map { ($0.id, $0) })
+        let rosterById = Dictionary(allAvailable.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         var playersById: [Int: Player] = [:]
         for round in leaderboardRounds {
             for player in round.players {
@@ -910,7 +910,7 @@ struct GroupManagerView: View {
                 )
 
                 // Filter out players that were just manually removed (refresh race condition)
-                var filteredFreshMembers = freshGroup.members.filter { !recentlyRemovedIds.contains($0.id) }
+                var filteredFreshMembers = freshGroup.members.filter { !recentlyRemovedIds.contains($0.canonicalKey) }
                 // Race guard (6th instance — see refresh-race-guards.md):
                 // if a guest profile edit (name or handicap) was saved in
                 // the last 8s, the RPC may not have replicated back yet.
@@ -928,11 +928,12 @@ struct GroupManagerView: View {
                         let handicap: Double
                     }
                     let localGuestProfiles: [UUID: LocalGuestProfile] = Dictionary(
-                        uniqueKeysWithValues: allMembers
+                        allMembers
                             .filter { $0.isGuest }
                             .compactMap { p in
                                 p.profileId.map { ($0, LocalGuestProfile(name: p.name, initials: p.initials, handicap: p.handicap)) }
-                            }
+                            },
+                        uniquingKeysWith: { a, _ in a }   // 1.1.2: id is now var; guard against a transient same-profileId pair
                     )
                     filteredFreshMembers = filteredFreshMembers.map { fresh in
                         guard fresh.isGuest,
@@ -965,7 +966,7 @@ struct GroupManagerView: View {
                 // resurrect the removed guest on every refresh.
                 let preservedGuests: [Player]
                 if isQuickGame, let groupId = supabaseGroupId {
-                    let freshIds = Set(filteredFreshMembers.map(\.id))
+                    let freshIds = Set(filteredFreshMembers.map(\.canonicalKey))
                     // Cross-check the local QuickGameGuestStorage
                     // snapshot (which loadSingleGroup already
                     // hydrated from server's guest_roster_json via
@@ -979,7 +980,7 @@ struct GroupManagerView: View {
                         QuickGameGuestStorage.load(groupId: groupId).compactMap(\.profileId)
                     )
                     preservedGuests = allMembers.filter { player in
-                        guard player.isGuest, !freshIds.contains(player.id) else { return false }
+                        guard player.isGuest, !freshIds.contains(player.canonicalKey) else { return false }
                         if !snapshotGuestProfileIds.isEmpty,
                            let pid = player.profileId {
                             return snapshotGuestProfileIds.contains(pid)
@@ -989,7 +990,14 @@ struct GroupManagerView: View {
                 } else {
                     preservedGuests = []
                 }
-                allMembers = filteredFreshMembers + preservedGuests
+                // Dedup by canonicalKey (1.1.2): collapse any exact-identity
+                // repeat created by the merge so `allMembers` never carries the
+                // same guest twice. Server-backed entries are first, so their
+                // profileId-bearing copy wins.
+                allMembers = (filteredFreshMembers + preservedGuests).dedupedByCanonicalKey()
+                // selectedIDs is a Set<Int> keyed on Player.id; with allMembers
+                // now deduped there's exactly one id per human, so the Int
+                // intersection below is unambiguous.
                 let memberIds = Set(allMembers.map(\.id))
 
                 // Preserve the user's playing roster across refreshes, but with
@@ -1042,7 +1050,8 @@ struct GroupManagerView: View {
                     // every member device. Swipe-deletes pending a server commit
                     // are already filtered via recentlyRemovedIds above.
                     let existingById = Dictionary(
-                        uniqueKeysWithValues: groups.flatMap { $0 }.map { ($0.id, $0) }
+                        groups.flatMap { $0 }.map { ($0.id, $0) },
+                        uniquingKeysWith: { a, _ in a }
                     )
                     let scorerIdSet = Set(scorerIDs)
                     var newlyAcceptedScorers: [String] = []
@@ -1385,8 +1394,12 @@ struct GroupManagerView: View {
                     return m
                 }
                 if isQuickGame {
-                    let memberIds = Set(localized.members.map(\.id))
-                    let localGuests = allMembers.filter { $0.isGuest && !memberIds.contains($0.id) }
+                    // Membership test by canonicalKey (1.1.2): a local guest
+                    // already present in the freshly-merged members (possibly
+                    // under a different id representation) must not be appended
+                    // again → was a duplicate-pill source.
+                    let memberKeys = Set(localized.members.map(\.canonicalKey))
+                    let localGuests = allMembers.filter { $0.isGuest && !memberKeys.contains($0.canonicalKey) }
                     if !localGuests.isEmpty {
                         localized.members.append(contentsOf: localGuests)
                     }
@@ -2437,11 +2450,12 @@ struct GroupManagerView: View {
                         let handicap: Double
                     }
                     let oldGuestProfiles: [UUID: OldGuestProfile] = Dictionary(
-                        uniqueKeysWithValues: allMembers
+                        allMembers
                             .filter { $0.isGuest }
                             .compactMap { p in
                                 p.profileId.map { ($0, OldGuestProfile(name: p.name, handicap: p.handicap)) }
-                            }
+                            },
+                        uniquingKeysWith: { a, _ in a }   // 1.1.2: id is now var; guard against a transient same-profileId pair
                     )
 
                     groups = result.groups
@@ -3030,7 +3044,7 @@ struct GroupManagerView: View {
             // Quick Game: the tee sheet IS the roster — removing from the tee
             // sheet means removing from the game. Hard delete from Supabase
             // and drop from local member state.
-            recentlyRemovedIds.insert(player.id)
+            recentlyRemovedIds.insert(player.canonicalKey)
             allMembers.removeAll { $0.id == player.id }
             selectedIDs.remove(player.id)
             if let groupId = supabaseGroupId {
@@ -4348,7 +4362,7 @@ struct GroupManagerView: View {
                 // parent last refreshed. The saved snapshot is local
                 // truth (UserDefaults written synchronously by
                 // `QuickGameGuestStorage.save`).
-                let savedById = Dictionary(uniqueKeysWithValues: saved.map { ($0.id, $0) })
+                let savedById = Dictionary(saved.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
                 for i in allMembers.indices {
                     if allMembers[i].isGuest, let s = savedById[allMembers[i].id] {
                         allMembers[i].group = s.group
@@ -4359,9 +4373,12 @@ struct GroupManagerView: View {
                         guests[i].group = s.group
                     }
                 }
-                // Append any guests missing entirely
-                let existingIds = Set(allMembers.map(\.id) + guests.map(\.id))
-                let toRestore = saved.filter { !existingIds.contains($0.id) }
+                // Append any guests missing entirely. Membership test by
+                // canonicalKey (1.1.2): a snapshot guest already present under a
+                // different id representation must not be restored as a second
+                // copy → was a duplicate-guest source on re-appear.
+                let existingKeys = Set((allMembers + guests).map(\.canonicalKey))
+                let toRestore = saved.filter { !existingKeys.contains($0.canonicalKey) }
                 if !toRestore.isEmpty {
                     allMembers.append(contentsOf: toRestore)
                     for p in toRestore { selectedIDs.insert(p.id) }
@@ -4900,10 +4917,14 @@ struct GroupManagerView: View {
         guard digits.count >= 10 else { return }
 
         let guestColors = ["#E67E22", "#9B59B6", "#1ABC9C", "#C0392B", "#2980B9", "#27AE60"]
-        let colorIdx = (nextGuestID - 100) % guestColors.count
+        let colorIdx = guests.count % guestColors.count
 
+        // Canonical identity (1.1.2): UUID-derived id, never a cross-device
+        // counter. inviteMemberId is anchored post-hoc below from the server's
+        // `inviteMemberByPhone` row id (this path's existing server flow is
+        // left untouched — SMS-invite reconciliation is under separate review).
         let invited = Player(
-            id: nextGuestID,
+            id: Player.guestId(from: UUID()),
             name: "Invited",
             initials: "✉️",
             color: guestColors[colorIdx],
@@ -4918,7 +4939,6 @@ struct GroupManagerView: View {
 
         guests.append(invited)
         selectedIDs.insert(invited.id)
-        nextGuestID += 1
 
         withAnimation {
             inviteSent = true
@@ -4994,11 +5014,17 @@ struct GroupManagerView: View {
             : Double(guestHandicap) ?? 0.0
         let guestColors = ["#E67E22", "#9B59B6", "#1ABC9C", "#C0392B", "#2980B9", "#27AE60"]
         let guestAvatars = ["👤", "🎩", "🧢", "🕶️", "⛳", "🏌️"]
-        let colorIdx = (nextGuestID - 100) % guestColors.count
-        let avatarIdx = (nextGuestID - 100) % guestAvatars.count
+        // Canonical guest identity (1.1.2 duplicate-guest fix): derive the Int
+        // id from a UUID, NEVER a local counter. A counter id (100, 101…) can't
+        // be reconciled with the server `stableId` the guest receives after
+        // `create_guest_profiles`, nor across two scorer devices — that mismatch
+        // is the duplicate-guest bug. Color/avatar cycle on the guest count.
+        let localUUID = UUID()
+        let colorIdx = guests.count % guestColors.count
+        let avatarIdx = guests.count % guestAvatars.count
 
         let guest = Player(
-            id: nextGuestID,
+            id: Player.guestId(from: localUUID),
             name: trimmedName,
             initials: String(trimmedName.prefix(2)).uppercased(),
             color: guestColors[colorIdx],
@@ -5006,12 +5032,15 @@ struct GroupManagerView: View {
             avatar: guestAvatars[avatarIdx],
             group: 1,
             ghinNumber: nil,
-            venmoUsername: nil
+            venmoUsername: nil,
+            isGuest: true   // S5: was silently omitted → guest dropped by snapshot filter
         )
 
         guests.append(guest)
         selectedIDs.insert(guest.id)
-        nextGuestID += 1
+        // (1.1.2) `nextGuestID` no longer mints guest ids — guest identity is
+        // UUID-derived now. The counter plumbing is dead; full removal deferred
+        // to a follow-up to keep this hotfix diff tight.
 
         // Reset form
         guestName = ""

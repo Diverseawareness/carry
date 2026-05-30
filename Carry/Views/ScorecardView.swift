@@ -1189,8 +1189,20 @@ struct ScorecardView: View {
                     ))
                 }
                 .clipped()
-                // Fixed 62% of screen — matches Figma score sheet proportions
-                .frame(height: UIScreen.main.bounds.height * 0.62 + (roundCompleteCollapsed ? 70 : 0))
+                // Height = the LARGER of (a) the original 62%-of-screen
+                // proportion and (b) the sheet's intrinsic content height
+                // (+36 for the grab handle above). The 0.62 fraction was
+                // tuned on a ~844pt reference device where 0.62×H ≈ content
+                // height; on shorter screens 0.62×H fell *below* the content
+                // and the `.clipped()` above silently cut off the Save /
+                // Score Next buttons (prod bug, 1.1.0). max() keeps the
+                // reference device pixel-identical and guarantees the action
+                // buttons are visible on every screen size. (extraBottomPadding
+                // mirrors the value passed into ScoreInputSheet below.)
+                .frame(height: max(
+                    UIScreen.main.bounds.height * 0.62 + (roundCompleteCollapsed ? 70 : 0),
+                    ScoreInputSheet.minimumContentHeight(extraBottomPadding: roundCompleteCollapsed ? 68 : 0) + 36
+                ))
                 .offset(y: max(0, sheetDrag))
                 .gesture(
                     DragGesture()

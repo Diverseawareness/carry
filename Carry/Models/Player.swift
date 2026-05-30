@@ -4,7 +4,12 @@ import SwiftUI
 let MAX_NAME_CHARS = 10
 
 struct Player: Identifiable, Hashable {
-    let id: Int
+    /// `var` (was `let`, 1.1.2): a guest's canonical int id is re-derived from
+    /// its SERVER profile UUID once `create_guest_profiles` mints one (round-start
+    /// reconciliation). Mutability lets that one field be remapped in place
+    /// instead of reconstructing the whole Player — the previous immutability is
+    /// what forced the verbose 18-field rebuilds in the SMS-reanchor paths.
+    var id: Int
     var name: String
     var initials: String
     let color: String  // hex
@@ -131,6 +136,62 @@ extension Player {
             profileId: profile.id,
             homeClub: profile.homeClub
         )
+    }
+}
+
+// MARK: - Canonical identity (duplicate-guest fix, 1.1.2)
+
+extension Player {
+    /// Stable cross-representation identity for de-duplication, set membership,
+    /// and roster merges. **Use this instead of the raw `Int` `id`.**
+    ///
+    /// `Player.id` is NOT stable across a guest's lifecycle: a locally-created
+    /// guest derives its id from a local UUID, then RE-derives it from the
+    /// server UUID once `create_guest_profiles` mints a profile (the RPC always
+    /// `gen_random_uuid()`s server-side — the client can't supply it). Two
+    /// devices mint two server UUIDs for the same human. De-duplicating on the
+    /// raw Int id therefore lets the same person appear twice (the 1.1.0/1.1.1
+    /// duplicate-guest bug). This key collapses those representations.
+    ///
+    /// Priority: server profile id ▸ SMS-invite anchor id ▸ local int id.
+    /// Carry users always have a `profileId`, so their key is fully stable.
+    var canonicalKey: String {
+        if let pid = profileId { return "p:\(pid.uuidString)" }
+        if let iid = inviteMemberId { return "i:\(iid.uuidString)" }
+        return "n:\(id)"
+    }
+
+    /// Normalized human key for the cross-device same-name collapse — two
+    /// scorer devices each adding "Kyle" mint different UUIDs (different
+    /// `canonicalKey`), so a final merge tiebreaker matches on name+handicap.
+    /// SCOPE: only ever applied within a single Quick Game's GUEST roster, as a
+    /// last step after `canonicalKey` dedup. Never used to merge Carry users.
+    var guestHumanKey: String {
+        let n = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return "\(n)|\(handicap)"
+    }
+
+    /// The canonical Int id for a guest, ALWAYS derived from a UUID (never a
+    /// local counter). Pass the server `profileId` once known so the id stays
+    /// constant through the local→server transition; otherwise pass a freshly
+    /// minted local UUID and persist it as the guest's identity for the session.
+    static func guestId(from uuid: UUID) -> Int { stableId(from: uuid) }
+}
+
+extension Array where Element == Player {
+    /// Order-preserving de-duplication on `canonicalKey` (the duplicate-guest
+    /// fix, 1.1.2). Collapses every copy that shares a profile id / invite-member
+    /// id / local id — the within-device local→server divergence AND any exact
+    /// repeat from a roster merge. Keeps the FIRST occurrence; callers that
+    /// concatenate `serverList + localList` therefore keep the server-backed
+    /// (profileId-bearing) copy, which is the desired winner.
+    ///
+    /// Does NOT collapse two DIFFERENT profile ids for the same human (the
+    /// cross-device case) — that needs `guestHumanKey` and is a separate,
+    /// risk-reviewed decision (two real same-named guests must not merge).
+    func dedupedByCanonicalKey() -> [Player] {
+        var seen = Set<String>()
+        return filter { seen.insert($0.canonicalKey).inserted }
     }
 }
 

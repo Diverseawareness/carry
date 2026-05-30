@@ -724,7 +724,7 @@ struct ManageMembersSheet: View {
             return
         }
         let guestColors = ["#E67E22", "#9B59B6", "#1ABC9C", "#C0392B", "#2980B9", "#27AE60"]
-        let colorIdx = (nextGuestID - 100) % guestColors.count
+        let colorIdx = localGuests.count % guestColors.count
         // Capture the typed name from the search field (the "Send
         // Invite to '<name>'" label). Falls back to the formatted
         // phone if the user somehow opened the SMS path without
@@ -736,16 +736,19 @@ struct ManageMembersSheet: View {
         // group_members.id via reservePhoneInvite so the row's id is
         // known client-side from the start (matches what
         // loadSingleGroup will compute on refresh).
+        // Canonical identity (1.1.2): id derived FROM inviteId so it stays
+        // stable across the local→server transition (was a counter — the
+        // canonicalKey already keyed on inviteMemberId so dedup was safe,
+        // this just aligns id with every other birth site).
         let inviteId = UUID()
         let invited = Player(
-            id: nextGuestID, name: displayName, initials: "\u{2709}\u{FE0F}",
+            id: Player.guestId(from: inviteId), name: displayName, initials: "\u{2709}\u{FE0F}",
             color: guestColors[colorIdx], handicap: 0, avatar: "\u{2709}\u{FE0F}",
             group: 1, ghinNumber: nil, venmoUsername: nil,
             phoneNumber: digits, isPendingInvite: true,
             inviteMemberId: inviteId
         )
         localGuests.append(invited)
-        nextGuestID += 1
         withAnimation { inviteSent = true }
 
         // Create Supabase invite record + send SMS with deep link.

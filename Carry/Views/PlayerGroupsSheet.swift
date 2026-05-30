@@ -1108,10 +1108,16 @@ struct PlayerGroupsSheet: View {
         let name = (emptySlotNames[key] ?? "").trimmingCharacters(in: .whitespaces)
         let displayName = name.isEmpty ? ScorerAssignmentView.formatPhone(digits) : name
         let guestColors = ["#E67E22", "#9B59B6", "#1ABC9C", "#C0392B", "#2980B9", "#27AE60"]
-        let colorIdx = (nextGuestID - 100) % guestColors.count
+        let colorIdx = groups.flatMap { $0 }.count % guestColors.count
 
+        // Canonical identity (1.1.2): anchor on a stable inviteMemberId UUID and
+        // derive the int id from it. The scorer-reserve loop (saveAndDismiss,
+        // ~:1524) only persists pending invites whose `inviteMemberId != nil`;
+        // previously this slot left it nil → the scorer row was skipped AND the
+        // counter id couldn't reconcile with the server copy (S1).
+        let inviteUUID = UUID()
         let player = Player(
-            id: nextGuestID,
+            id: Player.guestId(from: inviteUUID),
             name: displayName,
             initials: String(displayName.prefix(2)).uppercased(),
             color: guestColors[colorIdx],
@@ -1122,9 +1128,9 @@ struct PlayerGroupsSheet: View {
             venmoUsername: nil,
             phoneNumber: digits,
             isPendingInvite: true,
-            profileId: nil
+            profileId: nil,
+            inviteMemberId: inviteUUID
         )
-        nextGuestID += 1
 
         // Add to groups array
         groups[groupIndex].append(player)
@@ -1300,22 +1306,24 @@ struct PlayerGroupsSheet: View {
         }
 
         guard let groupId = supabaseGroupId else {
-            // No server — just add guests locally and return clean result
-            for guest in newGuests {
-                let colorIdx = (nextGuestID - 100) % guestColors.count
+            // No server — just add guests locally and return clean result.
+            // Canonical identity (1.1.2): derive the Int id from a local UUID,
+            // never a counter. Mirrors the online branch's `stableId(from:)`
+            // so a guest created offline can later reconcile by canonicalKey.
+            for (i, guest) in newGuests.enumerated() {
+                let colorIdx = i % guestColors.count
                 let player = Player(
-                    id: nextGuestID,
+                    id: Player.guestId(from: UUID()),
                     name: guest.name,
                     initials: String(guest.name.prefix(2)).uppercased(),
                     color: guestColors[colorIdx],
                     handicap: guest.hc,
-                    avatar: guestAvatars[(nextGuestID - 100) % guestAvatars.count],
+                    avatar: guestAvatars[i % guestAvatars.count],
                     group: guest.groupIndex + 1,
                     ghinNumber: nil, venmoUsername: nil,
                     isGuest: true
                 )
                 groups[guest.groupIndex].append(player)
-                nextGuestID += 1
             }
             onSave(buildResult())
             ToastManager.shared.success("Groups updated")
@@ -1354,8 +1362,11 @@ struct PlayerGroupsSheet: View {
                 await MainActor.run {
                     for (i, guestInfo) in newGuests.enumerated() {
                         let uuid = uuids[i]
-                        let colorIdx = (nextGuestID - 100) % guestColors.count
-                        let avatarIdx = (nextGuestID - 100) % guestAvatars.count
+                        // Canonical identity (1.1.2): id derives from the SERVER
+                        // uuid (`stableId`), so it matches what every later
+                        // server load-back computes — no counter divergence.
+                        let colorIdx = i % guestColors.count
+                        let avatarIdx = i % guestAvatars.count
                         let player = Player(
                             id: Player.stableId(from: uuid),
                             name: guestInfo.name,
@@ -1371,7 +1382,6 @@ struct PlayerGroupsSheet: View {
                         groups[guestInfo.groupIndex].append(player)
                         allMembers.append(player)
                         selectedIDs.insert(player.id)
-                        nextGuestID += 1
                     }
                 }
 

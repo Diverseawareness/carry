@@ -3844,9 +3844,14 @@ struct CreateGroupSheet: View {
         let name = memberSearchText.trimmingCharacters(in: .whitespaces)
 
         let guestColors = ["#E67E22", "#9B59B6", "#1ABC9C", "#C0392B", "#2980B9", "#27AE60"]
-        let colorIdx = (nextGuestID - 100) % guestColors.count
+        let colorIdx = guests.count % guestColors.count
+        // Canonical identity (1.1.2): anchor on a stable inviteMemberId UUID and
+        // derive the int id from it, so canonicalKey is `i:<uuid>` from birth and
+        // the createGroup → reservePhoneInvite path persists this exact row id
+        // (previously the counter id couldn't reconcile with the server copy → S1).
+        let inviteUUID = UUID()
         let guest = Player(
-            id: nextGuestID,
+            id: Player.guestId(from: inviteUUID),
             name: name.isEmpty ? ScorerAssignmentView.formatPhone(digits) : name,
             initials: "✉️",
             color: guestColors[colorIdx],
@@ -3856,12 +3861,12 @@ struct CreateGroupSheet: View {
             ghinNumber: nil,
             venmoUsername: nil,
             phoneNumber: digits,
-            isPendingInvite: true
+            isPendingInvite: true,
+            inviteMemberId: inviteUUID
         )
         withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
             guests.append(guest)
         }
-        nextGuestID += 1
 
         // Open native SMS with a per-group Universal Link. The SMS is
         // sent BEFORE the group exists server-side (phone-add time),
