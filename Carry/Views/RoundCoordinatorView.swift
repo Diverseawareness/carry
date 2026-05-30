@@ -549,7 +549,25 @@ struct RoundCoordinatorView: View {
                     let initials = missing.map(\.player.initials)
                     let handicaps = missing.map { canonicalHandicap(for: $0) }
                     let colors = missing.map(\.player.color)
+                    // Stable-UUID architecture (1.1.2): pass the EXISTING
+                    // profileIds back to the server so re-creation reuses the
+                    // SAME UUIDs. The server's `create_guest_profiles` now
+                    // accepts `p_ids` and upserts on conflict (see migration
+                    // 20260530000000). This is the load-bearing piece — if we
+                    // let the server mint fresh UUIDs here, configForRound
+                    // would acquire NEW profileIds while GMV.allMembers still
+                    // holds the OLD ones → next refresh sees the SAME human
+                    // under two profileIds → duplicate guest pills (1.1.0/1.1.1
+                    // restart-duplicate bug). By reusing the UUIDs, identity
+                    // never changes → no remap needed, no divergence, no dups.
+                    // Fallback: if a guest somehow has no profileId yet (shouldn't
+                    // happen since the missing-filter requires one, but defensive),
+                    // mint a client UUID rather than letting the server pick.
+                    let recreateIds: [UUID] = missing.map { entry in
+                        entry.player.profileId ?? UUID()
+                    }
                     let newUUIDs = try await GuestProfileService().createGuestProfiles(
+                        ids: recreateIds,
                         names: names,
                         initials: initials,
                         handicaps: handicaps,
@@ -559,21 +577,18 @@ struct RoundCoordinatorView: View {
                     guard newUUIDs.count == missing.count else {
                         throw NSError(domain: "RoundCoordinator", code: 1, userInfo: [NSLocalizedDescriptionKey: "Guest profile recreate count mismatch: expected \(missing.count), got \(newUUIDs.count)"])
                     }
-                    // Apply new profileIds + canonical name/handicap to configForRound.players.
-                    // Canonical-id remap (1.1.2 duplicate-guest fix): also rewrite
-                    // `p.id` to stableId(serverUUID). `create_guest_profiles` mints
-                    // a FRESH server UUID, so without this the Player keeps its old
-                    // id (derived from the now-deleted profile's UUID or a local
-                    // UUID) while its profileId points at the new one. Every later
-                    // server load-back computes stableId(newUUID) → the guest
-                    // splits into two ids = the single-device duplicate. Remapping
-                    // here keeps id and profileId in lock-step. (`Player.id` is now
-                    // `var` to allow this in place — 1.1.2.)
+                    // Apply canonical name/handicap to configForRound.players.
+                    // We REUSED the supplied UUIDs, so `newUUIDs[i] == missing[i].player.profileId`
+                    // and there's no id/profileId remap to do — identity is
+                    // already correct everywhere (configForRound, allMembers,
+                    // snapshot, scorecard, round_players). This is the whole
+                    // point of the stable-UUID architecture: no id remap = no
+                    // scorecard-vanish bug (the line-576 id-remap from the
+                    // earlier 1.1.2 attempt is gone).
                     var updatedPlayers = configForRound.players
                     for (i, entry) in missing.enumerated() {
                         var p = updatedPlayers[entry.idx]
-                        p.profileId = newUUIDs[i]
-                        p.id = Player.stableId(from: newUUIDs[i])
+                        p.profileId = newUUIDs[i]   // same as the supplied id
                         p.name = names[i]
                         p.handicap = handicaps[i]
                         updatedPlayers[entry.idx] = p

@@ -4,8 +4,20 @@ import Supabase
 class GuestProfileService {
     private let client = SupabaseManager.shared.client
 
-    /// Batch-create guest profiles via Supabase RPC. Returns array of new profile UUIDs.
-    func createGuestProfiles(names: [String], initials: [String], handicaps: [Double], colors: [String], creatorId: UUID? = nil) async throws -> [UUID] {
+    /// Batch-create guest profiles via Supabase RPC. Returns array of profile UUIDs.
+    ///
+    /// Stable-UUID architecture (1.1.2): callers pass `ids` (client-minted UUIDs)
+    /// so the server uses THOSE ids rather than minting fresh ones via
+    /// gen_random_uuid(). This is the load-bearing change that keeps a guest's
+    /// identity stable across delete_quick_game_guests + recreate cycles — every
+    /// re-creation reuses the same UUID, so iOS Player.profileId never diverges
+    /// from server state. Without `ids`, the RPC falls back to gen_random_uuid()
+    /// for back-compat (any legacy callers keep working).
+    ///
+    /// Migration: `supabase/migrations/20260530000000_guest_profiles_client_supplied_uuid.sql`
+    /// — adds `p_ids uuid[]` with `ON CONFLICT (id) DO NOTHING` to absorb the
+    /// case where the SAME id arrives twice (race during restart cycles).
+    func createGuestProfiles(ids: [UUID]? = nil, names: [String], initials: [String], handicaps: [Double], colors: [String], creatorId: UUID? = nil) async throws -> [UUID] {
         var params: [String: AnyJSON] = [
             "p_names": .array(names.map { .string($0) }),
             "p_initials": .array(initials.map { .string($0) }),
@@ -14,6 +26,12 @@ class GuestProfileService {
         ]
         if let creatorId = creatorId {
             params["p_creator_id"] = .string(creatorId.uuidString)
+        }
+        if let ids = ids {
+            // Pass as string array; the server casts to uuid[]. Same encoding
+            // pattern as the other UUID params on this RPC. Length validated
+            // by the server loop (array_length(p_ids,1) >= i).
+            params["p_ids"] = .array(ids.map { .string($0.uuidString) })
         }
 
         // Try direct UUID decode first; fall back to String decode if needed

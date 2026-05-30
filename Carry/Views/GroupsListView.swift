@@ -639,7 +639,15 @@ struct GroupsListView: View {
                     let initials = guestPlayers.map(\.initials)
                     let handicaps = guestPlayers.map(\.handicap)
                     let colors = guestPlayers.map(\.color)
+                    // Stable-UUID architecture (1.1.2): mint UUIDs CLIENT-side
+                    // and pass them to the server. The server will use these
+                    // verbatim instead of gen_random_uuid(), so every later
+                    // re-creation (after delete_quick_game_guests on restart,
+                    // for example) reuses the SAME UUID → guest identity is
+                    // permanently stable, no remap needed anywhere.
+                    let clientIds = guestPlayers.map { _ in UUID() }
                     let uuids = try await guestService.createGuestProfiles(
+                        ids: clientIds,
                         names: names, initials: initials,
                         handicaps: handicaps, colors: colors,
                         creatorId: userId

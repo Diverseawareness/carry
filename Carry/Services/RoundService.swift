@@ -202,13 +202,23 @@ final class RoundService {
     }
 
     /// Delete a round and all associated data (scores + round_players cascade via FK).
-    func deleteRound(roundId: UUID) async throws {
-        // Wipe guests BEFORE deleting the round. The wipe RPC's auth check
-        // requires the round to still exist (it reads round.created_by).
-        // Once the round is deleted, round_players cascade-clean anyway,
-        // so denormalization-into-round_players is moot here — but the
-        // profile delete still happens, satisfying the ephemeral rule.
-        _ = try? await GuestProfileService().deleteQuickGameGuests(roundId: roundId)
+    /// Delete a round. `wipeGuests` controls whether guest profiles are also
+    /// deleted (the ephemeral-guest rule, migration 20260501000001). Default
+    /// `true` for backwards-compatible TERMINATION paths (e.g. Home tab history
+    /// purge). Restart Round MUST pass `false` — restart is a continuation, not
+    /// a termination, and wiping profiles on restart was the root cause of the
+    /// 1.1.0/1.1.1 duplicate-guest bug (commit a74173e, 2026-05-02, added the
+    /// unconditional wipe; this restores the pre-2026-05-02 working behavior on
+    /// the restart path while keeping wipe semantics for true termination).
+    func deleteRound(roundId: UUID, wipeGuests: Bool = true) async throws {
+        if wipeGuests {
+            // Wipe guests BEFORE deleting the round. The wipe RPC's auth check
+            // requires the round to still exist (it reads round.created_by).
+            // Once the round is deleted, round_players cascade-clean anyway,
+            // so denormalization-into-round_players is moot here — but the
+            // profile delete still happens, satisfying the ephemeral rule.
+            _ = try? await GuestProfileService().deleteQuickGameGuests(roundId: roundId)
+        }
         try await client.from("rounds")
             .delete()
             .eq("id", value: roundId.uuidString)

@@ -315,7 +315,14 @@ struct ScorecardView: View {
                 Task {
                     await MainActor.run { menuActionInFlight = "Restarting round…" }
                     if let roundId = viewModel.config.supabaseRoundId {
-                        try? await RoundService().deleteRound(roundId: roundId)
+                        // Restart is a CONTINUATION (not termination) — pass
+                        // wipeGuests:false so guest profiles survive across
+                        // the restart cycle. With stable-UUID architecture
+                        // (1.1.2), even if they DID get wiped, recreation
+                        // would reuse the same UUIDs — but skipping the wipe
+                        // is cleaner and saves a round-trip. Restores the
+                        // pre-2026-05-02 working behavior.
+                        try? await RoundService().deleteRound(roundId: roundId, wipeGuests: false)
                     }
                     await MainActor.run {
                         menuActionInFlight = nil

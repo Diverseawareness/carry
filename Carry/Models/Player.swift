@@ -4,12 +4,13 @@ import SwiftUI
 let MAX_NAME_CHARS = 10
 
 struct Player: Identifiable, Hashable {
-    /// `var` (was `let`, 1.1.2): a guest's canonical int id is re-derived from
-    /// its SERVER profile UUID once `create_guest_profiles` mints one (round-start
-    /// reconciliation). Mutability lets that one field be remapped in place
-    /// instead of reconstructing the whole Player — the previous immutability is
-    /// what forced the verbose 18-field rebuilds in the SMS-reanchor paths.
-    var id: Int
+    /// Reverted to `let` (1.1.2 final): with the stable-UUID architecture
+    /// (migration 20260530000000 + client-supplied UUIDs in all guest birth
+    /// sites), a guest's UUID never changes across its lifecycle, so its
+    /// derived `id = stableId(uuid)` is permanently stable too — no need to
+    /// remap in place. (The earlier `var`-and-remap attempt is what caused the
+    /// scorecard-vanish regression; this revert closes that path for good.)
+    let id: Int
     var name: String
     var initials: String
     let color: String  // hex

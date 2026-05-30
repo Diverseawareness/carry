@@ -1343,7 +1343,11 @@ struct PlayerGroupsSheet: View {
                 let handicaps = newGuests.map(\.hc)
                 let colors = newGuests.map { _ in guestColors[Int.random(in: 0..<guestColors.count)] }
 
+                // Stable-UUID architecture (1.1.2): mint UUIDs client-side
+                // so the server reuses them on any later re-creation cycle.
+                let clientIds = newGuests.map { _ in UUID() }
                 let uuids = try await guestService.createGuestProfiles(
+                    ids: clientIds,
                     names: names, initials: initials,
                     handicaps: handicaps, colors: colors,
                     creatorId: userId
