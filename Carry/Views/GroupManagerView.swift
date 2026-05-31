@@ -20,7 +20,6 @@ struct GroupManagerView: View {
     var onCourseChanged: ((SelectedCourse) -> Void)?
     var onTeeTimeChanged: ((Date?) -> Void)?
     @State private var currentCourse: SelectedCourse?
-    @State private var showCourseChange = false
     @State private var selectedIDs: Set<Int>
     @State private var groups: [[Player]]
     @State private var startingSides: [String]  // "front" or "back" per group
@@ -66,18 +65,55 @@ struct GroupManagerView: View {
     // presenting via DispatchQueue.main.async is the bulletproof path).
     @State private var showLapsedSheet = false
     @State private var lapsedSubscribeTapped = false
-    /// First-group QR coach mark — fires once per game TYPE (Quick Game and
-    /// Skins Group are tracked independently) so a creator sees it the first
-    /// time they enter each kind of group. Tap-to-dismiss or tapping the QR
-    /// button itself burns the gate. See CoachMark.swift.
-    @AppStorage("hasSeenFirstQuickGameQRCoachMark") private var hasSeenQuickGameQRCoachMark: Bool = false
-    @AppStorage("hasSeenFirstSkinsGroupQRCoachMark") private var hasSeenSkinsGroupQRCoachMark: Bool = false
-    private var hasSeenFirstGroupQRCoachMark: Bool {
-        isQuickGame ? hasSeenQuickGameQRCoachMark : hasSeenSkinsGroupQRCoachMark
+    /// QR coach mark — shows the FIRST 3 TIMES a details sheet is shown, per
+    /// game TYPE (Quick Game and Skins Group tracked independently). Changed
+    /// from a one-time Bool to a 0→3 appearance COUNTER (1.1.2). The counter
+    /// increments once per details-view appearance (`.onAppear`, see
+    /// `bumpGroupQRCoachMarkCountIfNeeded`), NOT per dismissal — so a creator
+    /// who ignores it still sees it on the next two entries. Tap-to-dismiss /
+    /// tapping the QR button hides it for the CURRENT appearance only
+    /// (`coachMarkDismissedThisAppearance`); it returns on the next entry until
+    /// the count reaches 3. New AppStorage keys (`...QRCoachMarkCount`) so the
+    /// behavior is fresh even for users who already burned the legacy Bool.
+    /// See CoachMark.swift. (No architecture doc owns CoachMark as of 1.1.2.)
+    @AppStorage("quickGameQRCoachMarkCount") private var quickGameQRCoachMarkCount: Int = 0
+    @AppStorage("skinsGroupQRCoachMarkCount") private var skinsGroupQRCoachMarkCount: Int = 0
+    /// Hides the coach mark for the current appearance after a tap, without
+    /// consuming a future showing. Reset on each `.onAppear`.
+    @State private var coachMarkDismissedThisAppearance = false
+    private static let groupQRCoachMarkMaxShows = 3
+    /// True when the coach mark should currently render: under the per-type
+    /// show-limit AND not dismissed during this appearance.
+    private var shouldShowGroupQRCoachMark: Bool {
+        let count = isQuickGame ? quickGameQRCoachMarkCount : skinsGroupQRCoachMarkCount
+        return count <= Self.groupQRCoachMarkMaxShows && !coachMarkDismissedThisAppearance
     }
-    private func markFirstGroupQRCoachMarkSeen() {
-        if isQuickGame { hasSeenQuickGameQRCoachMark = true }
-        else { hasSeenSkinsGroupQRCoachMark = true }
+    /// Increment the per-type appearance counter once per details-view mount.
+    /// Called from the first-appear-per-mount path in `handleRootBodyAppear`.
+    /// GroupManagerView re-mounts on every details-sheet open (the parent
+    /// re-passes `initialMembers` etc. on re-mount — see refresh-race-guards.md),
+    /// so "once per mount" == "once per details sheet shown". The
+    /// `coachMarkDismissedThisAppearance` flag is NOT reset here — it's @State,
+    /// fresh-false on each mount, so a sub-sheet push + return within the same
+    /// mount keeps a prior dismissal sticky (no annoying re-pop).
+    private func bumpGroupQRCoachMarkCountIfNeeded() {
+        // Cap at maxShows + 1 (= 4). The counter increments on EACH appearance
+        // and the render shows while `count <= maxShows` (<= 3). So appearances
+        // 1/2/3 set count to 1/2/3 → shown; appearance 4 sets it to 4 → hidden;
+        // capped there so it never grows unbounded. (Capping AT maxShows would
+        // leave count==3 forever and show it every time — off-by-one.)
+        let ceiling = Self.groupQRCoachMarkMaxShows + 1
+        if isQuickGame {
+            if quickGameQRCoachMarkCount < ceiling { quickGameQRCoachMarkCount += 1 }
+        } else {
+            if skinsGroupQRCoachMarkCount < ceiling { skinsGroupQRCoachMarkCount += 1 }
+        }
+    }
+    /// Hide for this appearance (tap-dismiss or QR-button tap). Does NOT
+    /// consume future showings — the appearance counter already advanced on
+    /// `.onAppear`.
+    private func dismissGroupQRCoachMarkForThisAppearance() {
+        coachMarkDismissedThisAppearance = true
     }
     /// Fullscreen QR shown when the user shakes their phone inside a group
     /// detail. Big, tap-to-dismiss surface so multiple people can scan at
@@ -108,7 +144,6 @@ struct GroupManagerView: View {
     @State private var showPlayerGroups = false
     @State private var showTipBanner = true  // green tip banner, dismissible
     @State private var roundDate: Date = Date()  // mandatory round date (defaults to today)
-    @State private var showDatePicker = false  // date picker sheet
     @State private var showLeaveDeleteAlert = false
     @State private var showCloseQuickGameAlert = false
     /// Quick-Game swipe is destructive (hard-deletes the player from the
@@ -1260,7 +1295,22 @@ struct GroupManagerView: View {
                 // (freshGroup.teeTimes) so independent/non-consecutive tee
                 // times propagate exactly; fall back to deriving from
                 // scheduledDate + teeTimeInterval for pre-migration groups.
-                if let fresh = freshGroup.teeTimes, !fresh.isEmpty {
+                //
+                // Race guard (bugfix 1.1.2): Game Options Save (and any
+                // future local mutation of `teeTimes`) stamps
+                // `teeTimesLastSavedAt`. If we just saved <8s ago, the
+                // server may not have replicated `tee_times_json` yet —
+                // reading it would stomp the just-saved date+time AND
+                // `roundDate` back to the old values. Mirrors the
+                // existing guard on the secondary (`else if scheduledDate`)
+                // branch below. Without this, the primary branch fired
+                // unconditionally on every refresh and produced the
+                // "date reverts after Save in Game Options" symptom.
+                let teeTimesRecentlySavedPrimary: Bool = {
+                    guard let at = teeTimesLastSavedAt else { return false }
+                    return Date().timeIntervalSince(at) < 8
+                }()
+                if let fresh = freshGroup.teeTimes, !fresh.isEmpty, !teeTimesRecentlySavedPrimary {
                     // Pad/truncate to groupCount so parallel arrays line up.
                     if fresh.count == groupCount {
                         teeTimes = fresh
@@ -1272,7 +1322,7 @@ struct GroupManagerView: View {
                     if let first = fresh.compactMap({ $0 }).first {
                         roundDate = first
                     }
-                } else if let date = freshGroup.scheduledDate {
+                } else if let date = freshGroup.scheduledDate, !teeTimesRecentlySavedPrimary {
                     roundDate = date
                     // Skip the recompute branch when the user has recently
                     // mutated teeTimes locally — the .onChange debounce may
@@ -1358,6 +1408,24 @@ struct GroupManagerView: View {
                 var localized = freshGroup
                 if recentHcSave {
                     localized.handicapPercentage = handicapPercentage
+                }
+                // Date / tee-time propagation to parent (bugfix 1.1.2 — the
+                // leave-and-return case). Without this, `onGroupRefreshed`
+                // pushes the SERVER's still-stale `scheduledDate` + `teeTimes`
+                // into the parent's `groups[idx]`. On re-mount the parent
+                // re-passes those as `initialDate` / `initialTeeTime` /
+                // `initialTeeTimes`, so the just-saved date silently reverts
+                // even though the in-place view looked correct (its @State
+                // was protected by the race guard above, but the parent's
+                // snapshot was not). Patching `localized` with local truth is
+                // exactly step 4 of the "add a race-guarded field" checklist
+                // in refresh-race-guards.md — mirrors the handicapPercentage
+                // patch directly above. Gated on the same 8s window so we only
+                // override the parent when a local edit is genuinely in flight;
+                // after replication, server truth flows through normally.
+                if teeTimesRecentlySavedPrimary {
+                    localized.scheduledDate = roundDate
+                    localized.teeTimes = teeTimes
                 }
                 // Pills contract: `SavedGroup.members` pushed to parent MUST be
                 // 1:1 with the in-app roster. Two operations in order:
@@ -1455,7 +1523,7 @@ struct GroupManagerView: View {
             // CoachMark relative to the rect.
             .overlayPreferenceValue(QRButtonAnchorKey.self) { anchor in
                 GeometryReader { geo in
-                    if let anchor, !hasSeenFirstGroupQRCoachMark {
+                    if let anchor, shouldShowGroupQRCoachMark {
                         let rect = geo[anchor]
                         CoachMark(
                             text: "Reveal QR code for players to scan and join group directly",
@@ -1463,7 +1531,7 @@ struct GroupManagerView: View {
                             pointerInset: 12,
                             onDismiss: {
                                 withAnimation(.easeOut(duration: 0.2)) {
-                                    markFirstGroupQRCoachMarkSeen()
+                                    dismissGroupQRCoachMarkForThisAppearance()
                                 }
                             }
                         )
@@ -1488,7 +1556,7 @@ struct GroupManagerView: View {
                         )
                     }
                 }
-                .allowsHitTesting(!hasSeenFirstGroupQRCoachMark)
+                .allowsHitTesting(shouldShowGroupQRCoachMark)
             }
     }
 
@@ -1551,7 +1619,7 @@ struct GroupManagerView: View {
                         if isCreator && showTipBanner && selectedCount > 0 {
                             VStack(spacing: 0) {
                                 HStack(alignment: .top, spacing: 8) {
-                                    Text("Press a player to change the player order, or move players between groups")
+                                    Text("Press a player to change the player order, or move players between groups. Drag a player to the bottom to create a new group.")
                                         .font(.carry.bodySM)
                                         .foregroundColor(Color.successGreen)
                                         .lineSpacing(2)
@@ -1690,11 +1758,11 @@ struct GroupManagerView: View {
                     if isCreator && supabaseGroupId != nil && storeService.isPremium {
                         Button {
                             showQRInvite = true
-                            // Tapping the QR button itself satisfies the
-                            // coach mark's purpose - dismiss it.
-                            if !hasSeenFirstGroupQRCoachMark {
-                                markFirstGroupQRCoachMarkSeen()
-                            }
+                            // Tapping the QR button satisfies the coach mark's
+                            // purpose for THIS appearance — hide it now (doesn't
+                            // consume future showings; the counter advances on
+                            // .onAppear).
+                            dismissGroupQRCoachMarkForThisAppearance()
                         } label: {
                             Image(systemName: "qrcode")
                                 .font(.system(size: 16, weight: .bold))
@@ -1826,6 +1894,20 @@ struct GroupManagerView: View {
                                     .font(.system(size: 16, weight: .regular))
                                     .foregroundColor(Color.textDark)
                             }
+                            // Tap on the date row opens Game Options for the
+                            // creator. Same sheet the ⋯ button opens, so all
+                            // persistence (date, recurrence, tee time, etc.) is
+                            // already wired through onSave at 2195. Gated to
+                            // `isCreator` to match the course-row tap pattern
+                            // below at line 1885. Non-premium creators can still
+                            // tap + explore; the Save button in the sheet routes
+                            // through the paywall.
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                if isCreator { showSettings = true }
+                            }
+                            .accessibilityAddTraits(isCreator ? .isButton : [])
+                            .accessibilityHint(isCreator ? "Tap to change date" : "")
 
                             if let date = teeTimes.first ?? nil {
                                 HStack(spacing: 10) {
@@ -1836,6 +1918,14 @@ struct GroupManagerView: View {
                                         .font(.system(size: 16, weight: .regular))
                                         .foregroundColor(Color.textDark)
                                 }
+                                // Tap on tee-time row opens Game Options — same
+                                // sheet, same persistence, same gating.
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    if isCreator { showSettings = true }
+                                }
+                                .accessibilityAddTraits(isCreator ? .isButton : [])
+                                .accessibilityHint(isCreator ? "Tap to change tee time" : "")
                             }
 
                             if let recurrence = buildRecurrence() {
@@ -1882,11 +1972,26 @@ struct GroupManagerView: View {
                             }
                         }
                         .frame(height: 32, alignment: .leading)
+                        .contentShape(Rectangle())
                         .onTapGesture {
-                            if isCreator && currentCourse == nil {
-                                showCourseChange = true
-                            }
+                            // Course + index (handicap %) row opens Game Options
+                            // for the creator — consistent with the date + tee-time
+                            // rows above; all header meta rows route to the same
+                            // sheet. Game Options (GroupOptionsSheet) owns BOTH the
+                            // course picker (Change Course → CourseSelectionView,
+                            // returned via result.changedCourse → persistCourseSelection
+                            // at the onSave at ~2349) AND the handicap-allowance editor
+                            // (persisted via updateGroup + handicapPercentageLastSavedAt
+                            // race guard). So every field on this row is editable and
+                            // stored there. Previously this tap only fired in the empty
+                            // (currentCourse == nil) state → straight to CourseSelectionView;
+                            // once a course was set the row was a dead tap and the index %
+                            // was unreachable from here. Routing through Game Options
+                            // unifies the behavior and reaches the index too.
+                            if isCreator { showSettings = true }
                         }
+                        .accessibilityAddTraits(isCreator ? .isButton : [])
+                        .accessibilityHint(isCreator ? "Tap to change course or handicap allowance" : "")
 
                         // Buy-in badge row
                         if let buyIn = Int(buyInText), buyIn > 0 {
@@ -2275,6 +2380,18 @@ struct GroupManagerView: View {
                             }
                             teeTimesLastSavedAt = Date()
                             _ = originalFirst  // silence "unused" — kept for future diff-based logic
+                            // NOTE (1.1.2): `tee_times_json` persistence is
+                            // handled by `.onChange(of: teeTimes)` (~:2478),
+                            // which fires from the teeTimes[0] mutation above —
+                            // it stamps teeTimesLastSavedAt + calls
+                            // syncTeeTimesToSupabase() after a 0.8s debounce.
+                            // No explicit sync call needed here (verified
+                            // against code + tee-time-sovereignty.md). The
+                            // "date reverts" bug was NOT missing persistence —
+                            // it was (1) the missing race guard on the PRIMARY
+                            // refresh branch and (2) the missing `localized`
+                            // patch for the leave-and-return case. Both fixed
+                            // in refreshGroupData.
                         }
                         onTeeTimeChanged?(t)
                     }
@@ -2331,26 +2448,12 @@ struct GroupManagerView: View {
                 .presentationDragIndicator(.visible)
                 .presentationBackground(.white)
         }
-        .sheet(isPresented: $showCourseChange) {
-            CourseSelectionView { course in
-                currentCourse = course
-                // Cache API holes so they survive Supabase refreshes
-                if let holes = course.teeBox?.holes, !holes.isEmpty {
-                    cachedHoles = holes
-                }
-                // Persist full course (denormalized fields + holes JSON) in one call
-                if let groupId = supabaseGroupId {
-                    Task {
-                        try? await GroupService().persistCourseSelection(groupId: groupId, course: course)
-                    }
-                }
-                onCourseChanged?(course)
-                showCourseChange = false
-            }
-            .presentationDetents([.large])
-            .presentationDragIndicator(.visible)
-            .presentationBackground(.white)
-        }
+        // (1.1.2) Removed the standalone `showCourseChange` → CourseSelectionView
+        // sheet. The course/index header row now routes to Game Options
+        // (showSettings), which owns its own course picker (showCourseSelector →
+        // CourseSelectionView) + handicap-allowance editor. With no remaining
+        // `showCourseChange = true` setter the sheet was unreachable dead code.
+        // Empty-state "Select a course" still works via Game Options' picker.
         .sheet(isPresented: $showLeaderboard) {
             leaderboardSheet
                 .presentationDetents([.large])
@@ -2610,42 +2713,14 @@ struct GroupManagerView: View {
             ShareSheetView(items: [inviteShareLink])
                 .presentationDetents([.medium])
         }
-        .sheet(isPresented: $showDatePicker) {
-            TeeTimePickerSheet(
-                scheduleMode: $scheduleMode,
-                selectedDate: $roundDate,
-                repeatMode: Binding(
-                    get: { max(repeatMode - 1, 0) },
-                    set: { repeatMode = $0 + 1 }
-                ),
-                selectedDayPill: $selectedDayPill,
-                onSet: {
-                    // Tee times are sovereign — the date picker only sets
-                    // the round's scheduled date. Tee times are edited
-                    // exclusively via the per-group tee-time picker.
-                    onTeeTimeChanged?(roundDate)
-                    onRecurrenceChanged?(buildRecurrence())
-                    showDatePicker = false
-                    ToastManager.shared.success(scheduleMode == 1 ? "Schedule updated" : "Tee time updated")
-                },
-                onCancel: {
-                    roundDate = initialRoundDate
-                    scheduleMode = initialScheduleMode
-                    repeatMode = initialRepeatMode
-                    selectedDayPill = initialSelectedDayPill
-                    showDatePicker = false
-                }
-            )
-            .presentationDetents([.large])
-            .presentationDragIndicator(.visible)
-            .presentationBackground(.white)
-            .onAppear {
-                initialRoundDate = roundDate
-                initialScheduleMode = scheduleMode
-                initialRepeatMode = repeatMode
-                initialSelectedDayPill = selectedDayPill
-            }
-        }
+        // (1.1.2) Removed the orphaned `showDatePicker` → TeeTimePickerSheet
+        // sheet AND its now-dead companions (`datePickerHasChanged` +
+        // `initialRoundDate`/`initialScheduleMode`/`initialRepeatMode`/
+        // `initialSelectedDayPill`). The header date row now routes to Game
+        // Options (showSettings), which owns date + recurrence editing. With
+        // the date-row tap rerouted there were ZERO `showDatePicker = true`
+        // setters left → unreachable dead sheet, and those vars were used ONLY
+        // by it. `buildRecurrence()` stays (still used by the header + Game Options).
         .sheet(isPresented: $showPaywall) {
             PaywallView(trigger: paywallTrigger)
         }
@@ -3181,9 +3256,12 @@ struct GroupManagerView: View {
                                         }
                                         return Int(destPlayer.handicap.rounded())
                                     }()
+                                    // Drag-preview subline — matches the tee-table
+                                    // row's darker gray (textMid #888888, 1.2.x) so a
+                                    // row doesn't flicker to a lighter shade mid-drag.
                                     Text(pops != 0 ? "\(formatHandicap(destPlayer.handicap)) · \(pops > 0 ? "\(pops)" : "+\(abs(pops))")" : formatHandicap(destPlayer.handicap))
                                         .font(.carry.caption)
-                                        .foregroundColor(Color.textSecondary)
+                                        .foregroundColor(Color.textMid)
                                 }
                             }
 
@@ -3243,20 +3321,11 @@ struct GroupManagerView: View {
 
     // MARK: - Tee Time Picker Sheet
 
-    // MARK: - Date Picker Sheet
-
-    @State private var initialRoundDate = Date()
-
-    @State private var initialScheduleMode: Int = 0
-    @State private var initialRepeatMode: Int = 0
-    @State private var initialSelectedDayPill: Int? = nil
-
-    private var datePickerHasChanged: Bool {
-        roundDate != initialRoundDate
-        || scheduleMode != initialScheduleMode
-        || repeatMode != initialRepeatMode
-        || selectedDayPill != initialSelectedDayPill
-    }
+    // (1.1.2) Removed `initialRoundDate` / `initialScheduleMode` /
+    // `initialRepeatMode` / `initialSelectedDayPill` + `datePickerHasChanged` —
+    // they were used ONLY by the orphaned `showDatePicker` sheet (removed above).
+    // Date/recurrence editing now lives entirely in Game Options. `buildRecurrence()`
+    // stays — it's still used by the header recurrence row + Game Options.
 
     /// Build a GameRecurrence from the current picker state
     private func buildRecurrence() -> GameRecurrence? {
@@ -3959,9 +4028,13 @@ struct GroupManagerView: View {
                         .foregroundColor(Color.textSecondary)
                         .opacity(0.7)
                 } else {
+                    // Subline "HC · pops" one nuance darker for legibility
+                    // (1.2.x): textSecondary #999999 → textMid #888888. Single
+                    // deliberate step (textTertiary #6E6E73 would be too dark a
+                    // jump). Scoped to this tee-sheet player row only.
                     Text(pops != 0 ? "\(formatHandicap(player.handicap)) · \(pops > 0 ? "\(pops)" : "+\(abs(pops))")" : formatHandicap(player.handicap))
                         .font(.system(size: 14))
-                        .foregroundColor(Color.textSecondary)
+                        .foregroundColor(Color.textMid)
                         .opacity(isPendingPlayer ? 0.7 : 1)
                 }
             }
@@ -4337,6 +4410,16 @@ struct GroupManagerView: View {
     /// resolve a hundred lines of control flow as part of the rootBody
     /// modifier-chain inference.
     private func handleRootBodyAppear() {
+        // QR coach mark (1.1.2): count this details-view appearance. This
+        // `.onAppear` fires once per mount, and GroupManagerView re-mounts on
+        // each details-sheet open (the parent re-passes `initialMembers` etc. on
+        // re-mount — see refresh-race-guards.md), so this == "once per details
+        // sheet shown". The mark renders for the first 3 such appearances per
+        // game type (see `shouldShowGroupQRCoachMark`). Counting here (not
+        // isCreator-gated) is harmless: the mark only renders when the
+        // creator+premium-gated QR button publishes its anchor.
+        bumpGroupQRCoachMarkCountIfNeeded()
+
         // Quick Game guest persistence: hydrate any locally-snapshotted
         // guests before the first refresh fires. Quick Game guests live
         // only in `round_players` server-side (architectural invariant);
@@ -5498,9 +5581,8 @@ struct GroupOptionsSheet: View {
                         Text("Tee Time")
                             .font(.carry.bodySMBold)
                             .foregroundColor(Color.textPrimary)
-                        Text("Tee times can be updated")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(Color.textSecondary)
+                        // (1.2.x) Removed the "Tee times can be updated" hint
+                        // subline per Daniel — not needed in Game Options.
                     }
                     .padding(.leading, 4)
 

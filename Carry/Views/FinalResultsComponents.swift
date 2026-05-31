@@ -4,67 +4,16 @@ import SwiftUI
 //
 // RoundCompleteView (shown inline on the scorecard when the round finishes) and
 // ResultsSheet (shown from the Home active card) both render the same conceptual
-// content: a hero featuring the current user, a list of other winners with their
-// skin counts and money, and a primary action button. These components are the
-// single source of truth for that layout so the two sheets always stay in sync.
+// content: a single ranked list of players with skin counts + money (the current
+// user appears at their natural rank with a "You" label, NOT pinned/featured),
+// and a primary action button. These components are the single source of truth
+// so the two sheets stay in sync.
+//
+// (1.2.x) The centered `FinalResultsHero` (big avatar + "No Skins Won" subtitle)
+// was removed — players, including the current user, are all `FinalResultsWinnerRow`.
 
-/// Hero section — the current user's avatar, name, and earnings/status line.
-///
-/// Three display modes:
-///   - No skins won: "No Skins Won" (muted)
-///   - Skins won + final: "N Skins Won · $X" (with gold currency)
-///   - Skins won + pending: "N Skins Won" (no money, round still in progress)
-struct FinalResultsHero: View {
-    let player: Player
-    let skinsWon: Int
-    let winAmount: Int
-    let isFinal: Bool
-
-    var body: some View {
-        VStack(spacing: 12) {
-            PlayerAvatar(player: player, size: 86)
-
-            Text(player.shortName)
-                .font(Font.system(size: 24, weight: .bold))
-                .foregroundColor(Color.textPrimary)
-                .lineLimit(1)
-
-            if skinsWon == 0 {
-                Text("No Skins Won")
-                    .font(Font.system(size: 20, weight: .semibold))
-                    .foregroundColor(Color.textSecondary)
-            } else if isFinal {
-                (Text("\(skinsWon) Skin\(skinsWon == 1 ? "" : "s") Won · ")
-                    .foregroundColor(Color.textPrimary)
-                + Text(moneyText(winAmount))
-                    .foregroundColor(Color.goldMuted))
-                    .font(Font.system(size: 20, weight: .semibold))
-            } else {
-                Text("\(skinsWon) Skin\(skinsWon == 1 ? "" : "s") Won")
-                    .font(Font.system(size: 20, weight: .semibold))
-                    .foregroundColor(Color.textPrimary)
-            }
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(accessibilitySummary)
-    }
-
-    private var accessibilitySummary: String {
-        if skinsWon == 0 { return "\(player.shortName), no skins won" }
-        if isFinal {
-            return "\(player.shortName), \(skinsWon) skin\(skinsWon == 1 ? "" : "s") won, \(moneyText(winAmount))"
-        }
-        return "\(player.shortName), \(skinsWon) skin\(skinsWon == 1 ? "" : "s") won"
-    }
-
-    private func moneyText(_ amount: Int) -> String {
-        if amount < 0 { return "-$\(-amount)" }
-        return "$\(amount)"
-    }
-}
-
-/// One row for a player who won skins — avatar + name + skin count + $ amount.
-/// Used below the hero for other winners (not the current user).
+/// One row for a player who won skins — avatar + name (+ "You" pill for the
+/// current user) + skin count + $ amount. Used for ALL players in the list.
 struct FinalResultsWinnerRow: View {
     let player: Player
     let skins: Int
@@ -105,7 +54,8 @@ struct FinalResultsWinnerRow: View {
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 10)
-        .background(isYou ? Color.gold.opacity(0.03) : .clear)
+        // (1.2.x) No gold/cream "You" row tint — the "You" pill alone marks the
+        // current user; the row background stays clear like every other row.
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(isYou ? "You" : player.shortName), \(skins) skin\(skins == 1 ? "" : "s"), \(moneyText(amount))")
     }

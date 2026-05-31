@@ -58,6 +58,13 @@ struct HandicapPickerSheet: View {
             .padding(.horizontal, 40)
             .padding(.bottom, 16)
 
+            // Vertically center the dial in the space between the toggle and
+            // the Done button (1.2.x): this top Spacer balances the existing
+            // one below the dial (line ~119). Previously only the bottom Spacer
+            // existed, pinning the dial up against the toggle with all slack
+            // below it. Two equal Spacers = dial centered in the gap.
+            Spacer()
+
             // Wheel picker
             HStack(spacing: 0) {
                 // Whole number picker
@@ -84,12 +91,24 @@ struct HandicapPickerSheet: View {
                     }
                 }
                 .pickerStyle(.wheel)
-                .frame(width: 70)
+                // Width matches the whole wheel (was 70). Equal widths make the
+                // "." the true symmetry axis of the [whole][.][decimal] group,
+                // so it lands at the sheet's horizontal center — fixes the
+                // slight left-lean from the prior 100/70 mismatch. (1.2.x)
+                .frame(width: 100)
                 .clipped()
             }
-            .scaleEffect(1.3)
+            // Scaled up 1.3 → 1.5 (1.2.x) per design — bigger, easier-to-hit
+            // wheels. `.frame(maxWidth: .infinity)` (default .center alignment)
+            // wraps the scaled wheel group so it sits HORIZONTALLY CENTERED in
+            // the sheet on every device — the prior version let the intrinsic-
+            // width HStack drift left-of-center. Shared component, so this
+            // applies to every caller (Profile, Onboarding, PlayerGroups,
+            // QuickStart). scaleEffect scales around the frame center, so
+            // centering the frame centers the visual wheels too.
+            .scaleEffect(1.5)
             .frame(height: 260)
-            .padding(.horizontal, 20)
+            .frame(maxWidth: .infinity)
 
             // Clamp +10.0 max
             .onChange(of: selectedWhole) { _, newValue in

@@ -2121,38 +2121,22 @@ struct ResultsSheet: View {
             // Scrollable content
             ScrollView {
                 VStack(spacing: 0) {
-                    // Hero — shown only when the viewer is a participant.
-                    // Spectators (non-playing group members viewing the round)
-                    // skip the big-circle hero entirely — it's meaningless as
-                    // a "featured you" moment when you weren't in the round.
-                    // They just see the winners list directly.
-                    let viewerIsParticipant = round.players.contains(where: { $0.id == currentUserId })
-                    if viewerIsParticipant,
-                       let currentPlayer = round.players.first(where: { $0.id == currentUserId }) {
-                        FinalResultsHero(
-                            player: currentPlayer,
-                            skinsWon: round.playerWonHoles[currentPlayer.id]?.count ?? 0,
-                            winAmount: round.playerWinnings[currentPlayer.id] ?? 0,
-                            isFinal: isFinal
-                        )
-                        .padding(.bottom, 24)
-                    }
-
                     if isFinal {
-                        // FINAL — per-player winners list (excludes current user, shown in hero).
-                        // Uses the shared FinalResultsWinnerRow component so RoundCompleteView and
-                        // ResultsSheet render identically.
-                        let winners = otherWinners
+                        // FINAL — ONE ranked list (1.2.x, winnings desc). Was a
+                        // centered hero for the current user above the list; the
+                        // hero + its "No Skins Won" subtitle are gone. The current
+                        // user now appears at their natural rank with a "You" label
+                        // (no pinning, no row tint). Spectators just see the same
+                        // list with no "You" row.
+                        let winners = allWinners
                         ForEach(Array(winners.enumerated()), id: \.element.id) { idx, entry in
+                            if idx > 0 { FinalResultsRowDivider() }
                             FinalResultsWinnerRow(
                                 player: entry.player,
                                 skins: entry.skins,
-                                amount: entry.amount
+                                amount: entry.amount,
+                                isYou: entry.player.id == currentUserId
                             )
-
-                            if idx < winners.count - 1 {
-                                FinalResultsRowDivider()
-                            }
                         }
 
                         // Round Stats — every active player (winners + 0-skins
@@ -2166,12 +2150,22 @@ struct ResultsSheet: View {
                         // PENDING — per-hole won skins + pending leaders
                         let wonHoles = wonHoleRows
                         if !wonHoles.isEmpty {
-                            Text("\(wonHoles.count) Won Skin\(wonHoles.count == 1 ? "" : "s")")
-                                .font(Font.system(size: 18, weight: .semibold))
-                                .foregroundColor(Color.textPrimary)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, 24)
-                                .padding(.bottom, 10)
+                            // "X Won Skins" header with a right-aligned "Hole"
+                            // column label (1.2.x) — matches RoundCompleteView's
+                            // pending header + the design. Each row below is
+                            // avatar + name (+ "You") left, hole number right.
+                            HStack {
+                                Text("\(wonHoles.count) Won Skin\(wonHoles.count == 1 ? "" : "s")")
+                                    .font(Font.system(size: 18, weight: .semibold))
+                                    .foregroundColor(Color.textPrimary)
+                                Spacer()
+                                Text("Hole")
+                                    .font(Font.system(size: 14, weight: .medium))
+                                    .foregroundColor(Color.textSecondary)
+                                    .frame(width: 72, alignment: .trailing)
+                            }
+                            .padding(.horizontal, 24)
+                            .padding(.bottom, 10)
                         }
 
                         ForEach(Array(wonHoles.enumerated()), id: \.element.id) { idx, entry in
@@ -2235,10 +2229,13 @@ struct ResultsSheet: View {
 
     /// All players who won at least one skin, excluding the current user (they're the hero).
     /// Sorted by amount descending, then by name.
-    private var otherWinners: [WinnerEntry] {
+    /// All skin-winners (1.2.x — was `otherWinners`, which excluded the current
+    /// user for the old pinned-hero layout). Now INCLUDES the user so they sit
+    /// at their natural rank in the one ranked list, marked with a "You" label.
+    /// Sorted by winnings desc → most-skins/most-money player on top.
+    private var allWinners: [WinnerEntry] {
         round.playerWonHoles.compactMap { (playerId, holes) -> WinnerEntry? in
-            guard playerId != currentUserId,
-                  !holes.isEmpty,
+            guard !holes.isEmpty,
                   let player = round.players.first(where: { $0.id == playerId }) else { return nil }
             let amount = round.playerWinnings[playerId] ?? 0
             return WinnerEntry(id: playerId, player: player, skins: holes.count, amount: amount)
@@ -2258,20 +2255,21 @@ struct ResultsSheet: View {
         let isYou: Bool
     }
 
-    /// Flatten playerWonHoles into individual hole rows, sorted by hole number
-    /// Excludes current user's skins (already shown in the hero header)
+    /// Flatten playerWonHoles into individual hole rows, sorted by hole number.
+    /// (1.2.x) Includes the current user's won holes too — was excluding them
+    /// for the old pinned hero. The user's rows are flagged `isYou` so the row
+    /// renders the "You" label inline, wherever they fall in the hole order.
     private var wonHoleRows: [WonHoleEntry] {
         var entries: [WonHoleEntry] = []
         let currentId = currentUserId
         for (playerId, holes) in round.playerWonHoles {
-            guard playerId != currentId else { continue }
             guard let player = round.players.first(where: { $0.id == playerId }) else { continue }
             for hole in holes {
                 entries.append(WonHoleEntry(
                     id: "\(playerId)-\(hole)",
                     player: player,
                     holeNum: hole,
-                    isYou: false
+                    isYou: playerId == currentId
                 ))
             }
         }

@@ -27,7 +27,10 @@ struct CashGamesBar: View {
     }
 
     /// Positive skin earnings for a player: (skins won × current skin value).
-    /// Always ≥ 0 — we never show negative amounts in this bar.
+    /// ≥ 0 in the default "gross" display. In "net" display this returns
+    /// gross − buyIn, which CAN be negative (a player who won less than their
+    /// buy-in) — that's intentional and renders red. Net is a Game Options
+    /// choice; gross is the default, where this never goes negative.
     private func skinEarnings(for player: Player) -> Int {
         let skinsWon = skins.values.reduce(0) { total, status in
             if case .won(let winner, _, _, let carry) = status, winner.id == player.id {
@@ -155,7 +158,11 @@ struct CashGamesBar: View {
                 HStack(spacing: 10) {
                     Text(player.shortName)
                         .font(isYou ? Font.carry.bodyLGSemibold : Font.carry.bodyLG)
-                        .foregroundColor(isYou ? Color.textPrimary : Color.textMid)
+                        // Skins-won pill (amount > 0): name = darkest gray /
+                        // almost-black (textPrimary), money = gold (see
+                        // moneyColor). $0 keeps the existing your-name-dark /
+                        // others-mid-gray treatment. (1.2.x)
+                        .foregroundColor(amount > 0 ? Color.textPrimary : (isYou ? Color.textPrimary : Color.textMid))
                         .lineLimit(1)
                     Text(moneyText(amount))
                         .font(.carry.headlineBold)
@@ -231,7 +238,13 @@ struct CashGamesBar: View {
     }
 
     private func moneyColor(_ amount: Int) -> Color {
-        if amount > 0 { return Color.textPrimary }
+        // Skins won → gold (1.2.x, was textPrimary). Uses goldMuted to match
+        // the winnings-money gold already on the results screen + Home cards
+        // (FinalResultsComponents / RoundCompleteView line ~1184) so "$316"
+        // reads as a payout. $0 stays gray. Negative → red: only reachable in
+        // "net" winnings display (gross − buyIn < 0); gross display never goes
+        // negative. Kept intentionally (confirmed 1.2.x), not stale.
+        if amount > 0 { return Color.goldMuted }
         if amount < 0 { return .red }
         return Color.textSecondary
     }

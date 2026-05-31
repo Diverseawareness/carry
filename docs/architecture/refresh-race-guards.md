@@ -34,9 +34,10 @@
 | Property | Value |
 |---|---|
 | Declaration | [GroupManagerView.swift:100](../../Carry/Views/GroupManagerView.swift:100) |
-| Stamped | `.onChange(of: teeTimes)` at [:2401](../../Carry/Views/GroupManagerView.swift:2401) before 0.8s debounce |
-| Checked | refreshGroupData at [:1099-1102](../../Carry/Views/GroupManagerView.swift:1099) |
-| Guards | Recompute fallback at [:1104-1110](../../Carry/Views/GroupManagerView.swift:1104) |
+| Stamped | `.onChange(of: teeTimes)` (~:2570, 0.8s debounce) — stamps teeTimesLastSavedAt + persists `tee_times_json` via `syncTeeTimesToSupabase()` + calls `onTeeTimeChanged`. Game Options `onSave` also stamps (its `teeTimes[0]` mutation re-triggers this onChange; no separate persist call needed). |
+| Checked | refreshGroupData — **both** the primary `freshGroup.teeTimes` branch AND the secondary `scheduledDate` recompute branch (`teeTimesRecentlySavedPrimary`, added 2026-05-30). Before 2026-05-30 ONLY the secondary branch was guarded. |
+| Guards | (a) primary teeTimes adoption + roundDate assignment (guard ADDED 2026-05-30); (b) recompute fallback; (c) **`localized.scheduledDate` + `localized.teeTimes` patch** (added 2026-05-30) so the parent's `groups[idx]` — and therefore `initialDate`/`initialTeeTime`/`initialTeeTimes` on re-mount — carry local truth (the leave-and-return case) |
+| Persistence | `tee_times_json` written by the `.onChange(of: teeTimes)` debounce path (NOT a separate Game-Options call — verified 2026-05-30, see tee-time-sovereignty.md). `scheduled_date` written separately by the parent's `onTeeTimeChanged` → `updateGroup`. The refresh's PRIMARY branch reads `tee_times_json` first; the date-revert bug was the missing guard on that branch (a refresh racing the 0.8s debounce read stale tee_times_json), NOT a missing write. |
 
 ### 3. `handicapPercentageLastSavedAt`
 
@@ -209,6 +210,7 @@ QG guests live in `round_players` only when round is active. Server's `loadSingl
 | 4 | Drag-and-drop tee group (2026-05-09) | dragged player snapped back to original group on next 30s refresh AND navigate-out + back |
 | 5 | Quick Game guest roster (2026-05-10) | server hydrate clobbered just-added guests when navigating out + back during debounce/replication window |
 | 6 | Cross-device guest resurrection (2026-05-13, commit `386b6d0`) | Creator removed guest on Device A; Device B's local cache had the guest, freshGroup.members didn't, legacy preserveGuests filter resurrected on every refresh. Fix: cross-check `freshGroup.guestRosterJson` |
+| 7 | Quick Game date revert from Game Options (2026-05-30) | Editing the round date/time via Game Options Save reverted on landing back in details, AND on leave + return. TWO causes (initial diagnosis wrongly added a third "missing persistence" — corrected: `.onChange(of: teeTimes)` already persists `tee_times_json`): (a) the PRIMARY `freshGroup.teeTimes` refresh branch had NO `teeTimesLastSavedAt` guard — only the secondary `scheduledDate` recompute branch did — so a refresh racing the 0.8s tee-time debounce read stale server `tee_times_json` and stomped `roundDate`+`teeTimes`; (b) `localized` didn't patch `scheduledDate`/`teeTimes`, so the parent's `groups[idx]` reverted and re-mount restored stale via `initialDate`/`initialTeeTime`/`initialTeeTimes`. Fix: `teeTimesRecentlySavedPrimary` guard on the primary branch + patch `localized` for both fields. (No persistence change — the redundant explicit `syncTeeTimesToSupabase()` briefly added during the fix was removed once code review confirmed `.onChange` covers it.) |
 
 ## Adding a new race-guarded field
 

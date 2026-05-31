@@ -370,19 +370,19 @@ struct RoundCompleteView: View {
             .background(Color.white)
 
             // Scrollable content: user hero + won skins + pending skins
-            let currentUserEntry = leaderboard.first { $0.player.id == viewModel.currentUserId }
+            // (1.2.x) `winners` now INCLUDES the current user — they sit at their
+            // natural rank in the one ranked list (leaderboard is sorted
+            // netMoney/skins desc), marked with a "You" label, not pinned. The
+            // old `currentUserEntry` (for the pinned hero/top row) is gone.
             let wonEntries = wonSkinEntries
-            let winners = leaderboard.filter { $0.skinsWon > 0 && $0.player.id != viewModel.currentUserId }
+            let winners = leaderboard.filter { $0.skinsWon > 0 }
             ScrollView {
                 VStack(spacing: 0) {
-                    // Hero — always the current user
-                    if let entry = currentUserEntry {
-                        userHeroSection(entry: entry)
-                            .opacity(showWinner ? 1 : 0)
-                            .offset(y: showWinner ? 0 : 12)
-                            .padding(.bottom, 24)
-                    }
-
+                    // (1.2.x) No centered hero in EITHER state — final shows a
+                    // ranked player list, pending shows per-hole won-skin rows;
+                    // the current user appears as a normal row (with a "You"
+                    // label) wherever they fall. The old big-avatar hero + its
+                    // "No Skins Won" subtitle are gone.
                     if !pendingSkins.isEmpty {
                         // PENDING STATE: per-hole won skin rows
                         if !wonEntries.isEmpty {
@@ -420,8 +420,20 @@ struct RoundCompleteView: View {
                             }
                         }
                     } else {
-                        // FINAL STATE: leaderboard with money
+                        // FINAL STATE: ONE uniform ranked list (1.2.x). Current
+                        // user is the top row (with a "You" label via
+                        // leaderboardRow → FinalResultsWinnerRow), then all other
+                        // winners. `winners` (line ~375) already excludes the
+                        // current user. Each non-first row gets a leading divider
+                        // so the whole list reads evenly.
                         ForEach(Array(winners.enumerated()), id: \.element.id) { index, entry in
+                            if index > 0 {
+                                Rectangle()
+                                    .fill(Color.borderFaint)
+                                    .frame(height: 1)
+                                    .padding(.leading, 82)
+                                    .padding(.trailing, 24)
+                            }
                             leaderboardRow(entry: entry)
                                 .opacity(showLeaderboard ? 1 : 0)
                                 .offset(y: showLeaderboard ? 0 : 8)
@@ -430,15 +442,6 @@ struct RoundCompleteView: View {
                                         .delay(Double(index) * 0.04),
                                     value: showLeaderboard
                                 )
-
-                            if index < winners.count - 1 {
-                                Rectangle()
-                                    .fill(Color.borderFaint)
-                                    .frame(height: 1)
-                                    .frame(height: 1)
-                                    .padding(.leading, 82)
-                                    .padding(.trailing, 24)
-                            }
                         }
                     }
 
@@ -502,17 +505,8 @@ struct RoundCompleteView: View {
         }
     }
 
-    // MARK: - Winner Section
-
-    /// Hero section — uses the shared FinalResultsHero so this view matches ResultsSheet.
-    private func userHeroSection(entry: LeaderboardEntry) -> some View {
-        FinalResultsHero(
-            player: entry.player,
-            skinsWon: entry.skinsWon,
-            winAmount: entry.netMoney,
-            isFinal: pendingSkins.isEmpty
-        )
-    }
+    // (1.2.x) Removed `userHeroSection` — the centered hero is gone from both
+    // results states; the current user is now a normal ranked row.
 
     // MARK: - Won Skins (per-hole)
 
@@ -644,7 +638,7 @@ struct RoundCompleteView: View {
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 10)
-        .background(entry.isYou ? Color.gold.opacity(0.03) : .clear)
+        // (1.2.x) No gold "You" row tint — the "You" pill alone marks you.
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(entry.isYou ? "You" : entry.player.shortName) won skin on Hole \(entry.holeNum)")
     }

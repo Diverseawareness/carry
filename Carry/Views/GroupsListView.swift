@@ -1185,6 +1185,23 @@ struct GroupsListView: View {
                             .padding(.horizontal, 10)
                             .padding(.vertical, 5)
                             .background(Capsule().fill(Color.concludedGreen))
+                        } else if hasPending {
+                            // This card's group has finished but other groups are
+                            // still playing (pending-results CTA shows below).
+                            // Reuse the "Game Done" check-mark badge style but say
+                            // "Group Done" — previously this state fell through to
+                            // the LIVE branch and misleadingly read "LIVE · Hole 18".
+                            HStack(spacing: 3) {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundColor(Color.successGreen)
+                                Text("Group Done")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundColor(Color.successGreen)
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(Capsule().fill(Color.concludedGreen))
                         } else {
                             // LIVE badge — brand green pill
                             let showHole = !isNotStarted

@@ -213,8 +213,22 @@ struct ProfileView: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.horizontal, 22)
-            .padding(.top, 16)
-            .padding(.bottom, 16)
+            // 6px below the status line (was 16) — pulls the whole profile
+            // header up to reclaim ~10pt, giving smaller screens more room to
+            // scroll before the SUBSCRIPTION section clips. This is the sticky
+            // header block above the ScrollView; the sheet sits at the top
+            // safe-area edge, so this padding == the gap from the status line.
+            .padding(.top, 6)
+            // Bottom 16 → 0 (1.2.x): the sticky header sits directly above the
+            // ScrollView (VStack spacing 0), so THIS padding is the gap between
+            // the stats row and where the scrolling content sits — the visual
+            // "crop" line Daniel flagged in the scrolled state. Removing the
+            // 16px trailing whitespace pulls the scroll content (and that crop
+            // line) up ~16px. No reordering; header CONTENT untouched ("preserve
+            // the sticky header as is") — only the gap below it shrank. (The
+            // stats row keeps a 16px internal cushion from the HC button's
+            // .padding(.vertical,16), so 0 here doesn't crowd the header.)
+            .padding(.bottom, 0)
             .background(.white)
 
             ScrollView {
