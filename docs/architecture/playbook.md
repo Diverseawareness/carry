@@ -158,6 +158,13 @@ Walk the questions for your area. If you can't answer one, you haven't read enou
 - [ ] If a new bug surfaced and got fixed, add an entry to [bug-archive.md](bug-archive.md) — symptom, root cause, fix, blueprint that should have prevented it (or the new blueprint section).
 - [ ] Bump the **Last verified** date in each touched blueprint.
 
+## Pre-release gate (before submitting / releasing a build)
+
+Two automated safety nets, both born from real incidents. Run them before any App Store / TestFlight submission.
+
+- [ ] **Tests are green.** The pre-push hook ([`scripts/pre-push`](../../scripts/pre-push) → [`scripts/run-tests.sh`](../../scripts/run-tests.sh)) runs the suite automatically on push and blocks a red one. One-time per machine: `git config core.hooksPath scripts`. _Origin: 1.1.2 shipped with 21 silently-red tests because the suite was never run (the `·`→`+` separator change broke its own assertions)._
+- [ ] **Prod DB matches what the shipping app calls** — run [`scripts/prod-release-smoke-check.sql`](../../scripts/prod-release-smoke-check.sql) in the **LIVE** Studio SQL editor (project `seeitehizboxjbnccnyd`, NOT dev). Every row must say `PASS`. Required whenever the release changed a migration or an RPC call. _Origin: 1.1.2 `create_guest_profiles` — dev passed, prod broke for live users because a `CREATE OR REPLACE` that changed the signature left an ambiguous overload (`function is not unique`, 42725). Migrations apply by hand in Studio here (`db push` is squash-blocked) and no prod service-role key lives locally by design, so this gate is a self-verdicting SQL file run where the migration work already happens._
+
 ## Common symptoms → likely blueprint
 
 | Symptom | First place to look |

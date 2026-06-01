@@ -4,7 +4,7 @@
 
 ## Single-writer rule (1.0.6 fix, commit `f70b6d6`) + Game-Options time propagation (1.0.9, commit `5e29368`)
 
-Per-group tee-time picker ([TeeTimePickerSheet](../../TeeTimePickerSheet.swift)) is the primary writer of `teeTimes: [Date?]?`. As of 1.0.9, Game Options Save propagates a time change to `teeTimes[0]` (and shifts the staggered groups by the same interval) — see "Game Options propagation" below.
+Per-group tee-time picker ([TeeTimePickerSheet](../../Carry/Views/TeeTimePickerSheet.swift)) is the primary writer of `teeTimes: [Date?]?`. As of 1.0.9, Game Options Save propagates a time change to `teeTimes[0]` (and shifts the staggered groups by the same interval) — see "Game Options propagation" below.
 
 | UI | Writes `teeTimes` | Writes side-channel |
 |---|---|---|
@@ -105,3 +105,4 @@ See [refresh-race-guards.md](refresh-race-guards.md) §2.
 ## Last verified
 
 2026-05-13 — patched for commit `5e29368`: Game Options time change now writes `teeTimes[0]` and shifts staggered `[1..N]` by the existing interval. Per-group picker is still the only writer of an individual group's tee time independent of round start. Race guard intact.
+2026-05-31 — fixed stale `TeeTimePickerSheet.swift` path (moved root → `Carry/Views/` in 1.1.2 cleanup).

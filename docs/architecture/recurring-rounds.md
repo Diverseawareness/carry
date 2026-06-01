@@ -38,13 +38,13 @@ No cron — new rounds NOT auto-inserted. Next round started manually via "Sched
 
 ## Recurrence picker UI
 
-[TeeTimePickerSheet.swift:76-132](../../TeeTimePickerSheet.swift:76):
+[TeeTimePickerSheet.swift:70-135](../../Carry/Views/TeeTimePickerSheet.swift:70):
 
 | Component | Lines |
 |---|---|
-| Date picker (base date/time) | [:63-74](../../TeeTimePickerSheet.swift:63) |
-| Frequency buttons (Weekly / Biweekly / Monthly) | [:84](../../TeeTimePickerSheet.swift:84) |
-| Day-of-week pills (W/BW only; Monthly uses day-of-month from date picker) | [:109-129](../../TeeTimePickerSheet.swift:109) |
+| Date picker (base date/time) | [:70-83](../../Carry/Views/TeeTimePickerSheet.swift:70) |
+| Frequency buttons (Weekly / Biweekly / Monthly) | [:91](../../Carry/Views/TeeTimePickerSheet.swift:91) |
+| Day-of-week pills (W/BW only; Monthly uses day-of-month from date picker) | [:115-135](../../Carry/Views/TeeTimePickerSheet.swift:115) |
 
 ## "Schedule Next Round" CTA
 
@@ -98,3 +98,4 @@ Conversion: `w == 1 ? 6 : w - 2`. Sunday at END (Mon-first convention).
 ## Last verified
 
 2026-05-10 — converted to machine-readable format. Recurrence + advancement intact, no auto-cron.
+2026-05-31 — fixed stale `TeeTimePickerSheet.swift` citations (file moved root → `Carry/Views/` in 1.1.2 cleanup; line numbers re-anchored to the 180pt-fix version).
