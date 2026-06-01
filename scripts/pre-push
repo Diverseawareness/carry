@@ -57,6 +57,16 @@ if [[ -z "$RELEVANT" ]]; then
   exit 0
 fi
 
+# Non-blocking: surface drifted doc citations (anchored semantic drift + plain
+# out-of-bounds). A stale citation isn't a correctness bug, so it WARNS rather
+# than blocks — but you see it now instead of discovering it months later.
+# `--fix` auto-repairs anchored drift.
+if ! ./scripts/check-blueprint-citations.sh --quiet >/dev/null 2>&1; then
+  echo "⚠️  pre-push: some doc citations are stale (non-blocking)."
+  echo "   Run './scripts/check-blueprint-citations.sh' to see them, '--fix' to auto-repair anchored ones."
+  echo ""
+fi
+
 echo "▶︎ pre-push: test-relevant files changed — running suite before push."
 echo "   (override with 'git push --no-verify' if you must, but know why.)"
 echo ""

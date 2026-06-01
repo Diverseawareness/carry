@@ -68,11 +68,24 @@ Neither was bad luck. Both were a missing safety net. This branch builds the net
 
 ---
 
+## Citation-drift bug class — closed structurally (2026-05-31)
+
+A 4-agent audit of all 183 `GroupManagerView.swift:NNN` doc citations found ~80 stale ones — content correct, line numbers drifted (300–720 lines for the worst, mostly PRE-existing; this session's two extractions added ~70–113 more). The old checker only caught out-of-bounds, so in-bounds drift rotted silently. Hand-fixing 80 numbers = a patch that re-drifts on the next GMV edit.
+
+**Structural fix shipped** (per Daniel "best most stable fix for the future"): upgraded `check-blueprint-citations.sh` to support **anchored citations** — a symbol in the markdown link title that must sit at/near the cited line:
+`[GroupManagerView.swift:129](../../Carry/Views/GroupManagerView.swift:129 "var scorerIDs:")`
+- anchor at cited line → PASS · anchor elsewhere → DRIFT (reports correct line) · anchor gone → SEMANTIC break (code changed, fix prose).
+- `--fix` auto-heals drifted anchored line numbers. Proven end-to-end (detect → fix → re-clean).
+- Back-compat: all 479 existing plain citations still pass (bounds-only). Migrate hot-file citations to anchored form as touched.
+- Pre-push hook now runs the checker as a NON-blocking warning. Convention documented in playbook.md post-change checklist.
+
+**Tracked debt (NOT done):** the ~80 plain citations are still numerically stale (content accurate). They're a known follow-up — fix opportunistically as docs are touched, converting to anchored form. Not blocking; the agents confirmed ~zero true semantic mismatches (code matches prose, only line numbers moved).
+
 ## Next steps (resume here)
 
-1. **Scorer creator-lock test** — the rule that `scorerIDs[i] = creatorId` for any group containing the creator (scorer-rules.md). Likely needs the same extraction pattern (the logic lives in `syncScorerIDs`). Verify it's behavior-identical first.
-2. **Guest 4-layer persistence test** — harder (involves async RPC + race guard); may only be partially unit-testable.
-3. Then drop to plan #2 (safe shrinkage): `formatMoney` 8→1, `PlayerStatRow` 4→1, `LeaderboardSheet` 3→1, delete `VenmoLogo.swift`.
+1. **Guest 4-layer persistence test** (invariant 3 of 3) — harder (async RPC + race guard); may only be partially unit-testable. Assess honestly; don't force it.
+2. Then plan #2 (safe shrinkage): `formatMoney` 8→1, `PlayerStatRow` 4→1, `LeaderboardSheet` 3→1, delete `VenmoLogo.swift`.
+3. Opportunistic: migrate the ~80 drifted plain citations to anchored form (closes the tracked debt above).
 
 ## Open / not-yet-decided
 - **Merge target:** branch is dev-infrastructure (test scripts + docs + one behavior-identical extraction). When/whether it reaches `main` or a release branch is Daniel's call. Pushed to origin once (hook ran green).

@@ -151,8 +151,11 @@ Walk the questions for your area. If you can't answer one, you haven't read enou
 **Docs are part of the change. A code change that doesn't update the relevant blueprint is incomplete — stale docs mislead and become liability rather than asset.**
 
 - [ ] Update every cited `file:line` in the affected blueprints. Stale docs are worse than no docs.
-- [ ] **Re-read each affected blueprint section against the cited code, line by line.** The citation script catches structural drift (file renamed, line out of bounds) but not semantic drift (right line, wrong description). When in doubt, quote the code verbatim instead of paraphrasing.
-- [ ] **Run `./scripts/check-blueprint-citations.sh`** — verifies all `file:line` references still resolve. Fails fast on structural decay. Run this before every commit that touches `Carry/`, `supabase/`, or `docs/architecture/`.
+- [ ] **Prefer ANCHORED citations for churning files** (anything in `Carry/Views/` — esp. the 6,600-line GroupManagerView). Add the symbol as a markdown link title so drift is caught + auto-healed instead of silently rotting:
+  `[GroupManagerView.swift:129](../../Carry/Views/GroupManagerView.swift:129 "var scorerIDs:")`
+  The title (`"var scorerIDs:"`) is an anchor the checker verifies sits at/near the cited line. Migrate hot-file citations to this form as you touch them — plain `:line` citations still work but only get a bounds check.
+- [ ] **Re-read each affected blueprint section against the cited code, line by line.** The script now catches anchored semantic drift (anchor moved, or anchor gone = code changed → fix the prose), but plain unanchored citations still only get a bounds check. When in doubt, quote the code verbatim instead of paraphrasing.
+- [ ] **Run `./scripts/check-blueprint-citations.sh`** — verifies citations resolve (bounds for plain, anchor-position for anchored). `--fix` auto-repairs drifted *anchored* line numbers. Run before every commit touching `Carry/`, `supabase/`, or `docs/architecture/`. The pre-push hook does NOT run it yet (only tests) — run it manually, or wire it into the hook.
 - [ ] If a new rule emerged, add it to the **Living invariants** table above.
 - [ ] If a new flag was added, add it to the relevant decision matrix.
 - [ ] If a new bug surfaced and got fixed, add an entry to [bug-archive.md](bug-archive.md) — symptom, root cause, fix, blueprint that should have prevented it (or the new blueprint section).

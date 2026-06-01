@@ -47,7 +47,7 @@ Single source of truth for scorer eligibility. See [player-flags.md](player-flag
 
 | Field | Where |
 |---|---|
-| Client `scorerIDs: [Int]` | [GroupManagerView.swift:60](../../Carry/Views/GroupManagerView.swift:60) — one Int per group, 0 = unassigned |
+| Client `scorerIDs: [Int]` | [GroupManagerView.swift:129](../../Carry/Views/GroupManagerView.swift:129 "var scorerIDs:") — one Int per group, 0 = unassigned |
 | Init value | [GroupManagerView.swift:214](../../Carry/Views/GroupManagerView.swift:214) — `safeGrouped.map { $0.first?.id ?? 0 }` |
 | Server column | `skins_groups.scorer_ids` jsonb — [20260330000003](../../supabase/migrations/20260330000003_group_scorer_ids.sql) |
 | Race guard | `scorerIdsLastSavedAt` — [GroupManagerView.swift:92](../../Carry/Views/GroupManagerView.swift:92). 8s window. See [refresh-race-guards.md](refresh-race-guards.md) §1 |
