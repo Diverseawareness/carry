@@ -31,6 +31,19 @@
 --   - ephemeral-guest rule still applies (locked migration 20260501000001)
 --
 -- Apply order: dev first, prod later (per Daniel — 2026-05-30).
+--
+-- ⚠️ OVERLOAD HAZARD (fixed 2026-05-31, after a brief prod incident):
+-- Adding the new `p_ids` arg changes the FUNCTION SIGNATURE, so a bare
+-- `CREATE OR REPLACE` does NOT replace the prior definition — Postgres keeps
+-- the old 4-arg and 5-arg versions and ADDS this 6-arg one as a third
+-- overload. A live-app call with 5 args then matches BOTH the 5-arg (exact)
+-- and the 6-arg (p_ids defaulted) → `function ... is not unique` (42725) →
+-- guest creation breaks for callers on the OLD binary. We must DROP the prior
+-- signatures so exactly ONE function remains; the 6-arg serves every caller
+-- back-compatibly (5-arg calls fall through with p_ids = NULL). These DROPs
+-- are idempotent (IF EXISTS) and safe to re-run.
+DROP FUNCTION IF EXISTS create_guest_profiles(text[], text[], double precision[], text[]);
+DROP FUNCTION IF EXISTS create_guest_profiles(text[], text[], double precision[], text[], uuid);
 
 CREATE OR REPLACE FUNCTION create_guest_profiles(
   p_names text[],
