@@ -61,7 +61,8 @@ Neither was bad luck. Both were a missing safety net. This branch builds the net
 |---|---|---|
 | `Player.group == array index + 1` (group-formation reconciler) | group-formation-canonical.md | ✅ `GroupFormationReconcilerTests` (commit `d480a10`) |
 | Scorer rules 1–6 incl. creator-lock | scorer-rules.md | ✅ `ScorerRulesTests` (extracted `resolvedScorerIDs(...)`) |
-| Guest 4-layer persistence (a guest edit never silently reverts) | guest-lifecycle.md | ⬜ |
+| Guest disease-string defense (snapshot save/load filters "Guest"/0.0, Carry-user exclusion, canonicalKey dedup) | guest-lifecycle.md inv #3 | ✅ `GuestSnapshotFilterTests` — the pure, highest-risk layer |
+| Guest 4-layer EDIT-persistence chain (async RPC + 8s race guard + buildResult) | guest-lifecycle.md inv #4 | ⚠️ NOT unit-tested — integration territory (needs live/mocked Supabase + refresh timing). Honestly out of scope for unit tests; would need a UI/integration harness. |
 | Skins payout math | skins-math.md | ✅ pre-existing (SkinsCalculationTests, PotCalculationTests) |
 | Pops / handicap | skins-math.md | ✅ pre-existing (PopsComputationTests) |
 | Guest canonical identity | guest-lifecycle.md | ✅ pre-existing (GuestCanonicalIdentityTests) |
@@ -81,11 +82,16 @@ A 4-agent audit of all 183 `GroupManagerView.swift:NNN` doc citations found ~80 
 
 **Tracked debt (NOT done):** the ~80 plain citations are still numerically stale (content accurate). They're a known follow-up — fix opportunistically as docs are touched, converting to anchored form. Not blocking; the agents confirmed ~zero true semantic mismatches (code matches prose, only line numbers moved).
 
+## Plan #1 (test the load-bearing invariants) — COMPLETE
+
+All unit-testable invariants now covered. The reconciler, the 6 scorer rules + creator-lock, and the guest disease-string defense each went from zero coverage to guarded-by-the-hook. The one piece deliberately left untested — the async guest-EDIT persistence chain (inv #4) — is integration territory, not a unit-test gap; honestly flagged rather than faked.
+
 ## Next steps (resume here)
 
-1. **Guest 4-layer persistence test** (invariant 3 of 3) — harder (async RPC + race guard); may only be partially unit-testable. Assess honestly; don't force it.
-2. Then plan #2 (safe shrinkage): `formatMoney` 8→1, `PlayerStatRow` 4→1, `LeaderboardSheet` 3→1, delete `VenmoLogo.swift`.
-3. Opportunistic: migrate the ~80 drifted plain citations to anchored form (closes the tracked debt above).
+1. **Plan #2 — safe shrinkage** (mechanical, low risk): `formatMoney` 8→1, `PlayerStatRow` 4→1, `LeaderboardSheet` 3→1, delete `VenmoLogo.swift` (dead). ~350 lines.
+2. **Plan #3 — decompose GroupManagerView** at clean seams (leaderboard / tee-time picker / scorer picker / guest-entry sheets). Now safer — three core invariants are under test.
+3. Opportunistic: migrate the ~80 drifted plain citations to anchored form (closes the tracked debt).
+4. Optional later: an integration/UI-test harness for the guest-edit RPC + race-guard chain (inv #4), if guest-edit regressions recur.
 
 ## Open / not-yet-decided
 - **Merge target:** branch is dev-infrastructure (test scripts + docs + one behavior-identical extraction). When/whether it reaches `main` or a release branch is Daniel's call. Pushed to origin once (hook ran green).
