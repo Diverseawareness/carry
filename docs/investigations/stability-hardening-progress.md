@@ -2,7 +2,7 @@
 
 **Branch:** `feature/stability-hardening` (cut from `hotfix/1.1.2`)
 **Started:** 2026-05-31
-**Status:** 🟢 In progress — 5 commits landed, full suite green, pushed once. Resume rule: read this top-to-bottom first.
+**Status:** 🟢 In progress — 16 commits landed, full suite green. Plan #1 (test invariants) COMPLETE; Plan #2 (safe shrinkage) in progress. Last pushed at commit `e6dbd03` (commits 1–6) — **commits 7–16 are unpushed.** Resume rule: read this top-to-bottom first.
 
 ---
 
@@ -27,15 +27,24 @@ Neither was bad luck. Both were a missing safety net. This branch builds the net
 
 ---
 
-## What's done
+## What's done — commit ledger
 
 | # | Commit | What | Plain English |
 |---|---|---|---|
-| 1 | `10e790c` | Fixed 21 stale `RoundStatsLineTests` (`·`→`+`) | The tests that were silently broken by 1.1.2 — now green |
+| 1 | `10e790c` | Fixed 21 stale `RoundStatsLineTests` (`·`→`+`) | The tests silently broken by 1.1.2 — now green |
 | 2 | `e83f31d` | Pre-push hook + `scripts/run-tests.sh` | Tests run automatically before every push; a red suite is blocked |
 | 3 | `1737588` | `scripts/prod-release-smoke-check.sql` + playbook "Pre-release gate" | Self-verdicting SQL catches the prod-vs-app RPC-drift incident class |
 | 4 | `185395d` | Reconciler-sufficiency review in group-formation-canonical.md | Answered "do we need the big rewrite?" → NO, evidence-backed |
-| 5 | `d480a10` | Extracted `normalizedGroupNums(_:)` + `GroupFormationReconcilerTests` | First load-bearing invariant now under test (Player.group == index) |
+| 5 | `d480a10` | Extracted `normalizedGroupNums(_:)` + `GroupFormationReconcilerTests` | Invariant 1 under test (Player.group == index) |
+| 6 | `e6dbd03` | This progress log created | _(last pushed commit)_ |
+| 7 | `8d04a4a` | Extracted `resolvedScorerIDs(...)` + `ScorerRulesTests` (12 tests) | Invariant 2 under test (scorer rules + creator-lock) |
+| 8 | `11a3142` | Anchored-citation upgrade to `check-blueprint-citations.sh` | Closes the doc-citation-drift bug class (catch + auto-heal) |
+| 9 | `55b2448` | `GuestSnapshotFilterTests` (8 tests) | Invariant 3 under test (guest disease-string defense) → **Plan #1 done** |
+| 10 | `d64ed39` | Deleted dead `VenmoLogo.swift` + `venmoBlue` | Plan #2 — first dead-code removal |
+| 11 | `7d4995a` | Consolidated 8 money formatters → 1 free `moneyText` + `MoneyTextTests` | Plan #2 — duplication |
+| 12 | `d50a4bf` | Removed the fully-dead Venmo subsystem (settlement island + `venmoUsername` ~40 sites) | Plan #2 — net −83 lines |
+
+(Numbering note: commits land in the order above; hashes are the authoritative record. 29 new tests added across #5/#7/#9/#11.)
 
 ### Key decisions locked
 - **Pre-push hook over CI** (commit 2): Daniel is solo → the failure mode is *his* machine pushing untested code; a hook aims exactly there, runs instantly, free, never rots. Logic lives in `scripts/run-tests.sh` so CI can call it verbatim when a teammate is added. **One-time setup per machine: `git config core.hooksPath scripts`** (local config doesn't travel with clones).
@@ -51,7 +60,7 @@ Neither was bad luck. Both were a missing safety net. This branch builds the net
 | `scripts/run-tests.sh` | (the runner) | `./scripts/run-tests.sh` — Carry scheme, coverage off (PLCrashReporter linker bug), auto-picks a simulator |
 | `scripts/pre-push` | red suite reaching origin | auto (on `git push`); skips doc/site-only pushes; override `git push --no-verify` |
 | `scripts/prod-release-smoke-check.sql` | prod RPC signatures vs what the app calls | paste into LIVE Studio SQL editor before release; every row must say `PASS` |
-| `scripts/check-blueprint-citations.sh` | doc `file:line` drift (pre-existing) | `./scripts/check-blueprint-citations.sh` |
+| `scripts/check-blueprint-citations.sh` | doc `file:line` drift — bounds for plain cites, anchor-position for anchored (upgraded commit `11a3142`) | `./scripts/check-blueprint-citations.sh` (`--fix` auto-heals anchored drift) |
 
 ---
 
@@ -91,8 +100,8 @@ All unit-testable invariants now covered. The reconciler, the 6 scorer rules + c
 1. **Plan #2 — safe shrinkage** (mechanical, low risk). Started:
    - ✅ Deleted `VenmoLogo.swift` (verified truly dead — only self-refs) + `CarryColors.venmoBlue` (only used by VenmoLogo) + 4 pbxproj refs. Build green.
    - ✅ FULL Venmo removal (Daniel: "venmo is not used, remove safely" — verified-in-code first): the RoundCompleteView settlement island (`VenmoSettlement`/`venmoSettlements`/`openVenmo`/`venmoIndex`/unsigned `moneyText`) was self-referential DEAD code (`openVenmo` never called). Removed it, which made `Player.venmoUsername` write-only → then removed the field across ~40 app sites + 9 test files. Stat-row unsigned formatter preserved as `RoundStatsView.statRowMoney`. Build + full suite green. MEMORY updated (was wrongly "NOT dead" — the field looked live but its only readers were themselves dead).
-   - ✅ `moneyText` 8→1: consolidated all 8 behaviorally-canonical copies (moneyText ×3, moneyLabel ×2, resultsMoneyLabel ×1, CashGamesBar, FinalResultsComponents) into one free func in Player.swift + `MoneyTextTests`. LEFT the Venmo-settlement formatter (RoundCompleteView:955) — it's intentionally UNSIGNED, different behavior. Build + suite green.
-   - ⬜ Still to do: `PlayerStatRow` 4→1, `LeaderboardSheet` 3→1 (bigger — these are view structs, not pure funcs; more care needed).
+   - ✅ `moneyText` 8→1: consolidated all 8 behaviorally-canonical copies into one free func in Player.swift + `MoneyTextTests`. The one outlier (RoundCompleteView's intentionally-UNSIGNED formatter) was later removed with the Venmo subsystem (#12), except the stat-row use, preserved as `RoundStatsView.statRowMoney`.
+   - ⬜ Still to do: `PlayerStatRow` 4→1, `LeaderboardSheet` 3→1 (bigger — these are view structs, not pure funcs; more care + likely your eyes on the rendered result).
 2. **Plan #3 — decompose GroupManagerView** at clean seams (leaderboard / tee-time picker / scorer picker / guest-entry sheets). Now safer — three core invariants are under test.
 3. Opportunistic: migrate the ~80 drifted plain citations to anchored form (closes the tracked debt).
 4. Optional later: an integration/UI-test harness for the guest-edit RPC + race-guard chain (inv #4), if guest-edit regressions recur.
