@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# pre-push  (tracked git hook — wired via `git config core.hooksPath scripts`)
+#
+# Runs the CarryTests suite before a push and BLOCKS the push if it's red.
+# This is the safety net for the failure mode that shipped a red suite in
+# 1.1.2: tests existed but were never run, so a self-broken test slipped by.
+#
+# Smart-skip: only runs when the push includes changes to Swift sources,
+# the test target, or Supabase migrations — i.e. things that can actually
+# break the suite. Doc-only / site-only / asset-only pushes skip instantly
+# so the hook never becomes friction worth bypassing.
+#
+# Override (use sparingly, and know what you're doing):
+#   git push --no-verify
+#
+# Exit codes:
+#   0  tests passed OR no test-relevant files in the push (skip)
+#   1  tests failed → push blocked
+
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
+
+# Determine the range of commits being pushed. git feeds the hook lines of:
+#   <local ref> <local sha> <remote ref> <remote sha>
+# on stdin. We diff each local sha against its remote counterpart (or against
+# the merge-base with origin/HEAD for brand-new branches) to see what's changing.
+TEST_RELEVANT_REGEX='(\.swift$|^supabase/migrations/|Carry\.xcodeproj/)'
+
+changed_files() {
+  local found=0
+  while read -r _localref localsha _remoteref remotesha; do
+    [[ -z "${localsha:-}" ]] && continue
+    # Deletion push (localsha all-zero) — nothing to test.
+    [[ "$localsha" =~ ^0+$ ]] && continue
+    local range
+    if [[ "$remotesha" =~ ^0+$ ]]; then
+      # New branch on remote: diff against whatever it forked from.
+      local base
+      base="$(git merge-base "$localsha" origin/HEAD 2>/dev/null || true)"
+      range="${base:+$base..}$localsha"
+    else
+      range="$remotesha..$localsha"
+    fi
+    git diff --name-only "$range" 2>/dev/null || true
+    found=1
+  done
+  # If stdin gave us nothing (e.g. manual run), fall back to "last commit".
+  [[ "$found" == "0" ]] && git diff --name-only HEAD~1..HEAD 2>/dev/null || true
+}
+
+RELEVANT="$(changed_files | grep -E "$TEST_RELEVANT_REGEX" || true)"
+
+if [[ -z "$RELEVANT" ]]; then
+  echo "↪︎ pre-push: no Swift/migration/project changes in this push — skipping tests."
+  exit 0
+fi
+
+echo "▶︎ pre-push: test-relevant files changed — running suite before push."
+echo "   (override with 'git push --no-verify' if you must, but know why.)"
+echo ""
+
+if ./scripts/run-tests.sh; then
+  exit 0
+else
+  echo ""
+  echo "🛑 Push BLOCKED — tests are red. Fix them, or 'git push --no-verify' to override."
+  exit 1
+fi
