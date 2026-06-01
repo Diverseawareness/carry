@@ -543,24 +543,46 @@ struct GroupManagerView: View {
 
     /// Ensure each group has a valid scorer; default to first confirmed (non-pending) player
     private func syncScorerIDs() {
+        scorerIDs = Self.resolvedScorerIDs(
+            groups: groups,
+            current: scorerIDs,
+            isQuickGame: isQuickGame,
+            creatorId: creatorId
+        )
+    }
+
+    /// Pure resolver for the 6 scorer-assignment rules (scorer-rules.md §"syncScorerIDs rules").
+    /// Given a tee-group arrangement + the current per-group scorer ids, returns the
+    /// reconciled scorer ids. No `@State` access — extracted from `syncScorerIDs()` so the
+    /// rules (especially the load-bearing creator-lock, rule 6) are unit-testable. The
+    /// instance method above calls this verbatim; behavior is unchanged.
+    ///
+    /// Rules, in order:
+    ///   1. Expand to group count — new group defaults to its first `canScore` player, else 0.
+    ///   2. Trim to group count — drop tail entries when groups shrink.
+    ///   3. Wipe if the assigned scorer is no longer in the group → 0 (missing-scorer banner).
+    ///   4. Wipe permanent guests (guest/no-profile AND not pending) → 0. Pending preserved.
+    ///   5. Skins Group only: advance past a pending scorer to the next confirmed Carry user.
+    ///   6. Creator-lock (LAST, overrides 3–5): any group containing the creator → creatorId.
+    static func resolvedScorerIDs(
+        groups: [[Player]],
+        current: [Int],
+        isQuickGame: Bool,
+        creatorId: Int
+    ) -> [Int] {
+        var scorerIDs = current
+
+        // Rule 1 — expand.
         while scorerIDs.count < groups.count {
-            // For a brand-new group being appended, default to the first
-            // Carry user (skip guests and phone invites — they can't score).
-            // If none exists, leave 0 so the missing-scorer banner surfaces
-            // and prompts manual assignment.
             let defaultScorer = groups[scorerIDs.count].first(where: \.canScore)
             scorerIDs.append(defaultScorer?.id ?? 0)
         }
+        // Rule 2 — trim.
         while scorerIDs.count > groups.count {
             scorerIDs.removeLast()
         }
-        // Validate existing scorer assignments:
-        //  - scorerIDs[i] == 0              → intentionally empty (banner); don't auto-fill
-        //  - scorer no longer in the group  → clear (banner); don't auto-reassign
-        //  - scorer is a PERMANENT guest    → clear (banner); guests can't score
-        //      (permanent = isGuest && NOT pending invite — they'll never upgrade)
-        //  - Skins Group pending scorer     → advance past to next confirmed Carry user
-        //                                     (existing behavior, Quick Games allow pending)
+
+        // Rules 3–5 — validate existing assignments.
         for i in 0..<groups.count {
             if scorerIDs[i] == 0 { continue }                  // respect empty — banner will prompt
 
@@ -569,50 +591,27 @@ struct GroupManagerView: View {
             let isPendingScorer = currentScorer?.isPendingInvite == true
                 || currentScorer?.isPendingAccept == true
             // A guest who is ALSO pending-invited will become a valid scorer
-            // when they claim their invite (Carry profile replaces/links to
-            // the guest profile). Only treat as a "real" non-scoring guest
-            // when there's no pending invite to rescue them.
+            // when they claim their invite. Only treat as a "real" non-scoring
+            // guest when there's no pending invite to rescue them.
             let isPermanentGuest = (currentScorer?.isGuest == true || currentScorer?.profileId == nil)
                 && !isPendingScorer
 
             if !groupPlayerIDs.contains(scorerIDs[i]) {
-                // Scorer was removed (e.g. swipe-delete) → leave empty so
-                // the creator gets prompted via the missing-scorer banner.
-                #if DEBUG
-                print("[syncScorerIDs] ⚠️ Wiping Group \(i+1) scorer id=\(scorerIDs[i]) — NOT IN groups[\(i)] (groupIds=\(groupPlayerIDs))")
-                #endif
-                scorerIDs[i] = 0
+                scorerIDs[i] = 0                               // Rule 3 — scorer left the group
             } else if isPermanentGuest {
-                // Can't score → clear, banner prompts manual pick.
-                #if DEBUG
-                print("[syncScorerIDs] ⚠️ Wiping Group \(i+1) scorer \(currentScorer?.name ?? "?") — PERMANENT GUEST (isGuest=\(currentScorer?.isGuest == true), profileId=\(currentScorer?.profileId?.uuidString ?? "nil"), pendingInvite=\(currentScorer?.isPendingInvite == true), pendingAccept=\(currentScorer?.isPendingAccept == true))")
-                #endif
-                scorerIDs[i] = 0
+                scorerIDs[i] = 0                               // Rule 4 — guests can't score
             } else if !isQuickGame && isPendingScorer {
-                // Skins Group: advance past pending scorer to next confirmed
-                // Carry user (matches prior behavior).
-                let nextConfirmed = groups[i].first(where: \.canScore)
-                #if DEBUG
-                print("[syncScorerIDs] Advancing Group \(i+1) scorer past pending \(currentScorer?.name ?? "?") → \(nextConfirmed?.name ?? "0")")
-                #endif
-                scorerIDs[i] = nextConfirmed?.id ?? 0
+                scorerIDs[i] = groups[i].first(where: \.canScore)?.id ?? 0  // Rule 5 — SG advance past pending
             }
         }
-        // Creator-locked-as-scorer invariant: wherever the creator sits in
-        // the tee sheet, that group's scorer MUST be the creator. Applied
-        // after the per-group validation above so it overrides any earlier
-        // wipe/advance that would have cleared the slot. The creator can't
-        // be a guest (always a Carry user), so `canScore` is implicit.
-        //
-        // Using `creatorId` (not `currentUserId`) makes this work on both
-        // the creator's device AND any member's device — both derive the
-        // same `creatorId` from the group's `created_by` UUID. Previously
-        // the check was against `currentUserId`, which silently skipped on
-        // member devices and also failed on the creator's side whenever
-        // `currentUserId` defaulted to the init's `1` sentinel.
+
+        // Rule 6 — creator-lock (overrides 3–5). Uses `creatorId`, not `currentUserId`,
+        // so it holds on both the creator's device and any member's device.
         for i in 0..<groups.count where groups[i].contains(where: { $0.id == creatorId }) {
             scorerIDs[i] = creatorId
         }
+
+        return scorerIDs
     }
 
     /// Ensure each group has a selected tee; default to "Combos"

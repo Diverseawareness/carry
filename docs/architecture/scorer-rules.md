@@ -54,16 +54,16 @@ Single source of truth for scorer eligibility. See [player-flags.md](player-flag
 
 ## `syncScorerIDs()` rules
 
-[GroupManagerView.swift:422-493](../../Carry/Views/GroupManagerView.swift:422). Six rules in order:
+The instance method [GroupManagerView.swift:545](../../Carry/Views/GroupManagerView.swift:545) is a thin wrapper that assigns the result of the pure resolver [`resolvedScorerIDs(groups:current:isQuickGame:creatorId:)`:567](../../Carry/Views/GroupManagerView.swift:567) — extracted 2026-05-31 so the rules are unit-testable (behavior unchanged; the only diff is the `#if DEBUG` per-wipe logs were dropped). Tested by [ScorerRulesTests.swift](../../CarryTests/ScorerRulesTests.swift) (all 6 rules, incl. the creator-lock-overrides-wipe ordering). Six rules in order:
 
 | # | Rule | Lines |
 |---|---|---|
-| 1 | Expand to match group count — append default scorer (first canScore in new group, or 0) | [:422-430](../../Carry/Views/GroupManagerView.swift:422) |
-| 2 | Trim to group count — when groups shrink, remove tail entries | [:431-433](../../Carry/Views/GroupManagerView.swift:431) |
-| 3 | Wipe if scorer no longer in group — set to 0 (missing-scorer banner prompts reassign) | [:455-461](../../Carry/Views/GroupManagerView.swift:455) |
-| 4 | Wipe permanent guests — guests can't score, set to 0. Pending-invite guests preserved | [:462-467](../../Carry/Views/GroupManagerView.swift:462) |
-| 5 | Skins Group only: advance past pending scorer to next confirmed Carry user. Quick Games allow pending (assignment IS the playing-today signal) | [:468-476](../../Carry/Views/GroupManagerView.swift:468) |
-| 6 | **Creator-locked invariant** — for every group containing the creator, `scorerIDs[i] = creatorId`. Applied LAST so it overrides earlier wipes. Uses `creatorId`, not `currentUserId` | [:478-492](../../Carry/Views/GroupManagerView.swift:478) |
+| 1 | Expand to match group count — append default scorer (first canScore in new group, or 0) | [:575-578](../../Carry/Views/GroupManagerView.swift:575) |
+| 2 | Trim to group count — when groups shrink, remove tail entries | [:580-582](../../Carry/Views/GroupManagerView.swift:580) |
+| 3 | Wipe if scorer no longer in group — set to 0 (missing-scorer banner prompts reassign) | [:585-607](../../Carry/Views/GroupManagerView.swift:585) |
+| 4 | Wipe permanent guests — guests can't score, set to 0. Pending-invite guests preserved | [:585-607](../../Carry/Views/GroupManagerView.swift:585) |
+| 5 | Skins Group only: advance past pending scorer to next confirmed Carry user. Quick Games allow pending (assignment IS the playing-today signal) | [:585-607](../../Carry/Views/GroupManagerView.swift:585) |
+| 6 | **Creator-locked invariant** — for every group containing the creator, `scorerIDs[i] = creatorId`. Applied LAST so it overrides earlier wipes. Uses `creatorId`, not `currentUserId` | [:608-615](../../Carry/Views/GroupManagerView.swift:608) |
 
 ## `PlayerGroupsSheet.scorerSlotBinding` setter
 
@@ -309,3 +309,4 @@ The post-mutation reconciler at `.onChange(of: groups)` ([GroupManagerView.swift
 ## Last verified
 
 2026-05-13 — patched Score Keeper UI section for the `af0a84d`/`8e4ce5e` reverts (SG scorer picker reverted to flat-list, no SMS-invite path). Refreshed line citations for hotfix/1.0.9 code layout. Scorer-anchored rule + enforcement points unchanged.
+2026-05-31 — `syncScorerIDs` rules extracted to pure `resolvedScorerIDs(...)` + covered by `ScorerRulesTests` (stability hardening). Re-anchored the `syncScorerIDs()` rules-table citations (method now at :545, resolver at :567).

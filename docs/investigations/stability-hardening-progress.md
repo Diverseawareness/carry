@@ -60,7 +60,7 @@ Neither was bad luck. Both were a missing safety net. This branch builds the net
 | Invariant | Doc | Tested? |
 |---|---|---|
 | `Player.group == array index + 1` (group-formation reconciler) | group-formation-canonical.md | ✅ `GroupFormationReconcilerTests` (commit `d480a10`) |
-| Scorer creator-lock (creator is always a valid scorer of their group) | scorer-rules.md | ⬜ next candidate |
+| Scorer rules 1–6 incl. creator-lock | scorer-rules.md | ✅ `ScorerRulesTests` (extracted `resolvedScorerIDs(...)`) |
 | Guest 4-layer persistence (a guest edit never silently reverts) | guest-lifecycle.md | ⬜ |
 | Skins payout math | skins-math.md | ✅ pre-existing (SkinsCalculationTests, PotCalculationTests) |
 | Pops / handicap | skins-math.md | ✅ pre-existing (PopsComputationTests) |
