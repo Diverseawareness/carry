@@ -44,7 +44,6 @@ extension Color {
 
     // MARK: Brand – Other
 
-    static let venmoBlue   = Color(hexString: "#008CFF")
     static let deepNavy    = Color(hexString: "#181D27")
     static let debugOrange = Color(hexString: "#C0713B")
 

@@ -32,7 +32,6 @@
 		609646692F8F6140002F3BA9 /* LiveActivityService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 609646682F8F6140002F3BA9 /* LiveActivityService.swift */; };
 		70E6DD8F93DE4E9B947D2ADE /* GolfCourseService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC29B0CF11FF413AA819A069 /* GolfCourseService.swift */; };
 		8F4CA1E527DB49E3A6D8B193 /* PlayerSearchService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3B7E2D419CF4FA8B1C60D72 /* PlayerSearchService.swift */; };
-		95379D27DEDC14C1D60D06A4 /* VenmoLogo.swift in Sources */ = {isa = PBXBuildFile; fileRef = A298F2722FC1DED0209E5BB2 /* VenmoLogo.swift */; };
 		A10001 /* CarryApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10001 /* CarryApp.swift */; };
 		A10002 /* Player.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10002 /* Player.swift */; };
 		A10003 /* Hole.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10003 /* Hole.swift */; };
@@ -165,7 +164,6 @@
 		609646682F8F6140002F3BA9 /* LiveActivityService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityService.swift; sourceTree = "<group>"; };
 		60C5D65C2FBD6D07009F14E6 /* Carry.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = Carry.xctestplan; sourceTree = "<group>"; };
 		9E4B1697B91D41F1A81D3762 /* SkinConfettiBurst.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkinConfettiBurst.swift; sourceTree = "<group>"; };
-		A298F2722FC1DED0209E5BB2 /* VenmoLogo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VenmoLogo.swift; sourceTree = "<group>"; };
 		A3B7E2D419CF4FA8B1C60D72 /* PlayerSearchService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerSearchService.swift; sourceTree = "<group>"; };
 		A7A80C81F7A84402810B5460 /* CourseSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CourseSelectionView.swift; sourceTree = "<group>"; };
 		B10001 /* CarryApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarryApp.swift; sourceTree = "<group>"; };
@@ -432,7 +430,6 @@
 				B20002 /* PaywallView.swift */,
 				B10033 /* MainTabView.swift */,
 				B10034 /* GroupsListView.swift */,
-				A298F2722FC1DED0209E5BB2 /* VenmoLogo.swift */,
 				B10035 /* ProfileSheetView.swift */,
 				B20203 /* SubscriptionGateSheet.swift */,
 				A7A80C81F7A84402810B5460 /* CourseSelectionView.swift */,
@@ -712,7 +709,6 @@
 				A10100 /* GolfBallLoader.swift in Sources */,
 				A10033 /* MainTabView.swift in Sources */,
 				A10034 /* GroupsListView.swift in Sources */,
-				95379D27DEDC14C1D60D06A4 /* VenmoLogo.swift in Sources */,
 				A10035 /* ProfileSheetView.swift in Sources */,
 				EEF79AF1C0C64C8A9A994DFC /* GolfCourseAPI.swift in Sources */,
 				70E6DD8F93DE4E9B947D2ADE /* GolfCourseService.swift in Sources */,
