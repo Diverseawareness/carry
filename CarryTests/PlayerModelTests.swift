@@ -31,14 +31,14 @@ final class PlayerModelTests: XCTestCase {
     func testShortName_firstAndLastInitial() {
         let player = Player(id: 1, name: "Daniel Sigvardsson", initials: "DS",
                            color: "#333", handicap: 5.6, avatar: "", group: 1,
-                           ghinNumber: nil, venmoUsername: nil)
+                           ghinNumber: nil)
         XCTAssertEqual(player.shortName, "Daniel S.")
     }
 
     func testShortName_singleName() {
         let player = Player(id: 1, name: "Ziggy", initials: "ZI",
                            color: "#333", handicap: 5.6, avatar: "", group: 1,
-                           ghinNumber: nil, venmoUsername: nil)
+                           ghinNumber: nil)
         XCTAssertEqual(player.shortName, "Ziggy")
     }
 

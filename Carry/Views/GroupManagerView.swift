@@ -5048,7 +5048,6 @@ struct GroupManagerView: View {
             avatar: "✉️",
             group: 1,
             ghinNumber: nil,
-            venmoUsername: nil,
             phoneNumber: digits,
             isPendingInvite: true
         )
@@ -5148,7 +5147,6 @@ struct GroupManagerView: View {
             avatar: guestAvatars[avatarIdx],
             group: 1,
             ghinNumber: nil,
-            venmoUsername: nil,
             isGuest: true   // S5: was silently omitted → guest dropped by snapshot filter
         )
 

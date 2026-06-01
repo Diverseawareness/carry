@@ -38,13 +38,13 @@ final class GuestSnapshotFilterTests: XCTestCase {
     private func guest(_ name: String, profileId: UUID? = UUID(), handicap: Double = 5) -> Player {
         Player(id: Int.random(in: 1000...9_000_000), name: name, initials: String(name.prefix(2)).uppercased(),
                color: "#000000", handicap: handicap, avatar: "", group: 1,
-               ghinNumber: nil, venmoUsername: nil, isGuest: true, profileId: profileId)
+               ghinNumber: nil, isGuest: true, profileId: profileId)
     }
 
     private func carryUser(_ name: String) -> Player {
         Player(id: Int.random(in: 1000...9_000_000), name: name, initials: String(name.prefix(2)).uppercased(),
                color: "#000000", handicap: 5, avatar: "", group: 1,
-               ghinNumber: nil, venmoUsername: nil, isGuest: false, profileId: UUID())
+               ghinNumber: nil, isGuest: false, profileId: UUID())
     }
 
     // MARK: - Disease-string filter (the load-bearing corruption defense)

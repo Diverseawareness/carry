@@ -17,7 +17,7 @@ final class GroupFormationReconcilerTests: XCTestCase {
     private func player(_ id: Int, group: Int) -> Player {
         Player(id: id, name: "P\(id)", initials: "P\(id)",
                color: "#000000", handicap: 0, avatar: "", group: group,
-               ghinNumber: nil, venmoUsername: nil)
+               ghinNumber: nil)
     }
 
     /// The core invariant: after normalization, every player's `.group` equals

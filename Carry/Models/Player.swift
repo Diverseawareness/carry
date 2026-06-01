@@ -18,7 +18,6 @@ struct Player: Identifiable, Hashable {
     let avatar: String  // emoji fallback
     var group: Int
     let ghinNumber: String?  // GHIN number for handicap lookup
-    let venmoUsername: String?  // Venmo handle for payouts
     var avatarImageName: String? = nil  // asset catalog image name (nil = use emoji)
     var avatarUrl: String? = nil  // remote avatar URL from Supabase storage
     var phoneNumber: String? = nil  // phone number for invite SMS
@@ -77,25 +76,25 @@ struct Player: Identifiable, Hashable {
 
     static let allPlayers: [Player] = [
         // Group 1
-        Player(id: 1, name: "Daniel", initials: "DS", color: "#D4A017", handicap: 6.5, avatar: "🏌️", group: 1, ghinNumber: "1234567", venmoUsername: "Daniel-Sigvardsson", avatarImageName: "avatar-daniel"),
-        Player(id: 2, name: "Garret", initials: "GB", color: "#4A90D9", handicap: 1.7, avatar: "🧢", group: 1, ghinNumber: "2345678", venmoUsername: "Garret-B", avatarImageName: "avatar-garret"),
-        Player(id: 3, name: "Adi", initials: "AR", color: "#E05555", handicap: 0.2, avatar: "🦅", group: 1, ghinNumber: "3456789", venmoUsername: "Adi-R", avatarImageName: "avatar-adi"),
-        Player(id: 4, name: "Bartholomew", initials: "BS", color: "#2ECC71", handicap: 13.6, avatar: "🍺", group: 1, ghinNumber: nil, venmoUsername: nil, avatarImageName: nil),
+        Player(id: 1, name: "Daniel", initials: "DS", color: "#D4A017", handicap: 6.5, avatar: "🏌️", group: 1, ghinNumber: "1234567", avatarImageName: "avatar-daniel"),
+        Player(id: 2, name: "Garret", initials: "GB", color: "#4A90D9", handicap: 1.7, avatar: "🧢", group: 1, ghinNumber: "2345678", avatarImageName: "avatar-garret"),
+        Player(id: 3, name: "Adi", initials: "AR", color: "#E05555", handicap: 0.2, avatar: "🦅", group: 1, ghinNumber: "3456789", avatarImageName: "avatar-adi"),
+        Player(id: 4, name: "Bartholomew", initials: "BS", color: "#2ECC71", handicap: 13.6, avatar: "🍺", group: 1, ghinNumber: nil, avatarImageName: nil),
         // Group 2
-        Player(id: 5, name: "Keith", initials: "KB", color: "#9B59B6", handicap: 6.2, avatar: "🎩", group: 2, ghinNumber: "5678901", venmoUsername: "Keith-B", avatarImageName: nil),
-        Player(id: 6, name: "Tyson", initials: "TB", color: "#E67E22", handicap: -0.9, avatar: "🕶️", group: 2, ghinNumber: "6789012", venmoUsername: "Tyson-B", avatarImageName: "avatar-tyson"),
-        Player(id: 7, name: "Ryan", initials: "RS", color: "#1ABC9C", handicap: 8.6, avatar: "🐊", group: 2, ghinNumber: nil, venmoUsername: "Ryan-S", avatarImageName: nil),
-        Player(id: 8, name: "AJ", initials: "AJ", color: "#34495E", handicap: 2.2, avatar: "⛳", group: 2, ghinNumber: "8901234", venmoUsername: "AJ-Golf", avatarImageName: "avatar-aj"),
+        Player(id: 5, name: "Keith", initials: "KB", color: "#9B59B6", handicap: 6.2, avatar: "🎩", group: 2, ghinNumber: "5678901", avatarImageName: nil),
+        Player(id: 6, name: "Tyson", initials: "TB", color: "#E67E22", handicap: -0.9, avatar: "🕶️", group: 2, ghinNumber: "6789012", avatarImageName: "avatar-tyson"),
+        Player(id: 7, name: "Ryan", initials: "RS", color: "#1ABC9C", handicap: 8.6, avatar: "🐊", group: 2, ghinNumber: nil, avatarImageName: nil),
+        Player(id: 8, name: "AJ", initials: "AJ", color: "#34495E", handicap: 2.2, avatar: "⛳", group: 2, ghinNumber: "8901234", avatarImageName: "avatar-aj"),
         // Group 3
-        Player(id: 9, name: "Ronnie", initials: "RB", color: "#C0392B", handicap: 5.1, avatar: "🔥", group: 3, ghinNumber: "9012345", venmoUsername: "Ronnie-B", avatarImageName: nil),
-        Player(id: 10, name: "Cameron", initials: "CM", color: "#2980B9", handicap: 6.2, avatar: "🎯", group: 3, ghinNumber: nil, venmoUsername: nil, avatarImageName: nil),
-        Player(id: 11, name: "Jai", initials: "JD", color: "#27AE60", handicap: 11.2, avatar: "🌴", group: 3, ghinNumber: "1123456", venmoUsername: "Jai-D", avatarImageName: nil),
-        Player(id: 12, name: "Frank", initials: "FM", color: "#F39C12", handicap: 13.3, avatar: "☀️", group: 3, ghinNumber: "1234568", venmoUsername: "Frank-M", avatarImageName: nil),
+        Player(id: 9, name: "Ronnie", initials: "RB", color: "#C0392B", handicap: 5.1, avatar: "🔥", group: 3, ghinNumber: "9012345", avatarImageName: nil),
+        Player(id: 10, name: "Cameron", initials: "CM", color: "#2980B9", handicap: 6.2, avatar: "🎯", group: 3, ghinNumber: nil, avatarImageName: nil),
+        Player(id: 11, name: "Jai", initials: "JD", color: "#27AE60", handicap: 11.2, avatar: "🌴", group: 3, ghinNumber: "1123456", avatarImageName: nil),
+        Player(id: 12, name: "Frank", initials: "FM", color: "#F39C12", handicap: 13.3, avatar: "☀️", group: 3, ghinNumber: "1234568", avatarImageName: nil),
         // Group 4
-        Player(id: 13, name: "Marcus", initials: "ML", color: "#8E44AD", handicap: 4.8, avatar: "🏆", group: 4, ghinNumber: "2234567", venmoUsername: "Marcus-L", avatarImageName: nil),
-        Player(id: 14, name: "Jay", initials: "JV", color: "#0AC4A1", handicap: 9.3, avatar: "🌊", group: 4, ghinNumber: "3345678", venmoUsername: "Jay-V", avatarImageName: nil),
-        Player(id: 15, name: "Stefano", initials: "SR", color: "#D35400", handicap: 3.1, avatar: "🍷", group: 4, ghinNumber: "4456789", venmoUsername: "Stefano-R", avatarImageName: nil),
-        Player(id: 16, name: "Abraham", initials: "AP", color: "#16A085", handicap: 7.7, avatar: "🎲", group: 4, ghinNumber: nil, venmoUsername: nil, avatarImageName: nil),
+        Player(id: 13, name: "Marcus", initials: "ML", color: "#8E44AD", handicap: 4.8, avatar: "🏆", group: 4, ghinNumber: "2234567", avatarImageName: nil),
+        Player(id: 14, name: "Jay", initials: "JV", color: "#0AC4A1", handicap: 9.3, avatar: "🌊", group: 4, ghinNumber: "3345678", avatarImageName: nil),
+        Player(id: 15, name: "Stefano", initials: "SR", color: "#D35400", handicap: 3.1, avatar: "🍷", group: 4, ghinNumber: "4456789", avatarImageName: nil),
+        Player(id: 16, name: "Abraham", initials: "AP", color: "#16A085", handicap: 7.7, avatar: "🎲", group: 4, ghinNumber: nil, avatarImageName: nil),
     ]
 
     static let totalPlayers: Int = allPlayers.count
@@ -130,7 +129,6 @@ extension Player {
             avatar: profile.avatar,
             group: 1,
             ghinNumber: profile.ghinNumber,
-            venmoUsername: nil,
             avatarImageName: nil,
             avatarUrl: profile.avatarUrl,
             isGuest: profile.isGuest ?? false,

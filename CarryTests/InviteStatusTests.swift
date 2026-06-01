@@ -13,7 +13,7 @@ final class InviteStatusTests: XCTestCase {
         let guest = Player(
             id: 100, name: "Guest Bob", initials: "GB",
             color: "#E67E22", handicap: 12.0, avatar: "",
-            group: 1, ghinNumber: nil, venmoUsername: nil,
+            group: 1, ghinNumber: nil,
             isGuest: true
         )
         XCTAssertFalse(guest.isPendingInvite, "Guest should not be pending invite")
@@ -56,7 +56,7 @@ final class InviteStatusTests: XCTestCase {
         let scorer = Player(
             id: 200, name: "New Player", initials: "NP",
             color: "#999999", handicap: 0, avatar: "",
-            group: 2, ghinNumber: nil, venmoUsername: nil,
+            group: 2, ghinNumber: nil,
             phoneNumber: "5551234567", isPendingInvite: true
         )
         XCTAssertTrue(scorer.isPendingInvite, "SMS scorer should be pending invite")
@@ -85,7 +85,7 @@ final class InviteStatusTests: XCTestCase {
         let member = Player(
             id: 300, name: "Invited", initials: "📩",
             color: "#E67E22", handicap: 0, avatar: "📩",
-            group: 1, ghinNumber: nil, venmoUsername: nil,
+            group: 1, ghinNumber: nil,
             phoneNumber: "5559876543", isPendingInvite: true
         )
         XCTAssertTrue(member.isPendingInvite, "SMS member should be pending invite")
@@ -142,7 +142,7 @@ final class InviteStatusTests: XCTestCase {
         let player = Player(
             id: 1, name: "Daniel", initials: "DS",
             color: "#D4A017", handicap: 5.6, avatar: "",
-            group: 1, ghinNumber: nil, venmoUsername: nil
+            group: 1, ghinNumber: nil
         )
         // PlayerAvatar uses: isPending = isPendingInvite || isPendingAccept
         let isPending = player.isPendingInvite || player.isPendingAccept
@@ -153,7 +153,7 @@ final class InviteStatusTests: XCTestCase {
         var player = Player(
             id: 2, name: "Emese", initials: "EV",
             color: "#9B59B6", handicap: 36.0, avatar: "",
-            group: 1, ghinNumber: nil, venmoUsername: nil
+            group: 1, ghinNumber: nil
         )
         player.isPendingAccept = true
         let isPending = player.isPendingInvite || player.isPendingAccept
@@ -164,7 +164,7 @@ final class InviteStatusTests: XCTestCase {
         let player = Player(
             id: 3, name: "Invited", initials: "IN",
             color: "#E67E22", handicap: 0, avatar: "",
-            group: 1, ghinNumber: nil, venmoUsername: nil,
+            group: 1, ghinNumber: nil,
             isPendingInvite: true
         )
         let isPending = player.isPendingInvite || player.isPendingAccept

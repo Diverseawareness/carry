@@ -228,7 +228,6 @@ struct GroupsListView: View {
                 avatar: "",
                 group: 1,
                 ghinNumber: nil,
-                venmoUsername: nil,
                 avatarUrl: user.avatarUrl,
                 profileId: user.id,
                 homeClub: user.homeClub
@@ -527,7 +526,7 @@ struct GroupsListView: View {
                 color: colors[idx % colors.count],
                 handicap: Double(Int.random(in: 0...25)),
                 avatar: "🏌️", group: groupNum,
-                ghinNumber: nil, venmoUsername: nil,
+                ghinNumber: nil,
                 isPendingAccept: idx != 0, // everyone except creator is invited
                 isGuest: entry.2,
                 profileId: idx == 0 ? nil : UUID()
@@ -691,7 +690,6 @@ struct GroupsListView: View {
                         avatar: player.avatar,
                         group: player.group,
                         ghinNumber: nil,
-                        venmoUsername: nil,
                         avatarImageName: nil,
                         avatarUrl: nil,
                         isGuest: true,
@@ -3897,7 +3895,6 @@ struct CreateGroupSheet: View {
             avatar: "✉️",
             group: 1,
             ghinNumber: nil,
-            venmoUsername: nil,
             phoneNumber: digits,
             isPendingInvite: true,
             inviteMemberId: inviteUUID

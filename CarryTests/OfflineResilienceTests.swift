@@ -12,7 +12,7 @@ final class OfflineResilienceTests: XCTestCase {
             Player(
                 id: i + 1, name: "P\(i + 1)", initials: "P\(i + 1)",
                 color: "#333333", handicap: Double(i) * 2.0, avatar: "",
-                group: 1, ghinNumber: nil, venmoUsername: nil
+                group: 1, ghinNumber: nil
             )
         }
         var config = RoundConfig(

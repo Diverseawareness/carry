@@ -33,7 +33,7 @@ final class SkinsCalculationTests: XCTestCase {
                 avatar: "",
                 group: 1,
                 ghinNumber: nil,
-                venmoUsername: nil
+
             )
         }
         return RoundConfig(

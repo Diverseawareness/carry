@@ -744,7 +744,7 @@ struct ManageMembersSheet: View {
         let invited = Player(
             id: Player.guestId(from: inviteId), name: displayName, initials: "\u{2709}\u{FE0F}",
             color: guestColors[colorIdx], handicap: 0, avatar: "\u{2709}\u{FE0F}",
-            group: 1, ghinNumber: nil, venmoUsername: nil,
+            group: 1, ghinNumber: nil,
             phoneNumber: digits, isPendingInvite: true,
             inviteMemberId: inviteId
         )

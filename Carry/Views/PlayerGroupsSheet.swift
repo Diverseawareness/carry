@@ -1081,7 +1081,6 @@ struct PlayerGroupsSheet: View {
             avatar: "",
             group: groupIndex + 1,
             ghinNumber: nil,
-            venmoUsername: nil,
             avatarUrl: profile.avatarUrl,
             isPendingAccept: isQuickGame ? false : true,
             profileId: profile.id,
@@ -1125,7 +1124,6 @@ struct PlayerGroupsSheet: View {
             avatar: "",
             group: groupIndex + 1,
             ghinNumber: nil,
-            venmoUsername: nil,
             phoneNumber: digits,
             isPendingInvite: true,
             profileId: nil,
@@ -1320,7 +1318,7 @@ struct PlayerGroupsSheet: View {
                     handicap: guest.hc,
                     avatar: guestAvatars[i % guestAvatars.count],
                     group: guest.groupIndex + 1,
-                    ghinNumber: nil, venmoUsername: nil,
+                    ghinNumber: nil,
                     isGuest: true
                 )
                 groups[guest.groupIndex].append(player)
@@ -1379,7 +1377,7 @@ struct PlayerGroupsSheet: View {
                             handicap: guestInfo.hc,
                             avatar: guestAvatars[avatarIdx],
                             group: guestInfo.groupIndex + 1,
-                            ghinNumber: nil, venmoUsername: nil,
+                            ghinNumber: nil,
                             avatarImageName: nil, avatarUrl: nil,
                             isGuest: true, profileId: uuid
                         )
@@ -1577,7 +1575,6 @@ struct PlayerGroupsSheet: View {
                                         avatar: moved.avatar,
                                         group: moved.group,
                                         ghinNumber: moved.ghinNumber,
-                                        venmoUsername: moved.venmoUsername,
                                         avatarImageName: moved.avatarImageName,
                                         avatarUrl: moved.avatarUrl,
                                         phoneNumber: moved.phoneNumber,

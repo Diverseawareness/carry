@@ -87,7 +87,6 @@ struct RoundCompleteView: View {
     @Binding var isCollapsed: Bool
     @State private var shareCardImage: UIImage? = nil
     @State private var showShareSheet = false
-    @State private var venmoIndex: Int = 0
     @State private var showPaywall = false
     /// Demo Round end-of-round conversion sheet ("Want a weekly game like this?").
     /// Presented when viewModel.config.isDemo is true and Save Results is tapped.
@@ -952,76 +951,6 @@ struct RoundCompleteView: View {
         return entries
     }
 
-    private func moneyText(_ amount: Int) -> String {
-        if amount == 0 { return "$0" }
-        return "$\(abs(amount))"
-    }
-
-    // MARK: - Venmo
-
-    struct VenmoSettlement {
-        let player: Player
-        let amount: Int
-        let txnType: String  // "pay" or "charge"
-    }
-
-    private var venmoSettlements: [VenmoSettlement] {
-        guard let myEntry = leaderboard.first(where: { $0.player.id == viewModel.currentUserId }) else { return [] }
-        let myNet = myEntry.netMoney
-
-        if myNet < 0 {
-            // I lost — pay each winner proportionally
-            let winners = leaderboard.filter { $0.netMoney > 0 && $0.player.venmoUsername != nil }
-            let totalWinnings = winners.reduce(0) { $0 + $1.netMoney }
-            guard totalWinnings > 0 else { return [] }
-            return winners.map { entry in
-                let share = Int((Double(abs(myNet)) * Double(entry.netMoney) / Double(totalWinnings)).rounded())
-                return VenmoSettlement(player: entry.player, amount: max(1, share), txnType: "pay")
-            }
-        } else if myNet > 0 {
-            // I won — request from each loser proportionally
-            let losers = leaderboard.filter { $0.netMoney < 0 && $0.player.venmoUsername != nil }
-            let totalLosses = losers.reduce(0) { $0 + abs($1.netMoney) }
-            guard totalLosses > 0 else { return [] }
-            return losers.map { entry in
-                let share = Int((Double(myNet) * Double(abs(entry.netMoney)) / Double(totalLosses)).rounded())
-                return VenmoSettlement(player: entry.player, amount: max(1, share), txnType: "charge")
-            }
-        }
-        return []
-    }
-
-    private func openVenmo(_ settlement: VenmoSettlement) {
-        guard let username = settlement.player.venmoUsername else { return }
-        let note = "Carry Skins – \(viewModel.config.course)"
-
-        // Build Venmo deep link
-        var components = URLComponents()
-        components.scheme = "venmo"
-        components.host = "paycharge"
-        components.queryItems = [
-            URLQueryItem(name: "txn", value: settlement.txnType),
-            URLQueryItem(name: "recipients", value: username),
-            URLQueryItem(name: "amount", value: "\(settlement.amount)"),
-            URLQueryItem(name: "note", value: note),
-        ]
-
-        if let deepLink = components.url {
-            UIApplication.shared.open(deepLink) { success in
-                if !success {
-                    // Fallback: open Venmo profile on web
-                    if let webURL = URL(string: "https://venmo.com/\(username)") {
-                        UIApplication.shared.open(webURL)
-                    }
-                }
-            }
-        }
-
-        // Advance to next settlement (cycles)
-        if !venmoSettlements.isEmpty {
-            venmoIndex = (venmoIndex + 1) % venmoSettlements.count
-        }
-    }
 
     // MARK: - Types
 
@@ -1171,7 +1100,7 @@ struct RoundStatsView: View {
 
                 Spacer()
 
-                Text(moneyText(money))
+                Text(statRowMoney(money))
                     .font(Font.system(size: 17, weight: .semibold))
                     .monospacedDigit()
                     .foregroundColor(
@@ -1253,6 +1182,15 @@ struct RoundStatsView: View {
             }
             return nil
         }.sorted()
+    }
+
+    /// Unsigned money string for the player stat row: `"$50"`, `"$0"` (no minus —
+    /// the row colorizes by sign separately). Behavior-identical to the formatter
+    /// that lived here before the dead Venmo-settlement block was removed;
+    /// deliberately NOT the shared signed `moneyText(_:)`.
+    private func statRowMoney(_ amount: Int) -> String {
+        if amount == 0 { return "$0" }
+        return "$\(abs(amount))"
     }
 
     /// Thin wrapper — all the formatting logic lives in `RoundStatsLine.make`

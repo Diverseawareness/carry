@@ -151,7 +151,6 @@ private struct CachedAvatarImage<Placeholder: View>: View {
                 avatar: "🏌️",
                 group: 1,
                 ghinNumber: nil,
-                venmoUsername: nil,
                 avatarImageName: nil
             ),
             size: 40,

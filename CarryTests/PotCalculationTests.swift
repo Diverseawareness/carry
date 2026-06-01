@@ -10,7 +10,7 @@ final class PotCalculationTests: XCTestCase {
             Player(
                 id: i + 1, name: "P\(i + 1)", initials: "P\(i + 1)",
                 color: "#333333", handicap: 0, avatar: "",
-                group: 1, ghinNumber: nil, venmoUsername: nil
+                group: 1, ghinNumber: nil
             )
         }
         return RoundConfig(

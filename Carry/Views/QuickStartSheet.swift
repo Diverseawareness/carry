@@ -1291,7 +1291,6 @@ struct QuickGameSheet: View {
             avatar: "",
             group: 1,
             ghinNumber: nil,
-            venmoUsername: nil,
             isPendingInvite: slot.isPendingInvite,
             profileId: slot.existingProfileId
         )
@@ -1513,7 +1512,6 @@ struct QuickGameSheet: View {
                     avatar: "",
                     group: groupIndex + 1,
                     ghinNumber: nil,
-                    venmoUsername: nil,
                     avatarImageName: nil,
                     avatarUrl: nil,
                     phoneNumber: slot.phoneNumber,

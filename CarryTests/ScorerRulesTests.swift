@@ -18,21 +18,21 @@ final class ScorerRulesTests: XCTestCase {
     // Carry user: profileId set, not guest, not pending → canScore == true.
     private func carry(_ id: Int, profileId: UUID = UUID()) -> Player {
         Player(id: id, name: "C\(id)", initials: "C\(id)", color: "#000000",
-               handicap: 0, avatar: "", group: 1, ghinNumber: nil, venmoUsername: nil,
+               handicap: 0, avatar: "", group: 1, ghinNumber: nil,
                isGuest: false, profileId: profileId)
     }
 
     // Permanent guest: no profileId, isGuest, not pending → cannot score.
     private func guest(_ id: Int) -> Player {
         Player(id: id, name: "G\(id)", initials: "G\(id)", color: "#000000",
-               handicap: 0, avatar: "", group: 1, ghinNumber: nil, venmoUsername: nil,
+               handicap: 0, avatar: "", group: 1, ghinNumber: nil,
                isGuest: true, profileId: nil)
     }
 
     // Pending SMS invitee: no profileId yet, isPendingInvite.
     private func pendingInvite(_ id: Int) -> Player {
         Player(id: id, name: "P\(id)", initials: "P\(id)", color: "#000000",
-               handicap: 0, avatar: "", group: 1, ghinNumber: nil, venmoUsername: nil,
+               handicap: 0, avatar: "", group: 1, ghinNumber: nil,
                isPendingInvite: true, isGuest: false, profileId: nil)
     }
 

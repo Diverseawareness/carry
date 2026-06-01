@@ -91,7 +91,6 @@ enum QuickGameGuestStorage {
                 avatar: avatar,
                 group: group,
                 ghinNumber: nil,
-                venmoUsername: nil,
                 avatarImageName: nil,
                 avatarUrl: nil,
                 phoneNumber: nil,

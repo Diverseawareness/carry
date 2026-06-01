@@ -10,7 +10,7 @@ final class GuestCanonicalIdentityTests: XCTestCase {
                        inviteMemberId: UUID? = nil, handicap: Double = 0) -> Player {
         Player(id: id, name: name, initials: String(name.prefix(2)).uppercased(),
                color: "#000000", handicap: handicap, avatar: "", group: 1,
-               ghinNumber: nil, venmoUsername: nil,
+               ghinNumber: nil,
                isGuest: true, profileId: profileId, inviteMemberId: inviteMemberId)
     }
 

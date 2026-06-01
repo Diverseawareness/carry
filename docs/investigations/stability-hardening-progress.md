@@ -90,7 +90,7 @@ All unit-testable invariants now covered. The reconciler, the 6 scorer rules + c
 
 1. **Plan #2 — safe shrinkage** (mechanical, low risk). Started:
    - ✅ Deleted `VenmoLogo.swift` (verified truly dead — only self-refs) + `CarryColors.venmoBlue` (only used by VenmoLogo) + 4 pbxproj refs. Build green.
-   - ⚠️ `Player.venmoUsername` is NOT dead (62 refs, read by RoundCompleteView settlement `:974-995`) — out of scope, gated on removing the hidden settlement UI first. MEMORY corrected.
+   - ✅ FULL Venmo removal (Daniel: "venmo is not used, remove safely" — verified-in-code first): the RoundCompleteView settlement island (`VenmoSettlement`/`venmoSettlements`/`openVenmo`/`venmoIndex`/unsigned `moneyText`) was self-referential DEAD code (`openVenmo` never called). Removed it, which made `Player.venmoUsername` write-only → then removed the field across ~40 app sites + 9 test files. Stat-row unsigned formatter preserved as `RoundStatsView.statRowMoney`. Build + full suite green. MEMORY updated (was wrongly "NOT dead" — the field looked live but its only readers were themselves dead).
    - ✅ `moneyText` 8→1: consolidated all 8 behaviorally-canonical copies (moneyText ×3, moneyLabel ×2, resultsMoneyLabel ×1, CashGamesBar, FinalResultsComponents) into one free func in Player.swift + `MoneyTextTests`. LEFT the Venmo-settlement formatter (RoundCompleteView:955) — it's intentionally UNSIGNED, different behavior. Build + suite green.
    - ⬜ Still to do: `PlayerStatRow` 4→1, `LeaderboardSheet` 3→1 (bigger — these are view structs, not pure funcs; more care needed).
 2. **Plan #3 — decompose GroupManagerView** at clean seams (leaderboard / tee-time picker / scorer picker / guest-entry sheets). Now safer — three core invariants are under test.

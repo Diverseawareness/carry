@@ -39,7 +39,6 @@ enum DemoSeed {
         avatar: "⛳",
         group: 1,
         ghinNumber: nil,
-        venmoUsername: nil,
         avatarImageName: "demo_01"
     )
 
@@ -54,7 +53,6 @@ enum DemoSeed {
         avatar: "🏌️",
         group: 1,
         ghinNumber: nil,
-        venmoUsername: nil,
         avatarImageName: "demo_02"
     )
 
@@ -69,7 +67,6 @@ enum DemoSeed {
         avatar: "🍻",
         group: 1,
         ghinNumber: nil,
-        venmoUsername: nil,
         avatarImageName: "demo_03"
     )
 
@@ -93,7 +90,6 @@ enum DemoSeed {
             avatar: "🏌️",
             group: 1,
             ghinNumber: nil,
-            venmoUsername: nil,
             avatarImageName: nil,
             profileId: profileId
         )

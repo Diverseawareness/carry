@@ -532,7 +532,6 @@ struct ScorerSlot: Equatable {
             avatar: "",
             group: 1,
             ghinNumber: nil,
-            venmoUsername: nil,
             avatarImageName: nil,
             avatarUrl: avatarUrl,
             phoneNumber: phoneNumber,
