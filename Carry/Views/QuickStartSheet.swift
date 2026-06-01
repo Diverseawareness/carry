@@ -45,7 +45,7 @@ struct QuickGameSheet: View {
     @EnvironmentObject var authService: AuthService
     let currentUser: Player
     let recentQuickGames: [SavedGroup]
-    let onCreate: (SavedGroup) -> Void
+    let onCreate: (SavedGroup) async -> Bool
 
     @State private var selectedRecentGameId: UUID? = nil
 
@@ -158,7 +158,7 @@ struct QuickGameSheet: View {
 
     // MARK: - Init
 
-    init(currentUser: Player, recentQuickGames: [SavedGroup] = [], onCreate: @escaping (SavedGroup) -> Void) {
+    init(currentUser: Player, recentQuickGames: [SavedGroup] = [], onCreate: @escaping (SavedGroup) async -> Bool) {
         self.currentUser = currentUser
         self.recentQuickGames = recentQuickGames
         self.onCreate = onCreate
@@ -1571,7 +1571,16 @@ struct QuickGameSheet: View {
             carriesEnabled: storeService.isPremium ? carriesEnabled : false
         )
 
-        isCreating = false
-        onCreate(savedGroup)
+        // Keep the spinner running + button disabled (set `isCreating = true`
+        // above) through the whole network create. The parent's async create
+        // dismisses this sheet on success; on failure we re-enable so the user
+        // can retry without losing their setup. (Previously isCreating flipped
+        // back to false synchronously here — so SwiftUI coalesced it and the
+        // spinner never showed — and the sheet was dismissed before the
+        // round-trip even began.)
+        Task {
+            let created = await onCreate(savedGroup)
+            if !created { isCreating = false }
+        }
     }
 }

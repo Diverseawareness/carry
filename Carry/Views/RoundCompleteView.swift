@@ -4,7 +4,7 @@ import SwiftUI
 
 /// Pure computation for the per-player score stats line shown in
 /// `RoundStatsView`. Separated from the view so it can be unit-tested.
-/// Example output: `"38 · 38 76, 3 Birdies, 1 Bogey"`
+/// Example output: `"38 + 38 76, 3 Birdies, 1 Bogey"`
 enum RoundStatsLine {
     /// Builds the stats line for a player's gross scores.
     /// - Parameters:
@@ -49,7 +49,7 @@ enum RoundStatsLine {
         guard total > 0 else { return nil }
 
         var parts: [String] = []
-        parts.append("\(frontStrokes) \u{00B7} \(backStrokes) \(total)")
+        parts.append("\(frontStrokes) + \(backStrokes) \(total)")
 
         if eagles > 0 { parts.append("\(eagles) Eagle\(eagles == 1 ? "" : "s")") }
         if birdies > 0 { parts.append("\(birdies) Birdie\(birdies == 1 ? "" : "s")") }
@@ -1195,7 +1195,7 @@ struct RoundStatsView: View {
                 }
 
                 // Line 2 — score stats. Example:
-                // "38 · 38 76, 3 Birdies, 14 Pars, 1 Bogey"
+                // "38 + 38 76, 3 Birdies, 14 Pars, 1 Bogey"
                 if let line = scoreStatsLine(for: player.id) {
                     Text(line)
                         .font(.carry.bodySM)

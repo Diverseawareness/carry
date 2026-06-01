@@ -1721,8 +1721,11 @@ struct LeaderboardSheet: View {
                         .font(Font.system(size: 24, weight: .bold))
                         .foregroundColor(Color.textPrimary)
                         .accessibilityAddTraits(.isHeader)
-                    let subtitle = [round.groupName, round.courseName.isEmpty ? nil : round.courseName]
-                        .compactMap { $0 }.joined(separator: " · ")
+                    // Subheader branches by tab (1.2.x): Last Round → round
+                    // date + course; All Time → "<n> Games · <n> Skins" totals
+                    // (no course). Fixes the old "<groupName> · <course>" that
+                    // doubled the course when a group was named after its course.
+                    let subtitle = leaderboardSubtitle
                     if !subtitle.isEmpty {
                         Text(subtitle)
                             .font(Font.system(size: 16, weight: .medium))
@@ -1987,6 +1990,27 @@ struct LeaderboardSheet: View {
         let skins: Int
         let won: Int
     }
+
+    /// Subheader under the "Leaderboard" title. Last Round → "<date> · <course>";
+    /// All Time → running totals "<n> Games · <n> Skins" (no course/date). Totals
+    /// match the rows: skins sums `rankedPlayers`, games = `groupRoundHistory.count`.
+    private var leaderboardSubtitle: String {
+        if selectedTab == 1 {
+            let games = groupRoundHistory.count
+            let skins = rankedPlayers.reduce(0) { $0 + $1.skins }
+            return "\(games) Game\(games == 1 ? "" : "s") · \(skins) Skin\(skins == 1 ? "" : "s")"
+        }
+        let dateStr = (round.completedAt ?? round.concludedAt ?? round.startedAt)
+            .map { Self.leaderboardDateFormatter.string(from: $0) }
+        return [dateStr, round.courseName.isEmpty ? nil : round.courseName]
+            .compactMap { $0 }.joined(separator: " · ")
+    }
+
+    private static let leaderboardDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "EEE, MMM d"
+        return f
+    }()
 
     private var rankedPlayers: [RankedEntry] {
         let rounds = selectedTab == 1 ? groupRoundHistory : [round]

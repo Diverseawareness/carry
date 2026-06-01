@@ -11,7 +11,7 @@
 		5FCAFE1A2B3C4D5E6F7E8901 /* PhoneInviteFinderSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FCAFE1A2B3C4D5E6F7E8902 /* PhoneInviteFinderSheet.swift */; };
 		600617DA2FB02A8500C1CD37 /* QuickGameGuestStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 600617D92FB02A8500C1CD37 /* QuickGameGuestStorage.swift */; };
 		600D85102FBD696500371DBB /* PasswordRecoverySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 600D850F2FBD696500371DBB /* PasswordRecoverySheet.swift */; };
-		602CE33D2F747A2F0028D0AF /* TeeTimePickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 602CE33C2F747A2F0028D0AF /* TeeTimePickerSheet.swift */; };
+		60195B0A2FCCF9C70023F1F1 /* TeeTimePickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60195B092FCCF9C70023F1F1 /* TeeTimePickerSheet.swift */; };
 		60385FDD2F76EC5C00FBF213 /* QuickStartSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60385FDC2F76EC5C00FBF213 /* QuickStartSheet.swift */; };
 		60385FDF2F76EC9B00FBF213 /* GuestProfileService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60385FDE2F76EC9B00FBF213 /* GuestProfileService.swift */; };
 		60385FE12F78D10200FBF213 /* ResultsShareCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60385FE02F78D10200FBF213 /* ResultsShareCard.swift */; };
@@ -147,7 +147,7 @@
 		5FCAFE1A2B3C4D5E6F7E8902 /* PhoneInviteFinderSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneInviteFinderSheet.swift; sourceTree = "<group>"; };
 		600617D92FB02A8500C1CD37 /* QuickGameGuestStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickGameGuestStorage.swift; sourceTree = "<group>"; };
 		600D850F2FBD696500371DBB /* PasswordRecoverySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasswordRecoverySheet.swift; sourceTree = "<group>"; };
-		602CE33C2F747A2F0028D0AF /* TeeTimePickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeeTimePickerSheet.swift; sourceTree = "<group>"; };
+		60195B092FCCF9C70023F1F1 /* TeeTimePickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeeTimePickerSheet.swift; sourceTree = "<group>"; };
 		60385FDC2F76EC5C00FBF213 /* QuickStartSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickStartSheet.swift; sourceTree = "<group>"; };
 		60385FDE2F76EC9B00FBF213 /* GuestProfileService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuestProfileService.swift; sourceTree = "<group>"; };
 		60385FE02F78D10200FBF213 /* ResultsShareCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResultsShareCard.swift; sourceTree = "<group>"; };
@@ -333,7 +333,6 @@
 				6096464D2F8F5D8B002F3BA9 /* Frameworks */,
 				C10003 /* Products */,
 				6056B3522F70CA1C00943125 /* Recovered References */,
-				602CE33C2F747A2F0028D0AF /* TeeTimePickerSheet.swift */,
 			);
 			sourceTree = "<group>";
 		};
@@ -395,6 +394,7 @@
 		C10006 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				60195B092FCCF9C70023F1F1 /* TeeTimePickerSheet.swift */,
 				60860E412FA4053000E6433C /* ForgotPasswordView.swift */,
 				606FCC172FA1BEE300C79B91 /* EmailAuthSheet.swift */,
 				B10103 /* EmailLinkSheet.swift */,
@@ -692,7 +692,6 @@
 				A10011 /* HoleHeaderRow.swift in Sources */,
 				A10012 /* PlayerRow.swift in Sources */,
 				A10013 /* SkinsRow.swift in Sources */,
-				602CE33D2F747A2F0028D0AF /* TeeTimePickerSheet.swift in Sources */,
 				552AF7443964484AA3D2F35A /* SkinConfettiBurst.swift in Sources */,
 				A10014 /* ScoreInputView.swift in Sources */,
 				60385FE52F7A167800FBF213 /* SMSInviteSheet.swift in Sources */,
@@ -718,6 +717,7 @@
 				EEF79AF1C0C64C8A9A994DFC /* GolfCourseAPI.swift in Sources */,
 				70E6DD8F93DE4E9B947D2ADE /* GolfCourseService.swift in Sources */,
 				8F4CA1E527DB49E3A6D8B193 /* PlayerSearchService.swift in Sources */,
+				60195B0A2FCCF9C70023F1F1 /* TeeTimePickerSheet.swift in Sources */,
 				B5263A87AFF44D4C95F2CB91 /* CourseSelectionView.swift in Sources */,
 				C20001 /* AppRouter.swift in Sources */,
 				C20002 /* GroupInviteParser.swift in Sources */,

@@ -805,6 +805,29 @@ struct GroupManagerView: View {
         leaderboardTab == 1 ? roundHistory : Array(roundHistory.suffix(1))
     }
 
+    /// Subheader under the "Leaderboard" title (mirrors HomeView.LeaderboardSheet).
+    /// Last Round → "<date> · <course>"; All Time → "<n> Games · <n> Skins". Totals
+    /// match the rows: skins sums `cumulativeStats`, games = `roundHistory.count`.
+    private var leaderboardSubtitle: String {
+        if leaderboardTab == 1 {
+            let games = roundHistory.count
+            let skins = cumulativeStats.values.reduce(0) { $0 + $1.skins }
+            return "\(games) Game\(games == 1 ? "" : "s") · \(skins) Skin\(skins == 1 ? "" : "s")"
+        }
+        let last = roundHistory.last
+        let dateStr = (last?.completedAt ?? last?.concludedAt ?? last?.startedAt)
+            .map { Self.leaderboardDateFormatter.string(from: $0) }
+        let course = last?.courseName ?? currentCourse?.courseName
+        return [dateStr, (course?.isEmpty ?? true) ? nil : course]
+            .compactMap { $0 }.joined(separator: " · ")
+    }
+
+    private static let leaderboardDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "EEE, MMM d"
+        return f
+    }()
+
     private var cumulativeStats: [Int: (skins: Int, won: Int)] {
         var result: [Int: (skins: Int, won: Int)] = [:]
         for round in leaderboardRounds {
@@ -2084,31 +2107,30 @@ struct GroupManagerView: View {
                             Task { await startRoundWithHolesSafetyNet() }
                         }
                     } label: {
-                        HStack(spacing: 10) {
-                            // Always render the icon to reserve layout space.
-                            // Toggle visibility via opacity so first paint matches
-                            // post-load state — prevents the icon-pops-in-after-text
-                            // visual bug when entering from Games tab where
-                            // `canStartRound`/`isLiveRound` flip true a frame after
-                            // first render. (Bug J, 2026-05-10.)
-                            //
-                            // `.animation(nil, value:)` opts the opacity out of
-                            // inherited animations from the drag-and-drop's
-                            // `withAnimation(.easeOut(0.2))` block. Without this,
-                            // mid-drag transient flips of `canStartRound` (e.g.
-                            // when source group temporarily has <2 players during
-                            // the move) would animate the flag fading in/out as a
-                            // visible flicker. (Bug J follow-up, 2026-05-10.)
-                            Image(systemName: "flag.fill")
-                                .font(.carry.bodySMSemibold)
-                                .opacity(canStartRound || isLiveRound ? 1 : 0)
-                                .animation(nil, value: canStartRound)
-                                .animation(nil, value: isLiveRound)
+                        // Flag snug to the left of the label, the pair centered
+                        // as a group in the fixed 322pt frame (1.1.2). The flag
+                        // is rendered ONLY when shown (`canStartRound ||
+                        // isLiveRound`) rather than always-reserved-with-opacity,
+                        // so the flag-hidden states ("Schedule Next Round",
+                        // "Need 2+ Players", etc.) have no phantom icon width —
+                        // their label is truly centered (fixes the off-center
+                        // report). Trade-off vs the old Bug-J fix: on entry from
+                        // the Games tab, `canStartRound` can flip true a frame
+                        // late, so the flag may settle in one frame after first
+                        // paint in the startable state. `.animation(nil)` keeps
+                        // that a hard settle, not an animated flicker.
+                        HStack(spacing: 6) {
+                            if canStartRound || isLiveRound {
+                                Image(systemName: "flag.fill")
+                                    .font(.carry.bodySMSemibold)
+                                    .animation(nil, value: canStartRound)
+                                    .animation(nil, value: isLiveRound)
+                            }
                             Text(startButtonLabel)
                                 .font(.carry.bodyLGSemibold)
                         }
-                        .foregroundColor(buttonLooksActive ? .white : Color.textSecondary)
                         .frame(width: 322, height: 51)
+                        .foregroundColor(buttonLooksActive ? .white : Color.textSecondary)
                         .background(
                             RoundedRectangle(cornerRadius: 12)
                                 .fill(buttonLooksActive ? Color.textPrimary : Color.borderMedium)
@@ -4261,8 +4283,11 @@ struct GroupManagerView: View {
                     Text("Leaderboard")
                         .font(Font.system(size: 24, weight: .bold))
                         .foregroundColor(Color.textPrimary)
-                    let subtitle = [groupName, currentCourse?.courseName]
-                        .compactMap { $0 }.joined(separator: " · ")
+                    // Subheader branches by tab (1.2.x): Last Round → last
+                    // round's date + course; All Time → "<n> Games · <n> Skins"
+                    // totals (no course). Fixes the old "<groupName> · <course>"
+                    // that doubled the course when the group was named for it.
+                    let subtitle = leaderboardSubtitle
                     if !subtitle.isEmpty {
                         Text(subtitle)
                             .font(Font.system(size: 16, weight: .medium))

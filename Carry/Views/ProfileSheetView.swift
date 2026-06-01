@@ -784,6 +784,25 @@ struct ProfileView: View {
             }
         } label: {
             HStack(spacing: 10) {
+                // Provider icon, left of the label. Apple + Email use SF
+                // Symbols tinted to match the text; Google uses its multicolor
+                // brand asset (the same `googleIcon` the Auth screen's Google
+                // button uses). 20×20 frame keeps all three aligned.
+                Group {
+                    if provider == "google" {
+                        Image("googleIcon")
+                            .resizable()
+                            .scaledToFit()
+                    } else {
+                        Image(systemName: provider == "apple" ? "apple.logo" : "envelope")
+                            .resizable()
+                            .scaledToFit()
+                            .foregroundColor(Color.textPrimary)
+                    }
+                }
+                .frame(width: 20, height: 20)
+                .accessibilityHidden(true)
+
                 Text(label)
                     .font(.system(size: 16))
                     .foregroundColor(Color.textPrimary)

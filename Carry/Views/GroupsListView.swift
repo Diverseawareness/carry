@@ -246,7 +246,7 @@ struct GroupsListView: View {
                     }
                 }(),
                 onCreate: { savedGroup in
-                    handleQuickGameCreate(savedGroup: savedGroup)
+                    await handleQuickGameCreate(savedGroup: savedGroup)
                 }
             )
             .presentationDetents([.large])
@@ -620,12 +620,19 @@ struct GroupsListView: View {
         convertQuickGame(groupId: groupId)
     }
 
-    private func handleQuickGameCreate(savedGroup: SavedGroup) {
-        guard let userId = authService.currentUser?.id else { return }
-        showQuickStart = false
+    /// Returns `true` once the Quick Game is created server-side and the game
+    /// overlay is opening; `false` if creation failed. The caller (QuickStart's
+    /// Continue button) keeps its spinner up + button disabled until this
+    /// resolves — honest in-context feedback, and a failed create no longer
+    /// strands the user on the Games tab. The sheet is dismissed here only on
+    /// success (deferred from the old top-of-function `showQuickStart = false`).
+    @discardableResult
+    private func handleQuickGameCreate(savedGroup: SavedGroup) async -> Bool {
+        guard let userId = authService.currentUser?.id else { return false }
 
-        // Create guest profiles + Supabase group, THEN open detail
-        Task {
+        // Body runs in a Task whose value we await: the existing creation flow
+        // is preserved verbatim while the caller learns success/failure.
+        let task = Task { () -> Bool in
             do {
                 let guestService = GuestProfileService()
                 let groupService = GroupService()
@@ -842,22 +849,28 @@ struct GroupsListView: View {
 
                 await MainActor.run {
                     groups.insert(realGroup, at: 0)
+                    // Dismiss the QuickStart sheet now (deferred from the top of
+                    // this function) and open the new game overlay.
+                    showQuickStart = false
                     activeGroup = realGroup
                 }
 
                 #if DEBUG
                 print("[QuickGame] Group created successfully: \(groupDTO.id)")
                 #endif
+                return true
             } catch {
                 #if DEBUG
                 print("[QuickGame] Failed: \(error.localizedDescription)")
                 print("[QuickGame] Full error: \(error)")
                 #endif
                 await MainActor.run {
-                    ToastManager.shared.error("Sync failed: \(error.localizedDescription)")
+                    ToastManager.shared.error("Couldn't create the game — \(error.localizedDescription)")
                 }
+                return false
             }
         }
+        return await task.value
     }
 
     // MARK: - Round Coordinator Overlay
