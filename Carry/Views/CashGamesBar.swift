@@ -232,11 +232,6 @@ struct CashGamesBar: View {
 
     // MARK: - Helpers
 
-    private func moneyText(_ amount: Int) -> String {
-        if amount < 0 { return "-$\(-amount)" }
-        return "$\(amount)"
-    }
-
     private func moneyColor(_ amount: Int) -> Color {
         // Skins won → gold (1.2.x, was textPrimary). Uses goldMuted to match
         // the winnings-money gold already on the results screen + Home cards

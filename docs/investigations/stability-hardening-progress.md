@@ -91,7 +91,8 @@ All unit-testable invariants now covered. The reconciler, the 6 scorer rules + c
 1. **Plan #2 — safe shrinkage** (mechanical, low risk). Started:
    - ✅ Deleted `VenmoLogo.swift` (verified truly dead — only self-refs) + `CarryColors.venmoBlue` (only used by VenmoLogo) + 4 pbxproj refs. Build green.
    - ⚠️ `Player.venmoUsername` is NOT dead (62 refs, read by RoundCompleteView settlement `:974-995`) — out of scope, gated on removing the hidden settlement UI first. MEMORY corrected.
-   - ⬜ Still to do: `formatMoney` 8→1, `PlayerStatRow` 4→1, `LeaderboardSheet` 3→1.
+   - ✅ `moneyText` 8→1: consolidated all 8 behaviorally-canonical copies (moneyText ×3, moneyLabel ×2, resultsMoneyLabel ×1, CashGamesBar, FinalResultsComponents) into one free func in Player.swift + `MoneyTextTests`. LEFT the Venmo-settlement formatter (RoundCompleteView:955) — it's intentionally UNSIGNED, different behavior. Build + suite green.
+   - ⬜ Still to do: `PlayerStatRow` 4→1, `LeaderboardSheet` 3→1 (bigger — these are view structs, not pure funcs; more care needed).
 2. **Plan #3 — decompose GroupManagerView** at clean seams (leaderboard / tee-time picker / scorer picker / guest-entry sheets). Now safer — three core invariants are under test.
 3. Opportunistic: migrate the ~80 drifted plain citations to anchored form (closes the tracked debt).
 4. Optional later: an integration/UI-test harness for the guest-edit RPC + race-guard chain (inv #4), if guest-edit regressions recur.

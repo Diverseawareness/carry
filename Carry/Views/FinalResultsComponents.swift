@@ -60,12 +60,6 @@ struct FinalResultsWinnerRow: View {
         .accessibilityLabel("\(isYou ? "You" : player.shortName), \(skins) skin\(skins == 1 ? "" : "s"), \(moneyText(amount))")
     }
 
-    private func moneyText(_ amount: Int) -> String {
-        if amount > 0 { return "$\(amount)" }
-        if amount < 0 { return "-$\(-amount)" }
-        return "$0"
-    }
-
     private func moneyColor(_ amount: Int) -> Color {
         if amount > 0 { return Color.goldMuted }
         if amount < 0 { return Color.textDisabled }

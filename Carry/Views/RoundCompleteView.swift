@@ -1264,9 +1264,4 @@ struct RoundStatsView: View {
         )
     }
 
-    private func moneyText(_ amount: Int) -> String {
-        if amount > 0 { return "$\(amount)" }
-        if amount < 0 { return "-$\(-amount)" }
-        return "$0"
-    }
 }

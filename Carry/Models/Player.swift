@@ -207,6 +207,19 @@ func formatHandicap(_ value: Double) -> String {
     return String(format: "%.1f", value)
 }
 
+// MARK: - Money Formatting
+
+/// Canonical signed money string: `"$25"`, `"-$25"`, `"$0"`.
+/// Extracted to kill ~7 copy-pasted duplicates across the results/leaderboard/
+/// scorecard views. NOTE: RoundCompleteView's Venmo-settlement formatter is
+/// deliberately DIFFERENT (renders magnitudes UNSIGNED — pay/charge direction is
+/// carried separately) and is intentionally NOT replaced by this.
+func moneyText(_ amount: Int) -> String {
+    if amount > 0 { return "$\(amount)" }
+    if amount < 0 { return "-$\(-amount)" }
+    return "$0"
+}
+
 /// Filters handicap text input: max 4 characters, max value 54.0, one decimal place.
 /// Accepts optional "+" prefix for plus handicaps (max +10.0).
 func filterHandicapInput(_ input: String) -> String {

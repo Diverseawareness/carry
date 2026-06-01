@@ -1923,7 +1923,7 @@ struct LeaderboardSheet: View {
                 // Match the leaderboard "Won" column: same font weight/size
                 // and 72pt fixed trailing-aligned width so the amounts line
                 // up vertically with the rows above.
-                Text(moneyLabel(money))
+                Text(moneyText(money))
                     .font(Font.system(size: 17, weight: .medium))
                     .monospacedDigit()
                     .foregroundColor(
@@ -1977,11 +1977,6 @@ struct LeaderboardSheet: View {
         return String(format: "%.1f", hcp)
     }
 
-    private func moneyLabel(_ amount: Int) -> String {
-        if amount > 0 { return "$\(amount)" }
-        if amount < 0 { return "-$\(-amount)" }
-        return "$0"
-    }
 
     // MARK: - Ranked Players
 
@@ -2442,7 +2437,7 @@ struct ResultsSheet: View {
 
                 Spacer()
 
-                Text(resultsMoneyLabel(money))
+                Text(moneyText(money))
                     .font(Font.system(size: 17, weight: .medium))
                     .monospacedDigit()
                     .foregroundColor(
@@ -2496,11 +2491,6 @@ struct ResultsSheet: View {
         return String(format: "%.1f", hcp)
     }
 
-    private func resultsMoneyLabel(_ amount: Int) -> String {
-        if amount > 0 { return "$\(amount)" }
-        if amount < 0 { return "-$\(-amount)" }
-        return "$0"
-    }
 }
 
 // MARK: - Pulsating Dot

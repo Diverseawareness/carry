@@ -4651,7 +4651,7 @@ struct GroupManagerView: View {
 
                 Spacer()
 
-                Text(moneyLabel(money))
+                Text(moneyText(money))
                     .font(Font.system(size: 17, weight: .medium))
                     .monospacedDigit()
                     .foregroundColor(
@@ -4705,11 +4705,6 @@ struct GroupManagerView: View {
         return String(format: "%.1f", hcp)
     }
 
-    private func moneyLabel(_ amount: Int) -> String {
-        if amount > 0 { return "$\(amount)" }
-        if amount < 0 { return "-$\(-amount)" }
-        return "$0"
-    }
 
     private func leaderboardRow(player: Player) -> some View {
         HStack(spacing: 12) {
