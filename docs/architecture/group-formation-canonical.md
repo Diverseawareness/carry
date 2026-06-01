@@ -1,13 +1,24 @@
 # Group Formation — Canonical Source of Truth (refactor target 2026-05-10)
 
-**Status:** target architecture; minimal-risk version executed 2026-05-10.
+**Status:** target architecture; minimal-risk version executed 2026-05-10. **Sufficiency reviewed 2026-05-31 — reconciler is HOLDING; full refactor NOT needed (see below).**
+
+## Sufficiency review (2026-05-31) — is the reconciler enough?
+
+This doc's open question was: *"verify the reconciler is enough before doing the full collapse."* Reviewed against the bug archive + a mutation-site audit. **Verdict: the minimal reconciler is sufficient. Do NOT escalate to the full `commitGroupsChange` migration.**
+
+Evidence:
+- **Timeline:** Every drift-class bug in [bug-archive.md](bug-archive.md) (edit-reverts, drag-snap-back, guest-resurrect, pills-mismatch, stale `Player.group`) is dated **on or before 2026-05-10**, when the reconciler shipped. **Zero drift-class regressions are dated after it.** The class stopped recurring.
+- **No bypass paths:** all `groups = …` assignments (regroup, refresh-rebuild, refresh-fallback, PlayerGroupsSheet onSave, swap) and the drop-handler array mutations trigger `.onChange(of: groups)` via SwiftUI value-type tracking → the reconciler always runs. The "every mutation goes through one path" guarantee the full refactor would enforce is already met in practice.
+- **The 1.1.2 duplicate-guest bug was NOT a counter-example.** Its root cause was guest *identity instability* (server minted a fresh UUID on each recreate → two `stableId`s for one human), fixed by the stable-UUID architecture. That's orthogonal to `Player.group`-vs-index drift; the reconciler never claimed to cover identity. Don't read it as a reconciler leak.
+
+Follow-up (cheap, recommended, NOT the full refactor): extract the reconciler's normalization into a pure `static func` and add a unit test guarding the `Player.group == arrayIndex + 1` invariant across drop/regroup/refresh/swap — so the pre-push hook catches any future regression. Tracked separately; needs a (small, behavior-identical) touch to GroupManagerView, so gated on explicit OK per the no-fragile-core-changes rule.
 
 ## What was actually shipped (2026-05-10)
 
 The full refactor in this doc would touch ~12 mutation sites across multiple files. Per the user's "we cannot change anything that breaks something else" rule, the executed version is minimal:
 
 - `groups[][]` remains canonical for tee-group arrangement
-- `Player.group` is auto-corrected to match index via the `.onChange(of: groups)` reconciler at [GroupManagerView.swift:2477-2553](../../Carry/Views/GroupManagerView.swift:2477)
+- `Player.group` is auto-corrected to match index via the `.onChange(of: groups)` reconciler at [GroupManagerView.swift:2875-2954](../../Carry/Views/GroupManagerView.swift:2875)
 - Mutation sites stay as-is (drop handler, regroup, refresh rebuild, swap, moveGroup) — they don't need to update `Player.group` themselves
 - The reconciler does a self-stable rewrite: if any player's `.group` doesn't match index, it rewrites `groups` with corrected values and early-returns (SwiftUI re-fires `.onChange`); on the re-fire, no rewrite is needed and the rest of the handler runs (mirror to `allMembers`/`guests`, persist QG snapshot, schedule server sync)
 - This is functionally equivalent to forcing every mutation site through `commitGroupsChange` but without rewriting any mutation site
@@ -186,4 +197,5 @@ To be filled during step 2 of the migration.
 
 ## Last verified
 
-2026-05-10 — refactor target written; implementation in progress.
+2026-05-10 — refactor target written; minimal reconciler shipped.
+2026-05-31 — sufficiency review: reconciler holding, full refactor deferred (no drift regressions post-2026-05-10). Reconciler citation re-anchored to current line range (:2875-2954).
