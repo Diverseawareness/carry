@@ -340,6 +340,29 @@ struct GroupManagerView: View {
 
     // MARK: - Auto-grouping
 
+    /// Reconciler core (single source of truth, locked 2026-05-10): given a
+    /// tee-group arrangement, return a copy where every player's `Player.group`
+    /// equals its array index + 1, plus whether any correction was needed.
+    /// `groups[][]` is canonical; `Player.group` is derived. Mutation sites only
+    /// touch `groups[][]`; this normalizes `Player.group` after the fact.
+    ///
+    /// Extracted from the `.onChange(of: groups)` handler so the invariant is
+    /// unit-testable (the handler calls this verbatim — behavior unchanged).
+    /// See docs/architecture/group-formation-canonical.md.
+    static func normalizedGroupNums(_ groups: [[Player]]) -> (groups: [[Player]], changed: Bool) {
+        var corrected = groups
+        var needsRewrite = false
+        for gi in corrected.indices {
+            for j in corrected[gi].indices {
+                if corrected[gi][j].group != gi + 1 {
+                    corrected[gi][j].group = gi + 1
+                    needsRewrite = true
+                }
+            }
+        }
+        return (corrected, needsRewrite)
+    }
+
     /// Splits players into balanced groups of 3-4 (foursomes preferred).
     /// 5→3+2, 6→3+3, 7→4+3, 8→4+4, 9→3+3+3, 10→4+3+3, 11→4+4+3, 12→4+4+4, etc.
     static func autoGroup(_ players: [Player]) -> [[Player]] {
@@ -2893,16 +2916,7 @@ struct GroupManagerView: View {
             //
             // See [docs/architecture/group-formation-canonical.md] for the
             // single-source-of-truth design + rationale.
-            var corrected = groups
-            var needsRewrite = false
-            for gi in corrected.indices {
-                for j in corrected[gi].indices {
-                    if corrected[gi][j].group != gi + 1 {
-                        corrected[gi][j].group = gi + 1
-                        needsRewrite = true
-                    }
-                }
-            }
+            let (corrected, needsRewrite) = Self.normalizedGroupNums(groups)
             if needsRewrite {
                 groups = corrected
                 return  // re-fire of .onChange runs step 2 with corrected groups
