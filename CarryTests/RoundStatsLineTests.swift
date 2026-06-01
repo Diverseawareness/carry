@@ -4,8 +4,8 @@ import XCTest
 /// Tests for `RoundStatsLine.make` — the per-player score stats line shown
 /// below the leaderboard on the Round Complete results screen.
 ///
-/// Expected format: `"38 · 38 76, 3 Birdies, 1 Bogey"`
-/// - Front 9 strokes · Back 9 strokes  Total
+/// Expected format: `"38 + 38 76, 3 Birdies, 1 Bogey"`
+/// - Front 9 strokes + Back 9 strokes  Total
 /// - Comma-separated categories in order: Eagles, Birdies, Bogeys, Doubles+
 /// - Pars are intentionally omitted (they're the dominant, uninteresting case)
 final class RoundStatsLineTests: XCTestCase {
@@ -40,7 +40,7 @@ final class RoundStatsLineTests: XCTestCase {
         // Every hole played at par → totals only, no categories surfaced
         let scores = pars18   // score == par on every hole
         let line = RoundStatsLine.make(playerScores: scores, parsByHole: pars18)
-        XCTAssertEqual(line, "36 \u{00B7} 36 72")
+        XCTAssertEqual(line, "36 + 36 72")
     }
 
     // MARK: - Front/back split
@@ -49,13 +49,13 @@ final class RoundStatsLineTests: XCTestCase {
         // Player walked off after 9. Front = 36 (par), back = 0, total = 36.
         let scores = Dictionary(uniqueKeysWithValues: pars18.filter { $0.key <= 9 })
         let line = RoundStatsLine.make(playerScores: scores, parsByHole: pars18)
-        XCTAssertEqual(line, "36 \u{00B7} 0 36")
+        XCTAssertEqual(line, "36 + 0 36")
     }
 
     func testBackNineOnly() {
         let scores = Dictionary(uniqueKeysWithValues: pars18.filter { $0.key > 9 })
         let line = RoundStatsLine.make(playerScores: scores, parsByHole: pars18)
-        XCTAssertEqual(line, "0 \u{00B7} 36 36")
+        XCTAssertEqual(line, "0 + 36 36")
     }
 
     // MARK: - Categories — singular vs plural
@@ -65,7 +65,7 @@ final class RoundStatsLineTests: XCTestCase {
         var scores = pars18
         scores[1] = 3
         let line = RoundStatsLine.make(playerScores: scores, parsByHole: pars18)
-        XCTAssertEqual(line, "35 \u{00B7} 36 71, 1 Birdie")
+        XCTAssertEqual(line, "35 + 36 71, 1 Birdie")
     }
 
     func testMultipleBirdies_pluralization() {
@@ -74,14 +74,14 @@ final class RoundStatsLineTests: XCTestCase {
         scores[2] = 3   // birdie on par 4
         scores[3] = 4   // birdie on par 5
         let line = RoundStatsLine.make(playerScores: scores, parsByHole: pars18)
-        XCTAssertEqual(line, "33 \u{00B7} 36 69, 3 Birdies")
+        XCTAssertEqual(line, "33 + 36 69, 3 Birdies")
     }
 
     func testSingleBogey_pluralization() {
         var scores = pars18
         scores[1] = 5   // bogey on par 4
         let line = RoundStatsLine.make(playerScores: scores, parsByHole: pars18)
-        XCTAssertEqual(line, "37 \u{00B7} 36 73, 1 Bogey")
+        XCTAssertEqual(line, "37 + 36 73, 1 Bogey")
     }
 
     func testMultipleBogeys_pluralization() {
@@ -90,14 +90,14 @@ final class RoundStatsLineTests: XCTestCase {
         scores[2] = 5
         scores[3] = 6
         let line = RoundStatsLine.make(playerScores: scores, parsByHole: pars18)
-        XCTAssertEqual(line, "39 \u{00B7} 36 75, 3 Bogeys")
+        XCTAssertEqual(line, "39 + 36 75, 3 Bogeys")
     }
 
     func testSingleEagle_pluralization() {
         var scores = pars18
         scores[3] = 3   // eagle on par 5
         let line = RoundStatsLine.make(playerScores: scores, parsByHole: pars18)
-        XCTAssertEqual(line, "34 \u{00B7} 36 70, 1 Eagle")
+        XCTAssertEqual(line, "34 + 36 70, 1 Eagle")
     }
 
     func testMultipleEagles_pluralization() {
@@ -106,7 +106,7 @@ final class RoundStatsLineTests: XCTestCase {
         scores[3] = 3   // eagle on par 5
         scores[8] = 3   // eagle on par 5
         let line = RoundStatsLine.make(playerScores: scores, parsByHole: pars18)
-        XCTAssertEqual(line, "32 \u{00B7} 36 68, 2 Eagles")
+        XCTAssertEqual(line, "32 + 36 68, 2 Eagles")
     }
 
     // MARK: - Eagle bucket (includes albatross)
@@ -116,7 +116,7 @@ final class RoundStatsLineTests: XCTestCase {
         var scores = pars18
         scores[3] = 2   // albatross on par 5
         let line = RoundStatsLine.make(playerScores: scores, parsByHole: pars18)
-        XCTAssertEqual(line, "33 \u{00B7} 36 69, 1 Eagle")
+        XCTAssertEqual(line, "33 + 36 69, 1 Eagle")
     }
 
     // MARK: - Double bogey+
@@ -125,7 +125,7 @@ final class RoundStatsLineTests: XCTestCase {
         var scores = pars18
         scores[1] = 6   // double bogey on par 4
         let line = RoundStatsLine.make(playerScores: scores, parsByHole: pars18)
-        XCTAssertEqual(line, "38 \u{00B7} 36 74, 1 Double Bogey+")
+        XCTAssertEqual(line, "38 + 36 74, 1 Double Bogey+")
     }
 
     func testDoubleBogey_plural() {
@@ -133,7 +133,7 @@ final class RoundStatsLineTests: XCTestCase {
         scores[1] = 6
         scores[2] = 6
         let line = RoundStatsLine.make(playerScores: scores, parsByHole: pars18)
-        XCTAssertEqual(line, "40 \u{00B7} 36 76, 2 Double Bogeys+")
+        XCTAssertEqual(line, "40 + 36 76, 2 Double Bogeys+")
     }
 
     func testTripleBogeyBucketsWithDoubleBogeyPlus() {
@@ -141,7 +141,7 @@ final class RoundStatsLineTests: XCTestCase {
         var scores = pars18
         scores[1] = 7   // triple bogey on par 4
         let line = RoundStatsLine.make(playerScores: scores, parsByHole: pars18)
-        XCTAssertEqual(line, "39 \u{00B7} 36 75, 1 Double Bogey+")
+        XCTAssertEqual(line, "39 + 36 75, 1 Double Bogey+")
     }
 
     // MARK: - Mixed categories & ordering
@@ -159,12 +159,12 @@ final class RoundStatsLineTests: XCTestCase {
         let line = RoundStatsLine.make(playerScores: scores, parsByHole: pars18)
         XCTAssertEqual(
             line,
-            "32 \u{00B7} 39 71, 1 Eagle, 2 Birdies, 1 Bogey, 1 Double Bogey+"
+            "32 + 39 71, 1 Eagle, 2 Birdies, 1 Bogey, 1 Double Bogey+"
         )
     }
 
     func testMixedRound_userExample() {
-        // Mirrors the user's example: "38 · 38 76, 3 Birdies, 1 Bogey"
+        // Mirrors the user's example: "38 + 38 76, 3 Birdies, 1 Bogey"
         // Build a round that produces exactly that stat line.
         var scores = pars18
         // Front: 3 birdies on holes 1, 2, 3 → front score = 36 − 3 = 33
@@ -188,7 +188,7 @@ final class RoundStatsLineTests: XCTestCase {
         //           3 Birdies, 7 Bogeys (not 1!)
         // Tweak: test the real output, not the user's example literally
         let line = RoundStatsLine.make(playerScores: scores, parsByHole: pars18)
-        XCTAssertEqual(line, "38 \u{00B7} 38 76, 3 Birdies, 7 Bogeys")
+        XCTAssertEqual(line, "38 + 38 76, 3 Birdies, 7 Bogeys")
     }
 
     // MARK: - Zero / sentinel values
@@ -198,7 +198,7 @@ final class RoundStatsLineTests: XCTestCase {
         var scores = pars18
         for hole in 10...18 { scores[hole] = 0 }
         let line = RoundStatsLine.make(playerScores: scores, parsByHole: pars18)
-        XCTAssertEqual(line, "36 \u{00B7} 0 36")
+        XCTAssertEqual(line, "36 + 0 36")
     }
 
     func testNegativeScoresAreIgnored() {
@@ -207,7 +207,7 @@ final class RoundStatsLineTests: XCTestCase {
         scores[1] = -1
         let line = RoundStatsLine.make(playerScores: scores, parsByHole: pars18)
         // Hole 1's score ignored. Rest is pure pars → 36 - 4 (par of hole 1) = 32 front
-        XCTAssertEqual(line, "32 \u{00B7} 36 68")
+        XCTAssertEqual(line, "32 + 36 68")
     }
 
     // MARK: - Partial par map
@@ -218,7 +218,7 @@ final class RoundStatsLineTests: XCTestCase {
         let scores = pars18   // all pars on full 18
         let line = RoundStatsLine.make(playerScores: scores, parsByHole: frontParOnly)
         // Only front 9 scored (back holes have no par → skipped)
-        XCTAssertEqual(line, "36 \u{00B7} 0 36")
+        XCTAssertEqual(line, "36 + 0 36")
     }
 
     // MARK: - Boundary cases
@@ -227,20 +227,20 @@ final class RoundStatsLineTests: XCTestCase {
         // Just one hole with a birdie — edge case but valid
         let scores = [1: 3]
         let line = RoundStatsLine.make(playerScores: scores, parsByHole: pars18)
-        XCTAssertEqual(line, "3 \u{00B7} 0 3, 1 Birdie")
+        XCTAssertEqual(line, "3 + 0 3, 1 Birdie")
     }
 
     func testOnlyHoleTenPlayed_countsAsBackNine() {
         // Hole 10 is on the back nine
         let scores = [10: 5]   // par on par 5
         let line = RoundStatsLine.make(playerScores: scores, parsByHole: pars18)
-        XCTAssertEqual(line, "0 \u{00B7} 5 5")
+        XCTAssertEqual(line, "0 + 5 5")
     }
 
     func testHoleNineCountsAsFront() {
         // Hole 9 is inclusive in front
         let scores = [9: 4]
         let line = RoundStatsLine.make(playerScores: scores, parsByHole: pars18)
-        XCTAssertEqual(line, "4 \u{00B7} 0 4")
+        XCTAssertEqual(line, "4 + 0 4")
     }
 }
